@@ -1,0 +1,43 @@
+[package]
+name = "bitchat-cli"
+version = "0.1.0"
+edition = "2021"
+description = "CLI demonstration application for BitChat protocol with dual transport support"
+license = "MIT OR Apache-2.0"
+
+[[bin]]
+name = "bitchat"
+path = "src/main.rs"
+
+[dependencies]
+# BitChat protocol and transports
+bitchat-core = { path = "../bitchat-core" }
+bitchat-ble-transport = { path = "../bitchat-ble-transport" }
+bitchat-nostr-transport = { path = "../bitchat-nostr-transport" }
+
+# CLI and configuration
+clap = { workspace = true }
+serde = { workspace = true }
+serde_json = "1.0"
+toml = "0.8"
+
+# Async runtime
+tokio = { workspace = true }
+
+# Utilities
+uuid = { workspace = true }
+thiserror = { workspace = true }
+
+# Logging
+tracing = { workspace = true }
+tracing-subscriber = { workspace = true }
+
+# Terminal UI
+crossterm = "0.27"
+ratatui = "0.24"
+
+# Error handling
+anyhow = "1.0"
+
+# Hex encoding/decoding
+hex = "0.4"
