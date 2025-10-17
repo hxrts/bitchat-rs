@@ -1,5 +1,5 @@
 [package]
-name = "bitchat-nostr-transport"
+name = "bitchat-nostr"
 version = "0.1.0"
 edition = "2021"
 description = "Nostr transport implementation for BitChat protocol"
