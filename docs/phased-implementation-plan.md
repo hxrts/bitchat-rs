@@ -48,7 +48,7 @@ graph TD
 *   **Transport Trait**: A generic `Transport` trait that defines the interface for sending and receiving Bitchat packets. This will allow for different transport implementations to be plugged into the core library.
     - **Design Principle**: Simple async trait with minimal methods
     - **API Goal**: Send/receive abstraction that hides transport complexity
-*   **Transport Implementations**: Separate crates for each transport mechanism (e.g., `bitchat-ble-transport`, `bitchat-nostr-transport`). These crates will implement the `Transport` trait and handle the specifics of each communication medium.
+*   **Transport Implementations**: Separate crates for each transport mechanism (e.g., `bitchat-ble`, `bitchat-nostr`). These crates will implement the `Transport` trait and handle the specifics of each communication medium.
     - **Design Principle**: One responsibility per crate, clean error propagation
     - **API Goal**: Transport-specific configuration with sensible defaults
 
@@ -137,13 +137,13 @@ An analysis of the existing `bitchat-tui` Rust implementation provides valuable 
 **Implementation Directive**: Build transport abstractions that are unified and simple. Different transports should feel identical to the core protocol layer.
 
 **What's being built**:
-*   A `bitchat-ble-transport` crate that implements the `Transport` trait.
+*   A `bitchat-ble` crate that implements the `Transport` trait.
     - **Clean Abstraction**: Hide BLE complexity behind simple send/receive API
     - **Robust Connection**: Automatic reconnection with exponential backoff
 *   Logic for scanning for peers, connecting, and exchanging data over BLE.
     - **Elegant Discovery**: Async stream of discovered peers
     - **Minimal Configuration**: Sensible defaults for scanning and advertising
-*   A `bitchat-nostr-transport` crate for native Nostr communication.
+*   A `bitchat-nostr` crate for native Nostr communication.
     - **Unified Interface**: Same `Transport` trait as BLE
     - **Efficient Relay Management**: Connection pooling and automatic failover
 *   Intelligent transport selection (BLE preferred, Nostr fallback).
@@ -176,7 +176,7 @@ An analysis of the existing `bitchat-tui` Rust implementation provides valuable 
 **Implementation Directive**: Create browser-native experience with minimal JavaScript glue. WASM module should be self-contained and easy to integrate.
 
 **What's being built**:
-*   A web-compatible `bitchat-nostr-transport` crate using WASM-friendly libraries.
+*   A web-compatible `bitchat-nostr` crate using WASM-friendly libraries.
     - **Clean WASM API**: Minimal JavaScript surface area
     - **Async Integration**: Proper Promise/Future bridging
 *   WASM bindings for the `bitchat-core` library and the Nostr transport.
@@ -197,7 +197,7 @@ An analysis of the existing `bitchat-tui` Rust implementation provides valuable 
 *   **Crypto (WASM)**: Pure Rust `dalek` cryptography suite (no `ring` due to WASM incompatibility).
 
 **Implementation Criteria (Done when...)**:
-*   The `bitchat-core` library and the `bitchat-nostr-transport` crate compile successfully to WASM.
+*   The `bitchat-core` library and the `bitchat-nostr` crate compile successfully to WASM.
 *   The WASM module can connect to Nostr relays and establish communication channels.
 *   A Noise session can be established between web clients and native clients over Nostr.
 *   Encrypted messages can be sent and received between web clients and native clients.
