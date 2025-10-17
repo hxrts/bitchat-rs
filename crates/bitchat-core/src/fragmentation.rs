@@ -26,6 +26,12 @@ pub const MAX_FRAGMENTS: u16 = 65535;
 #[cfg(feature = "std")]
 pub const FRAGMENT_TIMEOUT_SECS: u64 = 60;
 
+/// Maximum number of concurrent reassembly operations
+pub const MAX_CONCURRENT_REASSEMBLIES: usize = 100;
+
+/// Maximum total memory used for fragments (in bytes)
+pub const MAX_FRAGMENT_MEMORY: usize = 10 * 1024 * 1024; // 10MB
+
 // ----------------------------------------------------------------------------
 // Fragment Header
 // ----------------------------------------------------------------------------
@@ -136,7 +142,9 @@ impl Fragment {
             packet.message_type,
             MessageType::FragmentStart | MessageType::FragmentContinue | MessageType::FragmentEnd
         ) {
-            return Err(BitchatError::InvalidPacket("Not a fragment packet".into()));
+            return Err(crate::PacketError::UnknownMessageType { 
+                message_type: packet.message_type as u8 
+            }.into());
         }
 
         // Deserialize header first
@@ -144,9 +152,10 @@ impl Fragment {
         let header_size = bincode::serialized_size(&header)? as usize;
 
         if packet.payload.len() < header_size {
-            return Err(BitchatError::InvalidPacket(
-                "Fragment payload too small".into(),
-            ));
+            return Err(crate::PacketError::PayloadTooSmall { 
+                expected: header_size, 
+                actual: packet.payload.len() 
+            }.into());
         }
 
         let data = packet.payload[header_size..].to_vec();
@@ -236,6 +245,8 @@ struct ReassemblyState {
     fragments: BTreeMap<u16, Vec<u8>>,
     /// Timestamp when first fragment was received
     first_received: Timestamp,
+    /// Current memory usage for this reassembly
+    memory_used: usize,
 }
 
 impl ReassemblyState {
@@ -249,6 +260,7 @@ impl ReassemblyState {
             first_received: Timestamp::now(),
             #[cfg(not(feature = "std"))]
             first_received: Timestamp::new(0),
+            memory_used: 0,
         }
     }
 
@@ -275,6 +287,9 @@ impl ReassemblyState {
             return Err(BitchatError::InvalidPacket("Duplicate fragment".into()));
         }
 
+        // Track memory usage
+        self.memory_used += fragment.data.len();
+        
         self.fragments
             .insert(fragment.header.fragment_number, fragment.data.clone());
         Ok(())
@@ -332,6 +347,8 @@ impl ReassemblyState {
 pub struct MessageReassembler {
     /// Ongoing reassembly operations by message ID
     reassembly_states: BTreeMap<Uuid, ReassemblyState>,
+    /// Total memory currently used by all reassemblies
+    total_memory_used: usize,
 }
 
 impl MessageReassembler {
@@ -339,26 +356,63 @@ impl MessageReassembler {
     pub fn new() -> Self {
         Self {
             reassembly_states: BTreeMap::new(),
+            total_memory_used: 0,
         }
     }
 
     /// Process a fragment, potentially completing a message
     pub fn process_fragment(&mut self, fragment: Fragment) -> Result<Option<Vec<u8>>> {
         let message_id = fragment.header.message_id;
+        
+        // Validate fragment size before processing
+        if fragment.data.len() > MAX_FRAGMENT_SIZE {
+            return Err(BitchatError::InvalidPacket(
+                "Fragment exceeds maximum size".into(),
+            ));
+        }
+        
+        // Validate total message size is reasonable
+        if fragment.header.total_size > MAX_FRAGMENT_MEMORY as u32 {
+            return Err(BitchatError::InvalidPacket(
+                "Message too large".into(),
+            ));
+        }
 
         // Get or create reassembly state
         if !self.reassembly_states.contains_key(&message_id) {
+            // Check limits before creating new reassembly
+            if self.reassembly_states.len() >= MAX_CONCURRENT_REASSEMBLIES {
+                self.evict_oldest_reassembly();
+            }
+            
+            if self.total_memory_used + fragment.data.len() > MAX_FRAGMENT_MEMORY {
+                self.evict_largest_reassembly();
+            }
+            
             let state = ReassemblyState::new(&fragment.header);
             self.reassembly_states.insert(message_id, state);
         }
 
-        let state = self.reassembly_states.get_mut(&message_id).unwrap();
+        let fragment_size = fragment.data.len();
+        let state = self.reassembly_states.get_mut(&message_id)
+            .ok_or_else(|| BitchatError::InvalidPacket("Reassembly state not found".into()))?;
+        
+        // Check if adding this fragment would exceed memory limit
+        if self.total_memory_used + fragment_size > MAX_FRAGMENT_MEMORY {
+            return Err(BitchatError::InvalidPacket(
+                "Fragment memory limit exceeded".into(),
+            ));
+        }
+        
         state.add_fragment(&fragment)?;
+        self.total_memory_used += fragment_size;
 
         // Check if message is complete
         if state.is_complete() {
             let assembled = state.assemble()?;
-            self.reassembly_states.remove(&message_id);
+            let state = self.reassembly_states.remove(&message_id)
+                .ok_or_else(|| BitchatError::InvalidPacket("Reassembly state missing during completion".into()))?;
+            self.total_memory_used = self.total_memory_used.saturating_sub(state.memory_used);
             Ok(Some(assembled))
         } else {
             Ok(None)
@@ -383,7 +437,32 @@ impl MessageReassembler {
             .collect();
 
         for id in expired_ids {
-            self.reassembly_states.remove(&id);
+            self.cancel_reassembly(&id);
+        }
+    }
+    
+    /// Clean up expired reassembly states (no_std compatible)
+    /// Takes a current timestamp for comparison
+    #[cfg(not(feature = "std"))]
+    pub fn cleanup_expired_with_time(&mut self, current_time: Timestamp) {
+        let expired_ids: Vec<Uuid> = self
+            .reassembly_states
+            .iter()
+            .filter_map(
+                |(id, state)| {
+                    let elapsed_ms = current_time.as_millis()
+                        .saturating_sub(state.first_received.as_millis());
+                    if elapsed_ms > FRAGMENT_TIMEOUT_SECS * 1000 {
+                        Some(*id)
+                    } else {
+                        None
+                    }
+                },
+            )
+            .collect();
+
+        for id in expired_ids {
+            self.cancel_reassembly(&id);
         }
     }
 
@@ -394,7 +473,37 @@ impl MessageReassembler {
 
     /// Remove incomplete reassembly state
     pub fn cancel_reassembly(&mut self, message_id: &Uuid) -> bool {
-        self.reassembly_states.remove(message_id).is_some()
+        if let Some(state) = self.reassembly_states.remove(message_id) {
+            self.total_memory_used = self.total_memory_used.saturating_sub(state.memory_used);
+            true
+        } else {
+            false
+        }
+    }
+    
+    /// Evict the oldest reassembly operation to make space
+    fn evict_oldest_reassembly(&mut self) {
+        if let Some((oldest_id, _)) = self.reassembly_states
+            .iter()
+            .min_by_key(|(_, state)| state.first_received.as_millis()) {
+            let oldest_id = *oldest_id;
+            self.cancel_reassembly(&oldest_id);
+        }
+    }
+    
+    /// Evict the largest reassembly operation to free memory
+    fn evict_largest_reassembly(&mut self) {
+        if let Some((largest_id, _)) = self.reassembly_states
+            .iter()
+            .max_by_key(|(_, state)| state.memory_used) {
+            let largest_id = *largest_id;
+            self.cancel_reassembly(&largest_id);
+        }
+    }
+    
+    /// Get total memory usage across all reassemblies
+    pub fn total_memory_used(&self) -> usize {
+        self.total_memory_used
     }
 }
 
@@ -529,5 +638,87 @@ mod tests {
         // Should fail checksum verification
         let result = reassembler.process_fragment(corrupted_fragment);
         assert!(result.is_err());
+    }
+    
+    #[test]
+    fn test_dos_protection_max_reassemblies() {
+        let mut reassembler = MessageReassembler::new();
+        
+        // Create many incomplete reassemblies to test the limit
+        for _i in 0..MAX_CONCURRENT_REASSEMBLIES + 10 {
+            let message_id = Uuid::new_v4();
+            // Use larger data to ensure multiple fragments
+            let data = vec![0x42; 1000];
+            
+            let fragments = MessageFragmenter::fragment_message(
+                message_id, 
+                &data, 
+                400  // Smaller fragment size to ensure multiple fragments
+            ).unwrap();
+            
+            // Only send first fragment to keep reassembly incomplete  
+            if fragments.len() > 1 {
+                let result = reassembler.process_fragment(fragments[0].clone());
+                assert!(result.is_ok());
+                assert!(result.unwrap().is_none()); // Should not be complete
+            }
+        }
+        
+        // Should not exceed the maximum
+        assert!(reassembler.active_reassemblies() <= MAX_CONCURRENT_REASSEMBLIES);
+    }
+    
+    #[test]
+    fn test_dos_protection_memory_limit() {
+        let mut reassembler = MessageReassembler::new();
+        
+        // Create a large fragment that would exceed memory limits
+        let large_data = vec![0x42; MAX_FRAGMENT_MEMORY + 1000];
+        let message_id = Uuid::new_v4();
+        
+        let header = FragmentHeader::new(
+            message_id,
+            0,
+            1,
+            large_data.len() as u32,
+            0,
+        );
+        
+        let fragment = Fragment::new(header, large_data);
+        
+        // Should reject fragment that's too large
+        let result = reassembler.process_fragment(fragment);
+        assert!(result.is_err());
+    }
+    
+    #[test]
+    fn test_memory_accounting() {
+        let mut reassembler = MessageReassembler::new();
+        let message_id = Uuid::new_v4();
+        let data = vec![0x42; 1000];
+        
+        let fragments = MessageFragmenter::fragment_message(
+            message_id, 
+            &data, 
+            512
+        ).unwrap();
+        
+        // Process first fragment
+        assert_eq!(reassembler.total_memory_used(), 0);
+        let result = reassembler.process_fragment(fragments[0].clone()).unwrap();
+        assert!(result.is_none());
+        assert!(reassembler.total_memory_used() > 0);
+        
+        let _memory_after_first = reassembler.total_memory_used();
+        
+        // Process remaining fragments
+        for fragment in &fragments[1..] {
+            let result = reassembler.process_fragment(fragment.clone()).unwrap();
+            if result.is_some() {
+                // Message completed, memory should be freed
+                assert_eq!(reassembler.total_memory_used(), 0);
+                break;
+            }
+        }
     }
 }

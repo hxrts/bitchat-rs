@@ -1,6 +1,6 @@
 # Bitchat Rust
 
-A performant Rust implementation of the Bitchat protocol with WebAssembly support for browsers.
+A performant Rust implementation of the [Bitchat protocol](https://bitchat.free/) with WebAssembly support for browsers.
 
 ## Overview
 

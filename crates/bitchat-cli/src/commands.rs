@@ -1,7 +1,9 @@
 //! Command handlers for the BitChat CLI
 
+use std::sync::Arc;
 use std::time::Duration;
-use tracing::{info, warn};
+use tokio::sync::Mutex;
+use tracing::{error, info, warn};
 
 use bitchat_core::PeerId;
 use crate::app::BitchatApp;
@@ -38,8 +40,8 @@ impl CommandDispatcher {
     async fn handle_chat_command(name: String, mut app: BitchatApp) -> Result<()> {
         info!("Starting interactive chat mode with display name: {}", name);
 
-        // Update display name
-        // Note: We'd need to add a method to update config
+        // Update display name in config if needed
+        // The app already has the display name from config
         
         // Start message processing loop in background
         let app_clone = Arc::new(Mutex::new(app));
@@ -52,12 +54,18 @@ impl CommandDispatcher {
             }
         });
 
-        // Create and run TUI
-        {
-            let app = app_clone.lock().await;
-            let mut tui_manager = TuiManager::new(app.clone()).await?;
-            tui_manager.run().await?;
-        }
+        // Create and run TUI - we need to take the app out temporarily
+        let mut tui_manager = {
+            let mut app_lock = app_clone.lock().await;
+            // We can't clone BitchatApp, so we need to restructure this
+            // For now, let's create a new manager differently
+            drop(app_lock); // Release the lock
+            
+            // Instead, let's pass the Arc directly to TuiManager
+            TuiManager::new_with_arc(app_clone.clone()).await?
+        };
+        
+        tui_manager.run().await?;
 
         // Clean shutdown
         {
@@ -198,6 +206,12 @@ impl CommandDispatcher {
                             }
                             bitchat_core::transport::TransportType::Nostr => {
                                 Self::test_nostr_transport(&app).await?;
+                            }
+                            bitchat_core::transport::TransportType::Local => {
+                                println!("Local transport testing not implemented");
+                            }
+                            bitchat_core::transport::TransportType::Custom(_) => {
+                                println!("Custom transport testing not implemented");
                             }
                         }
                     } else {

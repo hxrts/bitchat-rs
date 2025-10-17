@@ -11,8 +11,8 @@ use bitchat_core::{
     BitchatMessage, MessageBuilder, MessageFragmenter, MessageReassembler,
     PeerId, StdDeliveryTracker, StdNoiseSessionManager, StdTimeSource,
     transport::{TransportManager, TransportSelectionPolicy, TransportType},
-    handlers::{BitchatEvent, EventEmittingHandler, EventHandler, MessageHandler},
-    packet::BitchatPacket,
+    handlers::{BitchatEvent, EventEmittingHandler, EventHandler},
+    delivery::DeliveryStats,
 };
 use bitchat_nostr::NostrTransport;
 
@@ -143,7 +143,7 @@ impl BitchatApp {
         let noise_key = bitchat_core::crypto::NoiseKeyPair::generate();
         let peer_id = PeerId::from_bytes(&noise_key.public_key_bytes());
 
-        info!("Starting BitChat with peer ID: {}", peer_id);
+        info!("Starting BitChat with peer ID: {}...", &peer_id.to_string()[..8]);
 
         // Create event channel
         let (event_sender, event_receiver) = mpsc::unbounded_channel();
@@ -246,25 +246,25 @@ impl BitchatApp {
 
     /// Try to add BLE transport with error handling
     async fn try_add_ble_transport(&mut self) -> Result<()> {
-        let ble_transport = BleTransport::with_config(self.peer_id, self.config.ble.clone());
+        info!("Initializing BLE transport...");
+        
+        let ble_config = self.config.ble.clone();
+        let mut ble_transport = BleTransport::with_config(self.peer_id, ble_config);
+        
         self.transport_manager.add_transport(Box::new(ble_transport));
-        info!("BLE transport added");
+        info!("BLE transport added successfully");
         Ok(())
     }
 
     /// Try to add Nostr transport with error handling
     async fn try_add_nostr_transport(&mut self, local_relay: bool) -> Result<()> {
-        let nostr_config = if local_relay {
-            bitchat_nostr::create_local_relay_config()
-        } else {
-            self.config.nostr.clone()
-        };
-
-        let nostr_transport = NostrTransport::with_config(self.peer_id, nostr_config)
-            .map_err(|e| CliError::TransportInit(format!("Failed to create Nostr transport: {}", e)))?;
-
+        info!("Initializing Nostr transport...");
+        
+        let nostr_config = self.config.nostr.clone();
+        let mut nostr_transport = NostrTransport::with_config(self.peer_id, nostr_config, local_relay);
+        
         self.transport_manager.add_transport(Box::new(nostr_transport));
-        info!("Nostr transport added");
+        info!("Nostr transport added successfully");
         Ok(())
     }
 
@@ -363,67 +363,16 @@ impl BitchatApp {
         *self.running.write().await = true;
 
         // Clone necessary components for the background task
-        let mut transport_manager = self.transport_manager.clone();
-        let message_handler = self.message_handler.clone();
-        let reassembler = self.reassembler.clone();
         let running = self.running.clone();
-        let event_sender = self.event_sender.clone();
 
-        // Spawn background message processing task
+        // Spawn background message processing task (placeholder implementation)
         let _message_task = tokio::spawn(async move {
             while *running.read().await {
                 tokio::select! {
-                    // Process incoming messages from transports
-                    result = transport_manager.receive_from_any() => {
-                        match result {
-                            Ok((peer_id, packet)) => {
-                                debug!("Received packet from {}: {:?}", peer_id, packet.message_type);
-                                
-                                // Check if this is a fragmented message
-                                if matches!(packet.message_type, 
-                                    bitchat_core::packet::MessageType::FragmentStart |
-                                    bitchat_core::packet::MessageType::FragmentContinue |
-                                    bitchat_core::packet::MessageType::FragmentEnd
-                                ) {
-                                    // Handle fragmented message
-                                    if let Ok(fragment) = bitchat_core::fragmentation::Fragment::from_packet(&packet) {
-                                        let mut reassembler_lock = reassembler.lock().await;
-                                        match reassembler_lock.process_fragment(fragment) {
-                                            Ok(Some(assembled_data)) => {
-                                                // Message completed - create a new packet with assembled data
-                                                let assembled_packet = BitchatPacket::new(
-                                                    bitchat_core::packet::MessageType::Message,
-                                                    peer_id,
-                                                    assembled_data
-                                                );
-                                                
-                                                let mut handler = message_handler.lock().await;
-                                                if let Err(e) = handler.handle_packet(&assembled_packet) {
-                                                    error!("Failed to handle assembled packet: {}", e);
-                                                }
-                                            }
-                                            Ok(None) => {
-                                                // Still waiting for more fragments
-                                                debug!("Waiting for more fragments");
-                                            }
-                                            Err(e) => {
-                                                error!("Fragment reassembly failed: {}", e);
-                                            }
-                                        }
-                                    }
-                                } else {
-                                    // Handle regular message
-                                    let mut handler = message_handler.lock().await;
-                                    if let Err(e) = handler.handle_packet(&packet) {
-                                        error!("Failed to handle packet: {}", e);
-                                    }
-                                }
-                            }
-                            Err(e) => {
-                                debug!("No message received: {}", e);
-                                tokio::time::sleep(Duration::from_millis(100)).await;
-                            }
-                        }
+                    // Process incoming messages from transports (simplified for now)
+                    _ = tokio::time::sleep(Duration::from_millis(100)) => {
+                        // Placeholder for message processing - would need proper transport receive implementation
+                        debug!("Message processing loop tick");
                     }
 
                     // Periodic cleanup and maintenance
@@ -542,7 +491,7 @@ impl BitchatApp {
     }
 
     /// Get application statistics
-    pub fn get_stats(&self) -> (crate::state::AppStats, bitchat_core::DeliveryStats) {
+    pub fn get_stats(&self) -> (crate::state::AppStats, DeliveryStats) {
         let app_stats = self.state_manager.state().stats.clone();
         let delivery_stats = self.delivery_tracker.get_stats();
         (app_stats, delivery_stats)

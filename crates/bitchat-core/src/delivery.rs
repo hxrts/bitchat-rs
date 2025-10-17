@@ -3,9 +3,14 @@
 //! This module provides reliable message delivery with automatic retries,
 //! exponential backoff, and delivery confirmation tracking.
 
-use alloc::{collections::BTreeMap, vec::Vec};
+use alloc::vec::Vec;
 use core::time::Duration;
 use uuid::Uuid;
+
+#[cfg(feature = "std")]
+use std::collections::HashMap;
+#[cfg(not(feature = "std"))]
+use hashbrown::HashMap;
 
 use crate::types::{PeerId, TimeSource, Timestamp};
 
@@ -218,7 +223,7 @@ pub struct DeliveryTracker<T: TimeSource> {
     /// Configuration for delivery behavior
     config: DeliveryConfig,
     /// Messages currently being tracked
-    tracked_messages: BTreeMap<Uuid, TrackedMessage>,
+    tracked_messages: HashMap<Uuid, TrackedMessage>,
     /// Time source for generating timestamps
     time_source: T,
 }
@@ -233,7 +238,7 @@ impl<T: TimeSource> DeliveryTracker<T> {
     pub fn with_config(config: DeliveryConfig, time_source: T) -> Self {
         Self {
             config,
-            tracked_messages: BTreeMap::new(),
+            tracked_messages: HashMap::new(),
             time_source,
         }
     }
@@ -254,7 +259,8 @@ impl<T: TimeSource> DeliveryTracker<T> {
         );
 
         self.tracked_messages.insert(message_id, tracked);
-        self.tracked_messages.get_mut(&message_id).unwrap()
+        self.tracked_messages.get_mut(&message_id)
+            .expect("Message must exist as it was just inserted")
     }
 
     /// Mark a message as sent
@@ -439,12 +445,12 @@ mod tests {
     use super::*;
     use crate::types::StdTimeSource;
 
-    #[cfg(feature = "std")]
+    #[cfg(any(feature = "std", target_arch = "wasm32"))]
     #[test]
     fn test_tracked_message_lifecycle() {
         let message_id = Uuid::new_v4();
         let recipient = PeerId::new([1, 2, 3, 4, 5, 6, 7, 8]);
-        let payload = b"test message".to_vec();
+        let payload = b"test_message".to_vec();
         let time_source = StdTimeSource;
 
         let mut tracked = TrackedMessage::new(message_id, recipient, payload, 3, &time_source);
@@ -464,14 +470,14 @@ mod tests {
         assert!(!tracked.can_retry());
     }
 
-    #[cfg(feature = "std")]
+    #[cfg(any(feature = "std", target_arch = "wasm32"))]
     #[test]
     fn test_delivery_tracker() {
         let time_source = StdTimeSource;
         let mut tracker = DeliveryTracker::new(time_source);
         let message_id = Uuid::new_v4();
         let recipient = PeerId::new([1, 2, 3, 4, 5, 6, 7, 8]);
-        let payload = b"test message".to_vec();
+        let payload = b"test_message".to_vec();
 
         // Track message
         tracker.track_message(message_id, recipient, payload);
@@ -490,13 +496,13 @@ mod tests {
         assert_eq!(tracked.status, DeliveryStatus::Confirmed);
     }
 
-    #[cfg(feature = "std")]
+    #[cfg(any(feature = "std", target_arch = "wasm32"))]
     #[test]
     fn test_exponential_backoff() {
         let config = DeliveryConfig::default();
         let message_id = Uuid::new_v4();
         let recipient = PeerId::new([1, 2, 3, 4, 5, 6, 7, 8]);
-        let payload = b"test message".to_vec();
+        let payload = b"test_message".to_vec();
         let time_source = StdTimeSource;
 
         let mut tracked = TrackedMessage::new(message_id, recipient, payload, 5, &time_source);
@@ -519,7 +525,7 @@ mod tests {
         assert_eq!(delay2, expected);
     }
 
-    #[cfg(feature = "std")]
+    #[cfg(any(feature = "std", target_arch = "wasm32"))]
     #[test]
     fn test_delivery_stats() {
         let time_source = StdTimeSource;
@@ -550,12 +556,12 @@ mod tests {
         assert_eq!(stats.success_rate(), 2.0 / 3.0); // 2 confirmed out of 3 completed
     }
 
-    #[cfg(feature = "std")]
+    #[cfg(any(feature = "std", target_arch = "wasm32"))]
     #[test]
     fn test_max_retry_limit() {
         let message_id = Uuid::new_v4();
         let recipient = PeerId::new([1, 2, 3, 4, 5, 6, 7, 8]);
-        let payload = b"test message".to_vec();
+        let payload = b"test_message".to_vec();
         let time_source = StdTimeSource;
 
         let mut tracked = TrackedMessage::new(message_id, recipient, payload, 2, &time_source);

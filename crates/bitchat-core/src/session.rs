@@ -3,8 +3,13 @@
 //! This module provides stateful session management for peer-to-peer communication,
 //! including Noise protocol handshakes, message encryption/decryption, and session lifecycle.
 
-use alloc::{collections::BTreeMap, vec::Vec};
+use alloc::vec::Vec;
 use core::time::Duration;
+
+#[cfg(feature = "std")]
+use std::collections::HashMap;
+#[cfg(not(feature = "std"))]
+use hashbrown::HashMap;
 
 use crate::crypto::{NoiseHandshake, NoiseKeyPair, NoiseTransport};
 use crate::types::{Fingerprint, PeerId, TimeSource, Timestamp};
@@ -153,7 +158,8 @@ impl NoiseSession {
             }
 
             // Convert to transport mode
-            let handshake = self.handshake.take().unwrap();
+            let handshake = self.handshake.take()
+                .ok_or_else(|| BitchatError::InvalidPacket("No handshake available for transport conversion".into()))?;
             self.transport = Some(handshake.into_transport_mode()?);
             self.state = SessionState::Established;
         }
@@ -202,7 +208,8 @@ impl NoiseSession {
             }
 
             // Convert to transport mode
-            let handshake = self.handshake.take().unwrap();
+            let handshake = self.handshake.take()
+                .ok_or_else(|| BitchatError::InvalidPacket("No handshake available for transport conversion".into()))?;
             self.transport = Some(handshake.into_transport_mode()?);
             self.state = SessionState::Established;
         }
@@ -305,7 +312,7 @@ pub struct NoiseSessionManager<T: TimeSource> {
     /// Local Noise key pair
     local_key: NoiseKeyPair,
     /// Active sessions by peer ID
-    sessions: BTreeMap<PeerId, NoiseSession>,
+    sessions: HashMap<PeerId, NoiseSession>,
     /// Session timeout configuration
     timeouts: SessionTimeouts,
     /// Time source for generating timestamps
@@ -317,7 +324,7 @@ impl<T: TimeSource> NoiseSessionManager<T> {
     pub fn new(local_key: NoiseKeyPair, time_source: T) -> Self {
         Self {
             local_key,
-            sessions: BTreeMap::new(),
+            sessions: HashMap::new(),
             timeouts: SessionTimeouts::default(),
             time_source,
         }
@@ -331,7 +338,7 @@ impl<T: TimeSource> NoiseSessionManager<T> {
     ) -> Self {
         Self {
             local_key,
-            sessions: BTreeMap::new(),
+            sessions: HashMap::new(),
             timeouts,
             time_source,
         }
@@ -344,14 +351,16 @@ impl<T: TimeSource> NoiseSessionManager<T> {
             self.sessions.insert(peer_id, session);
         }
 
-        Ok(self.sessions.get_mut(&peer_id).unwrap())
+        self.sessions.get_mut(&peer_id)
+            .ok_or_else(|| BitchatError::InvalidPacket("Session not found after creation".into()))
     }
 
     /// Create inbound session
     pub fn create_inbound(&mut self, peer_id: PeerId) -> Result<&mut NoiseSession> {
         let session = NoiseSession::new_inbound(peer_id, &self.local_key, &self.time_source)?;
         self.sessions.insert(peer_id, session);
-        Ok(self.sessions.get_mut(&peer_id).unwrap())
+        self.sessions.get_mut(&peer_id)
+            .ok_or_else(|| BitchatError::InvalidPacket("Session not found after creation".into()))
     }
 
     /// Get existing session

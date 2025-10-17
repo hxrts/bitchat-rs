@@ -88,14 +88,30 @@ impl Timestamp {
         Self(millis)
     }
 
-    /// Get current timestamp (requires std feature)
-    #[cfg(feature = "std")]
+    /// Get current timestamp (requires std feature or WASM target)
+    #[cfg(all(feature = "std", not(target_arch = "wasm32")))]
     pub fn now() -> Self {
         use std::time::{SystemTime, UNIX_EPOCH};
         let duration = SystemTime::now()
             .duration_since(UNIX_EPOCH)
             .unwrap_or_default();
         Self(duration.as_millis() as u64)
+    }
+
+    /// Get current timestamp for WASM targets
+    #[cfg(target_arch = "wasm32")]
+    pub fn now() -> Self {
+        use instant::Instant;
+        
+        // For WASM, we use instant::Instant which is epoch-based
+        // The instant crate provides WASM-compatible timing
+        let now = Instant::now();
+        let millis = now.elapsed().as_millis() as u64;
+        
+        // Add a base timestamp to simulate Unix epoch (approximation for WASM)
+        // This is a compromise since WASM doesn't have direct access to system time
+        const WASM_BASE_TIMESTAMP: u64 = 1_640_995_200_000; // Jan 1, 2022 as base
+        Self(WASM_BASE_TIMESTAMP + millis)
     }
 
     /// Get the raw milliseconds
@@ -160,11 +176,11 @@ pub trait TimeSource {
 }
 
 /// Standard library implementation of TimeSource
-#[cfg(feature = "std")]
+#[cfg(any(feature = "std", target_arch = "wasm32"))]
 #[derive(Debug, Clone, Copy, Default)]
 pub struct StdTimeSource;
 
-#[cfg(feature = "std")]
+#[cfg(any(feature = "std", target_arch = "wasm32"))]
 impl TimeSource for StdTimeSource {
     fn now(&self) -> Timestamp {
         Timestamp::now()
@@ -175,19 +191,8 @@ impl TimeSource for StdTimeSource {
 // Hex Encoding Helper
 // ----------------------------------------------------------------------------
 
-/// Simple hex encoding for display (no_std compatible)
-mod hex {
-    use alloc::string::String;
-    use alloc::vec::Vec;
-
-    pub fn encode(bytes: &[u8]) -> String {
-        bytes
-            .iter()
-            .map(|b| alloc::format!("{:02x}", b))
-            .collect::<Vec<_>>()
-            .join("")
-    }
-}
+// Use the optimized hex crate instead of custom implementation
+use hex;
 
 // ----------------------------------------------------------------------------
 // Tests

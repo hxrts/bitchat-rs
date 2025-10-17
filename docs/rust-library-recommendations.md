@@ -285,21 +285,21 @@ If targeting browser environments via WebAssembly, several library choices requi
 - **Workaround**: Use `tokio_with_wasm` crate for browser compatibility
 - **Features**: Only single-threaded runtime with limited time/networking features
 
-#### ✅ WASM-Compatible Libraries
+#### WASM-Compatible Libraries
 
 **`snow` - Excellent WASM Support**
-- **Compatibility**: ✅ Works with `no_std` + `alloc`
+- **Compatibility**: Works with `no_std` + `alloc`
 - **Configuration**: Use `default-features = false` with custom resolver
 - **Crypto Backend**: Must use pure Rust crypto providers (not `ring`)
 
 **Dalek Cryptography Suite - Full WASM Support**
-- **`curve25519-dalek`**: ✅ Pure Rust, `#[no_std]` compatible
-- **`ed25519-dalek`**: ✅ Works in WebAssembly, tested implementations exist
-- **`x25519-dalek`**: ✅ Pure Rust implementation
-- **`chacha20poly1305`**: ✅ Pure Rust with optional hardware acceleration
+- **`curve25519-dalek`**: Pure Rust, `#[no_std]` compatible
+- **`ed25519-dalek`**: Works in WebAssembly, tested implementations exist
+- **`x25519-dalek`**: Pure Rust implementation
+- **`chacha20poly1305`**: Pure Rust with optional hardware acceleration
 
 **`nostr-sdk` - WASM Ready**
-- **Compatibility**: ✅ Supports WASM compilation
+- **Compatibility**: Supports WASM compilation
 - **Example**: Available at nostr-sdk-wasm-example
 - **Limitation**: `nip03` feature not supported in WASM
 - **Performance**: 6.86x faster than pure JS for verification operations

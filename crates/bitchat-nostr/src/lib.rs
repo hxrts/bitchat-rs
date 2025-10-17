@@ -9,7 +9,10 @@ use std::sync::atomic::{AtomicBool, Ordering};
 use std::time::Duration;
 
 use ::url::Url;
+use async_trait::async_trait;
 use base64;
+use smallvec::SmallVec;
+
 use bitchat_core::transport::{
     LatencyClass, ReliabilityClass, Transport, TransportCapabilities, TransportType,
 };
@@ -325,7 +328,7 @@ impl NostrTransport {
                         }
                     }
                     RelayPoolNotification::Message { message, .. } => {
-                        debug!("Relay message: {:?}", message);
+                        debug!("Relay message type: {:?}", message.kind());
                     }
                     RelayPoolNotification::Shutdown => {
                         info!("Nostr relay pool shutdown");
@@ -389,7 +392,7 @@ impl NostrTransport {
             .await
             .map_err(|e| BitchatError::InvalidPacket(format!("Failed to send event: {}", e)))?;
 
-        debug!("Sent BitChat packet to peer {} via Nostr", peer_id);
+        debug!("Sent BitChat packet to peer {}... via Nostr", &peer_id.to_string()[..8]);
         Ok(())
     }
 
@@ -468,80 +471,58 @@ impl NostrTransport {
     }
 }
 
+#[async_trait]
 impl Transport for NostrTransport {
-    fn send_to(
-        &mut self,
-        peer_id: PeerId,
-        packet: BitchatPacket,
-    ) -> std::pin::Pin<Box<dyn std::future::Future<Output = BitchatResult<()>> + Send + '_>> {
-        Box::pin(async move { self.send_to_peer(&peer_id, &packet).await })
+    async fn send_to(&mut self, peer_id: PeerId, packet: BitchatPacket) -> BitchatResult<()> {
+        self.send_to_peer(&peer_id, &packet).await
     }
 
-    fn broadcast(
-        &mut self,
-        packet: BitchatPacket,
-    ) -> std::pin::Pin<Box<dyn std::future::Future<Output = BitchatResult<()>> + Send + '_>> {
-        Box::pin(async move { self.broadcast_packet(&packet).await })
+    async fn broadcast(&mut self, packet: BitchatPacket) -> BitchatResult<()> {
+        self.broadcast_packet(&packet).await
     }
 
-    fn receive(
-        &mut self,
-    ) -> std::pin::Pin<
-        Box<dyn std::future::Future<Output = BitchatResult<(PeerId, BitchatPacket)>> + Send + '_>,
-    > {
-        let packet_rx = Arc::clone(&self.packet_rx);
-
-        Box::pin(async move {
-            let mut rx = packet_rx.lock().await;
-            rx.recv()
-                .await
-                .ok_or_else(|| BitchatError::InvalidPacket("Receive channel closed".into()))
-        })
+    async fn receive(&mut self) -> BitchatResult<(PeerId, BitchatPacket)> {
+        let mut rx = self.packet_rx.lock().await;
+        rx.recv()
+            .await
+            .ok_or_else(|| BitchatError::InvalidPacket("Receive channel closed".into()))
     }
 
-    fn discovered_peers(&self) -> Vec<PeerId> {
+    fn discovered_peers(&self) -> SmallVec<[PeerId; 8]> {
         // Use the cached peer list for non-blocking access
         if let Ok(cached_peers) = self.peer_cache.try_read() {
-            cached_peers.clone()
+            SmallVec::from_vec(cached_peers.clone())
         } else {
             // Fallback to empty list if lock is contended
-            Vec::new()
+            SmallVec::new()
         }
     }
 
-    fn start(
-        &mut self,
-    ) -> std::pin::Pin<Box<dyn std::future::Future<Output = BitchatResult<()>> + Send + '_>> {
-        Box::pin(async move {
-            self.active.store(true, std::sync::atomic::Ordering::Relaxed);
+    async fn start(&mut self) -> BitchatResult<()> {
+        self.active.store(true, std::sync::atomic::Ordering::Relaxed);
 
-            // Initialize Nostr client
-            self.initialize_client().await?;
+        // Initialize Nostr client
+        self.initialize_client().await?;
 
-            // Start listening for messages
-            self.start_listening().await?;
+        // Start listening for messages
+        self.start_listening().await?;
 
-            info!("Nostr transport started");
-            Ok(())
-        })
+        info!("Nostr transport started");
+        Ok(())
     }
 
-    fn stop(
-        &mut self,
-    ) -> std::pin::Pin<Box<dyn std::future::Future<Output = BitchatResult<()>> + Send + '_>> {
-        Box::pin(async move {
-            self.active.store(false, std::sync::atomic::Ordering::Relaxed);
+    async fn stop(&mut self) -> BitchatResult<()> {
+        self.active.store(false, std::sync::atomic::Ordering::Relaxed);
 
-            // Disconnect from relays
-            if let Some(client) = &self.client {
-                client.disconnect().await.map_err(|e| {
-                    BitchatError::InvalidPacket(format!("Failed to disconnect: {}", e))
-                })?;
-            }
+        // Disconnect from relays
+        if let Some(client) = &self.client {
+            client.disconnect().await.map_err(|e| {
+                BitchatError::InvalidPacket(format!("Failed to disconnect: {}", e))
+            })?;
+        }
 
-            info!("Nostr transport stopped");
-            Ok(())
-        })
+        info!("Nostr transport stopped");
+        Ok(())
     }
 
     fn is_active(&self) -> bool {

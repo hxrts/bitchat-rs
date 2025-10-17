@@ -176,7 +176,8 @@ pub struct NoiseHandshake {
 impl NoiseHandshake {
     /// Create initiator handshake
     pub fn initiator(local_key: &NoiseKeyPair) -> Result<Self> {
-        let builder = Builder::new(NOISE_PATTERN.parse().unwrap());
+        let builder = Builder::new(NOISE_PATTERN.parse()
+            .map_err(|e| BitchatError::Noise(e))?);
         let state = builder
             .local_private_key(&local_key.private_key_bytes())
             .build_initiator()
@@ -187,7 +188,8 @@ impl NoiseHandshake {
 
     /// Create responder handshake
     pub fn responder(local_key: &NoiseKeyPair) -> Result<Self> {
-        let builder = Builder::new(NOISE_PATTERN.parse().unwrap());
+        let builder = Builder::new(NOISE_PATTERN.parse()
+            .map_err(|e| BitchatError::Noise(e))?);
         let state = builder
             .local_private_key(&local_key.private_key_bytes())
             .build_responder()

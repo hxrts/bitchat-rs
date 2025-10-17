@@ -60,7 +60,7 @@
 
           shellHook = ''
             echo "BitChat Development Environment"
-            echo "=================================="
+            echo "==============================="
             echo ""
             echo "Available tools:"
             echo "  • rust $(rustc --version | cut -d' ' -f2)"

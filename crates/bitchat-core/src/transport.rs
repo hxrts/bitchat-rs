@@ -5,7 +5,8 @@
 //! between protocol logic and transport implementation.
 
 use alloc::{boxed::Box, string::String, vec::Vec};
-use core::{future::Future, pin::Pin};
+use smallvec::SmallVec;
+use async_trait::async_trait;
 
 use crate::packet::BitchatPacket;
 use crate::types::PeerId;
@@ -16,33 +17,25 @@ use crate::{BitchatError, Result};
 // ----------------------------------------------------------------------------
 
 /// Unified transport interface for BitChat communication
+#[async_trait]
 pub trait Transport: Send + Sync {
     /// Send a packet to a specific peer
-    fn send_to(
-        &mut self,
-        peer_id: PeerId,
-        packet: BitchatPacket,
-    ) -> Pin<Box<dyn Future<Output = Result<()>> + Send + '_>>;
+    async fn send_to(&mut self, peer_id: PeerId, packet: BitchatPacket) -> Result<()>;
 
     /// Broadcast a packet to all reachable peers
-    fn broadcast(
-        &mut self,
-        packet: BitchatPacket,
-    ) -> Pin<Box<dyn Future<Output = Result<()>> + Send + '_>>;
+    async fn broadcast(&mut self, packet: BitchatPacket) -> Result<()>;
 
     /// Receive the next packet from any peer
-    fn receive(
-        &mut self,
-    ) -> Pin<Box<dyn Future<Output = Result<(PeerId, BitchatPacket)>> + Send + '_>>;
+    async fn receive(&mut self) -> Result<(PeerId, BitchatPacket)>;
 
-    /// Get list of currently discoverable peers
-    fn discovered_peers(&self) -> Vec<PeerId>;
+    /// Get list of currently discoverable peers (optimized for small collections)
+    fn discovered_peers(&self) -> SmallVec<[PeerId; 8]>;
 
     /// Start the transport (begin scanning, advertising, etc.)
-    fn start(&mut self) -> Pin<Box<dyn Future<Output = Result<()>> + Send + '_>>;
+    async fn start(&mut self) -> Result<()>;
 
     /// Stop the transport and clean up resources
-    fn stop(&mut self) -> Pin<Box<dyn Future<Output = Result<()>> + Send + '_>>;
+    async fn stop(&mut self) -> Result<()>;
 
     /// Check if transport is currently active
     fn is_active(&self) -> bool;
@@ -75,7 +68,7 @@ pub struct TransportCapabilities {
 }
 
 /// Transport type identifier
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
 pub enum TransportType {
     /// Bluetooth Low Energy
     Ble,
@@ -257,8 +250,8 @@ impl TransportManager {
     }
 
     /// Get all discovered peers across all transports
-    pub fn all_discovered_peers(&self) -> Vec<(PeerId, TransportType)> {
-        let mut peers = Vec::new();
+    pub fn all_discovered_peers(&self) -> SmallVec<[(PeerId, TransportType); 16]> {
+        let mut peers = SmallVec::new();
 
         for transport in &self.transports {
             let transport_type = transport.capabilities().transport_type;
@@ -361,7 +354,7 @@ pub struct MockTransport {
     /// Whether the transport is active
     active: bool,
     /// Discovered peers
-    peers: Vec<PeerId>,
+    peers: SmallVec<[PeerId; 8]>,
     /// Sent packets (for verification)
     sent_packets: Vec<(Option<PeerId>, BitchatPacket)>,
     /// Packets to be received
@@ -376,7 +369,7 @@ impl MockTransport {
     pub fn new(transport_type: TransportType) -> Self {
         Self {
             active: false,
-            peers: Vec::new(),
+            peers: SmallVec::new(),
             sent_packets: Vec::new(),
             receive_queue: Vec::new(),
             capabilities: TransportCapabilities {
@@ -410,46 +403,38 @@ impl MockTransport {
 }
 
 #[cfg(test)]
+#[async_trait]
 impl Transport for MockTransport {
-    fn send_to(
-        &mut self,
-        peer_id: PeerId,
-        packet: BitchatPacket,
-    ) -> Pin<Box<dyn Future<Output = Result<()>> + Send + '_>> {
+    async fn send_to(&mut self, peer_id: PeerId, packet: BitchatPacket) -> Result<()> {
         self.sent_packets.push((Some(peer_id), packet));
-        Box::pin(async { Ok(()) })
+        Ok(())
     }
 
-    fn broadcast(
-        &mut self,
-        packet: BitchatPacket,
-    ) -> Pin<Box<dyn Future<Output = Result<()>> + Send + '_>> {
+    async fn broadcast(&mut self, packet: BitchatPacket) -> Result<()> {
         self.sent_packets.push((None, packet));
-        Box::pin(async { Ok(()) })
+        Ok(())
     }
 
-    fn receive(
-        &mut self,
-    ) -> Pin<Box<dyn Future<Output = Result<(PeerId, BitchatPacket)>> + Send + '_>> {
+    async fn receive(&mut self) -> Result<(PeerId, BitchatPacket)> {
         if let Some((peer_id, packet)) = self.receive_queue.pop() {
-            Box::pin(async move { Ok((peer_id, packet)) })
+            Ok((peer_id, packet))
         } else {
-            Box::pin(async { Err(BitchatError::InvalidPacket("No packets to receive".into())) })
+            Err(BitchatError::InvalidPacket("No packets to receive".into()))
         }
     }
 
-    fn discovered_peers(&self) -> Vec<PeerId> {
+    fn discovered_peers(&self) -> SmallVec<[PeerId; 8]> {
         self.peers.clone()
     }
 
-    fn start(&mut self) -> Pin<Box<dyn Future<Output = Result<()>> + Send + '_>> {
+    async fn start(&mut self) -> Result<()> {
         self.active = true;
-        Box::pin(async { Ok(()) })
+        Ok(())
     }
 
-    fn stop(&mut self) -> Pin<Box<dyn Future<Output = Result<()>> + Send + '_>> {
+    async fn stop(&mut self) -> Result<()> {
         self.active = false;
-        Box::pin(async { Ok(()) })
+        Ok(())
     }
 
     fn is_active(&self) -> bool {
@@ -482,7 +467,8 @@ mod tests {
         assert!(transport.is_active());
 
         transport.add_peer(peer_id);
-        assert_eq!(transport.discovered_peers(), vec![peer_id]);
+        let expected: SmallVec<[PeerId; 8]> = smallvec::smallvec![peer_id];
+        assert_eq!(transport.discovered_peers(), expected);
 
         transport.send_to(peer_id, packet.clone()).await.unwrap();
         assert_eq!(transport.sent_packets().len(), 1);

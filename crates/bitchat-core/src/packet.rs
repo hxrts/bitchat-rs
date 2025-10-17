@@ -246,7 +246,7 @@ impl BitchatMessage {
             timestamp: Timestamp::now(),
             #[cfg(not(feature = "std"))]
             timestamp: Timestamp::new(0),
-            id: Uuid::new_v4(),
+            id: Uuid::new_v4(), // Uses CSPRNG via getrandom
             sender,
             content,
             original_sender: None,
