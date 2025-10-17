@@ -7,7 +7,7 @@ use alloc::{collections::BTreeMap, vec::Vec};
 use core::time::Duration;
 use uuid::Uuid;
 
-use crate::types::{PeerId, Timestamp};
+use crate::types::{PeerId, Timestamp, TimeSource};
 
 // ----------------------------------------------------------------------------
 // Delivery Status
@@ -76,13 +76,10 @@ pub struct DeliveryAttempt {
 
 impl DeliveryAttempt {
     /// Create a new delivery attempt
-    pub fn new(attempt_number: u32, next_retry_delay: Duration) -> Self {
+    pub fn new<T: TimeSource>(attempt_number: u32, next_retry_delay: Duration, time_source: &T) -> Self {
         Self {
             attempt_number,
-            #[cfg(feature = "std")]
-            timestamp: Timestamp::now(),
-            #[cfg(not(feature = "std"))]
-            timestamp: Timestamp::new(0),
+            timestamp: time_source.now(),
             next_retry_delay,
         }
     }
@@ -115,11 +112,12 @@ pub struct TrackedMessage {
 
 impl TrackedMessage {
     /// Create a new tracked message
-    pub fn new(
+    pub fn new<T: TimeSource>(
         message_id: Uuid,
         recipient: PeerId,
         payload: Vec<u8>,
         max_retries: u32,
+        time_source: &T,
     ) -> Self {
         Self {
             message_id,
@@ -127,10 +125,7 @@ impl TrackedMessage {
             status: DeliveryStatus::Pending,
             payload,
             attempts: Vec::new(),
-            #[cfg(feature = "std")]
-            created_at: Timestamp::now(),
-            #[cfg(not(feature = "std"))]
-            created_at: Timestamp::new(0),
+            created_at: time_source.now(),
             confirmed_at: None,
             max_retries,
         }
@@ -148,19 +143,16 @@ impl TrackedMessage {
     }
     
     /// Mark message as sent
-    pub fn mark_sent(&mut self, next_retry_delay: Duration) {
-        let attempt = DeliveryAttempt::new(self.attempt_count() + 1, next_retry_delay);
+    pub fn mark_sent<T: TimeSource>(&mut self, next_retry_delay: Duration, time_source: &T) {
+        let attempt = DeliveryAttempt::new(self.attempt_count() + 1, next_retry_delay, time_source);
         self.attempts.push(attempt);
         self.status = DeliveryStatus::Sent;
     }
     
     /// Mark message as confirmed
-    pub fn mark_confirmed(&mut self) {
+    pub fn mark_confirmed<T: TimeSource>(&mut self, time_source: &T) {
         self.status = DeliveryStatus::Confirmed;
-        #[cfg(feature = "std")]
-        {
-            self.confirmed_at = Some(Timestamp::now());
-        }
+        self.confirmed_at = Some(time_source.now());
     }
     
     /// Mark message as failed
@@ -189,9 +181,8 @@ impl TrackedMessage {
     }
     
     /// Check if this message has timed out
-    #[cfg(feature = "std")]
-    pub fn is_timed_out(&self, config: &DeliveryConfig) -> bool {
-        let now = Timestamp::now();
+    pub fn is_timed_out<T: TimeSource>(&self, config: &DeliveryConfig, time_source: &T) -> bool {
+        let now = time_source.now();
         let elapsed = Duration::from_millis(
             now.as_millis().saturating_sub(self.created_at.as_millis())
         );
@@ -199,14 +190,13 @@ impl TrackedMessage {
     }
     
     /// Check if this message is ready for retry
-    #[cfg(feature = "std")]
-    pub fn is_ready_for_retry(&self) -> bool {
+    pub fn is_ready_for_retry<T: TimeSource>(&self, time_source: &T) -> bool {
         if !self.can_retry() || self.attempts.is_empty() {
             return false;
         }
         
         let last_attempt = &self.attempts[self.attempts.len() - 1];
-        let now = Timestamp::now();
+        let now = time_source.now();
         let elapsed = Duration::from_millis(
             now.as_millis().saturating_sub(last_attempt.timestamp.as_millis())
         );
@@ -220,24 +210,27 @@ impl TrackedMessage {
 // ----------------------------------------------------------------------------
 
 /// Tracks message delivery and handles retries
-pub struct DeliveryTracker {
+pub struct DeliveryTracker<T: TimeSource> {
     /// Configuration for delivery behavior
     config: DeliveryConfig,
     /// Messages currently being tracked
     tracked_messages: BTreeMap<Uuid, TrackedMessage>,
+    /// Time source for generating timestamps
+    time_source: T,
 }
 
-impl DeliveryTracker {
+impl<T: TimeSource> DeliveryTracker<T> {
     /// Create a new delivery tracker with default configuration
-    pub fn new() -> Self {
-        Self::with_config(DeliveryConfig::default())
+    pub fn new(time_source: T) -> Self {
+        Self::with_config(DeliveryConfig::default(), time_source)
     }
     
     /// Create a new delivery tracker with custom configuration
-    pub fn with_config(config: DeliveryConfig) -> Self {
+    pub fn with_config(config: DeliveryConfig, time_source: T) -> Self {
         Self {
             config,
             tracked_messages: BTreeMap::new(),
+            time_source,
         }
     }
     
@@ -253,6 +246,7 @@ impl DeliveryTracker {
             recipient,
             payload,
             self.config.max_retries,
+            &self.time_source,
         );
         
         self.tracked_messages.insert(message_id, tracked);
@@ -263,7 +257,7 @@ impl DeliveryTracker {
     pub fn mark_sent(&mut self, message_id: &Uuid) -> bool {
         if let Some(tracked) = self.tracked_messages.get_mut(message_id) {
             let next_delay = tracked.next_retry_delay(&self.config);
-            tracked.mark_sent(next_delay);
+            tracked.mark_sent(next_delay, &self.time_source);
             true
         } else {
             false
@@ -273,7 +267,7 @@ impl DeliveryTracker {
     /// Confirm delivery of a message
     pub fn confirm_delivery(&mut self, message_id: &Uuid) -> bool {
         if let Some(tracked) = self.tracked_messages.get_mut(message_id) {
-            tracked.mark_confirmed();
+            tracked.mark_confirmed(&self.time_source);
             true
         } else {
             false
@@ -311,25 +305,22 @@ impl DeliveryTracker {
     }
     
     /// Get all messages ready for retry
-    #[cfg(feature = "std")]
     pub fn get_ready_for_retry(&self) -> Vec<&TrackedMessage> {
         self.tracked_messages
             .values()
-            .filter(|tracked| tracked.is_ready_for_retry())
+            .filter(|tracked| tracked.is_ready_for_retry(&self.time_source))
             .collect()
     }
     
     /// Get all timed out messages
-    #[cfg(feature = "std")]
     pub fn get_timed_out(&self) -> Vec<&TrackedMessage> {
         self.tracked_messages
             .values()
-            .filter(|tracked| tracked.is_timed_out(&self.config))
+            .filter(|tracked| tracked.is_timed_out(&self.config, &self.time_source))
             .collect()
     }
     
     /// Clean up completed and expired messages
-    #[cfg(feature = "std")]
     pub fn cleanup(&mut self) -> (Vec<TrackedMessage>, Vec<TrackedMessage>) {
         let mut completed = Vec::new();
         let mut expired = Vec::new();
@@ -341,7 +332,7 @@ impl DeliveryTracker {
                     completed.push(tracked.clone());
                     to_remove.push(*id);
                 }
-                _ if tracked.is_timed_out(&self.config) => {
+                _ if tracked.is_timed_out(&self.config, &self.time_source) => {
                     expired.push(tracked.clone());
                     to_remove.push(*id);
                 }
@@ -388,11 +379,8 @@ impl DeliveryTracker {
     }
 }
 
-impl Default for DeliveryTracker {
-    fn default() -> Self {
-        Self::new()
-    }
-}
+// Note: No Default implementation since we need a TimeSource parameter
+// Users should use DeliveryTracker::new(time_source) instead
 
 // ----------------------------------------------------------------------------
 // Delivery Statistics
@@ -445,33 +433,38 @@ impl DeliveryStats {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::types::StdTimeSource;
 
+    #[cfg(feature = "std")]
     #[test]
     fn test_tracked_message_lifecycle() {
         let message_id = Uuid::new_v4();
         let recipient = PeerId::new([1, 2, 3, 4, 5, 6, 7, 8]);
         let payload = b"test message".to_vec();
+        let time_source = StdTimeSource;
         
-        let mut tracked = TrackedMessage::new(message_id, recipient, payload, 3);
+        let mut tracked = TrackedMessage::new(message_id, recipient, payload, 3, &time_source);
         
         assert_eq!(tracked.status, DeliveryStatus::Pending);
         assert_eq!(tracked.attempt_count(), 0);
         assert!(tracked.can_retry());
         
         // Mark as sent
-        tracked.mark_sent(Duration::from_secs(1));
+        tracked.mark_sent(Duration::from_secs(1), &time_source);
         assert_eq!(tracked.status, DeliveryStatus::Sent);
         assert_eq!(tracked.attempt_count(), 1);
         
         // Mark as confirmed
-        tracked.mark_confirmed();
+        tracked.mark_confirmed(&time_source);
         assert_eq!(tracked.status, DeliveryStatus::Confirmed);
         assert!(!tracked.can_retry());
     }
     
+    #[cfg(feature = "std")]
     #[test]
     fn test_delivery_tracker() {
-        let mut tracker = DeliveryTracker::new();
+        let time_source = StdTimeSource;
+        let mut tracker = DeliveryTracker::new(time_source);
         let message_id = Uuid::new_v4();
         let recipient = PeerId::new([1, 2, 3, 4, 5, 6, 7, 8]);
         let payload = b"test message".to_vec();
@@ -493,21 +486,23 @@ mod tests {
         assert_eq!(tracked.status, DeliveryStatus::Confirmed);
     }
     
+    #[cfg(feature = "std")]
     #[test]
     fn test_exponential_backoff() {
         let config = DeliveryConfig::default();
         let message_id = Uuid::new_v4();
         let recipient = PeerId::new([1, 2, 3, 4, 5, 6, 7, 8]);
         let payload = b"test message".to_vec();
+        let time_source = StdTimeSource;
         
-        let mut tracked = TrackedMessage::new(message_id, recipient, payload, 5);
+        let mut tracked = TrackedMessage::new(message_id, recipient, payload, 5, &time_source);
         
         // First retry should use initial delay
         let delay1 = tracked.next_retry_delay(&config);
         assert_eq!(delay1, config.initial_retry_delay);
         
         // Simulate failed attempt
-        tracked.mark_sent(delay1);
+        tracked.mark_sent(delay1, &time_source);
         
         // Second retry should be longer
         let delay2 = tracked.next_retry_delay(&config);
@@ -520,9 +515,11 @@ mod tests {
         assert_eq!(delay2, expected);
     }
     
+    #[cfg(feature = "std")]
     #[test]
     fn test_delivery_stats() {
-        let mut tracker = DeliveryTracker::new();
+        let time_source = StdTimeSource;
+        let mut tracker = DeliveryTracker::new(time_source);
         
         // Add some test messages
         for i in 0..5 {
@@ -549,23 +546,25 @@ mod tests {
         assert_eq!(stats.success_rate(), 2.0 / 3.0); // 2 confirmed out of 3 completed
     }
     
+    #[cfg(feature = "std")]
     #[test]
     fn test_max_retry_limit() {
         let message_id = Uuid::new_v4();
         let recipient = PeerId::new([1, 2, 3, 4, 5, 6, 7, 8]);
         let payload = b"test message".to_vec();
+        let time_source = StdTimeSource;
         
-        let mut tracked = TrackedMessage::new(message_id, recipient, payload, 2);
+        let mut tracked = TrackedMessage::new(message_id, recipient, payload, 2, &time_source);
         
         // Should allow retries initially
         assert!(tracked.can_retry());
         
         // First attempt
-        tracked.mark_sent(Duration::from_secs(1));
+        tracked.mark_sent(Duration::from_secs(1), &time_source);
         assert!(tracked.can_retry());
         
         // Second attempt (reaches max)
-        tracked.mark_sent(Duration::from_secs(1));
+        tracked.mark_sent(Duration::from_secs(1), &time_source);
         assert!(!tracked.can_retry());
     }
 }

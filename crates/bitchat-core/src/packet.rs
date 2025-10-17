@@ -120,7 +120,10 @@ pub struct BitchatPacket {
     /// Packet payload
     pub payload: Vec<u8>,
     /// Optional Ed25519 signature
-    #[serde(with = "signature_serde")]
+    #[serde(
+        serialize_with = "serialize_signature", 
+        deserialize_with = "deserialize_signature"
+    )]
     pub signature: Option<[u8; 64]>,
 }
 
@@ -316,37 +319,36 @@ impl ReadReceipt {
 // Serde Helpers
 // ----------------------------------------------------------------------------
 
-/// Custom serde module for 64-byte signatures
-mod signature_serde {
-    use serde::{Deserialize, Deserializer, Serialize, Serializer};
+use serde::{Deserializer, Serializer};
 
-    pub fn serialize<S>(signature: &Option<[u8; 64]>, serializer: S) -> Result<S::Ok, S::Error>
-    where
-        S: Serializer,
-    {
-        match signature {
-            Some(sig) => sig.as_slice().serialize(serializer),
-            None => serializer.serialize_none(),
-        }
+/// Serialize optional 64-byte signature
+fn serialize_signature<S>(signature: &Option<[u8; 64]>, serializer: S) -> Result<S::Ok, S::Error>
+where
+    S: Serializer,
+{
+    match signature {
+        Some(sig) => sig.as_slice().serialize(serializer),
+        None => serializer.serialize_none(),
     }
+}
 
-    pub fn deserialize<'de, D>(deserializer: D) -> Result<Option<[u8; 64]>, D::Error>
-    where
-        D: Deserializer<'de>,
-    {
-        let opt: Option<Vec<u8>> = Option::deserialize(deserializer)?;
-        match opt {
-            Some(vec) => {
-                if vec.len() == 64 {
-                    let mut array = [0u8; 64];
-                    array.copy_from_slice(&vec);
-                    Ok(Some(array))
-                } else {
-                    Err(serde::de::Error::custom("signature must be 64 bytes"))
-                }
+/// Deserialize optional 64-byte signature
+fn deserialize_signature<'de, D>(deserializer: D) -> Result<Option<[u8; 64]>, D::Error>
+where
+    D: Deserializer<'de>,
+{
+    let opt: Option<Vec<u8>> = Option::deserialize(deserializer)?;
+    match opt {
+        Some(vec) => {
+            if vec.len() == 64 {
+                let mut array = [0u8; 64];
+                array.copy_from_slice(&vec);
+                Ok(Some(array))
+            } else {
+                Err(serde::de::Error::custom("signature must be 64 bytes"))
             }
-            None => Ok(None),
         }
+        None => Ok(None),
     }
 }
 

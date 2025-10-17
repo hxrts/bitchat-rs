@@ -14,40 +14,43 @@ use crate::Result;
 // Message Handler Trait
 // ----------------------------------------------------------------------------
 
-/// Trait for handling different types of BitChat messages
+/// Trait for handling BitChat packets
 pub trait MessageHandler {
-    /// Handle a regular chat message
-    fn handle_message(&mut self, packet: &BitchatPacket, message: &BitchatMessage) -> Result<()>;
+    /// Handle any BitChat packet
+    fn handle_packet(&mut self, packet: &BitchatPacket) -> Result<()>;
+}
+
+// ----------------------------------------------------------------------------
+// Packet Parser Helper
+// ----------------------------------------------------------------------------
+
+/// Helper for parsing packet payloads
+pub struct PacketParser;
+
+impl PacketParser {
+    /// Parse a message packet payload
+    pub fn parse_message(packet: &BitchatPacket) -> Result<BitchatMessage> {
+        if packet.message_type != MessageType::Message {
+            return Err(crate::BitchatError::InvalidPacket("Not a message packet".into()));
+        }
+        Ok(bincode::deserialize(&packet.payload)?)
+    }
     
-    /// Handle a delivery acknowledgment
-    fn handle_delivery_ack(&mut self, packet: &BitchatPacket, ack: &DeliveryAck) -> Result<()>;
+    /// Parse a delivery ack packet payload
+    pub fn parse_delivery_ack(packet: &BitchatPacket) -> Result<DeliveryAck> {
+        if packet.message_type != MessageType::DeliveryAck {
+            return Err(crate::BitchatError::InvalidPacket("Not a delivery ack packet".into()));
+        }
+        Ok(bincode::deserialize(&packet.payload)?)
+    }
     
-    /// Handle a read receipt
-    fn handle_read_receipt(&mut self, packet: &BitchatPacket, receipt: &ReadReceipt) -> Result<()>;
-    
-    /// Handle a Noise handshake initiation
-    fn handle_handshake_init(&mut self, packet: &BitchatPacket) -> Result<()>;
-    
-    /// Handle a Noise handshake response
-    fn handle_handshake_response(&mut self, packet: &BitchatPacket) -> Result<()>;
-    
-    /// Handle a Noise handshake finalization
-    fn handle_handshake_finalize(&mut self, packet: &BitchatPacket) -> Result<()>;
-    
-    /// Handle an identity announcement
-    fn handle_announce(&mut self, packet: &BitchatPacket) -> Result<()>;
-    
-    /// Handle a sync request
-    fn handle_request_sync(&mut self, packet: &BitchatPacket) -> Result<()>;
-    
-    /// Handle a fragment start
-    fn handle_fragment_start(&mut self, packet: &BitchatPacket) -> Result<()>;
-    
-    /// Handle a fragment continuation
-    fn handle_fragment_continue(&mut self, packet: &BitchatPacket) -> Result<()>;
-    
-    /// Handle a fragment end
-    fn handle_fragment_end(&mut self, packet: &BitchatPacket) -> Result<()>;
+    /// Parse a read receipt packet payload
+    pub fn parse_read_receipt(packet: &BitchatPacket) -> Result<ReadReceipt> {
+        if packet.message_type != MessageType::ReadReceipt {
+            return Err(crate::BitchatError::InvalidPacket("Not a read receipt packet".into()));
+        }
+        Ok(bincode::deserialize(&packet.payload)?)
+    }
 }
 
 // ----------------------------------------------------------------------------
@@ -58,46 +61,9 @@ pub trait MessageHandler {
 pub struct MessageDispatcher;
 
 impl MessageDispatcher {
-    /// Dispatch a packet to the appropriate handler method
+    /// Dispatch a packet to the handler
     pub fn dispatch<H: MessageHandler>(handler: &mut H, packet: &BitchatPacket) -> Result<()> {
-        match packet.message_type {
-            MessageType::Message => {
-                let message: BitchatMessage = bincode::deserialize(&packet.payload)?;
-                handler.handle_message(packet, &message)
-            }
-            MessageType::DeliveryAck => {
-                let ack: DeliveryAck = bincode::deserialize(&packet.payload)?;
-                handler.handle_delivery_ack(packet, &ack)
-            }
-            MessageType::ReadReceipt => {
-                let receipt: ReadReceipt = bincode::deserialize(&packet.payload)?;
-                handler.handle_read_receipt(packet, &receipt)
-            }
-            MessageType::NoiseHandshakeInit => {
-                handler.handle_handshake_init(packet)
-            }
-            MessageType::NoiseHandshakeResponse => {
-                handler.handle_handshake_response(packet)
-            }
-            MessageType::NoiseHandshakeFinalize => {
-                handler.handle_handshake_finalize(packet)
-            }
-            MessageType::Announce => {
-                handler.handle_announce(packet)
-            }
-            MessageType::RequestSync => {
-                handler.handle_request_sync(packet)
-            }
-            MessageType::FragmentStart => {
-                handler.handle_fragment_start(packet)
-            }
-            MessageType::FragmentContinue => {
-                handler.handle_fragment_continue(packet)
-            }
-            MessageType::FragmentEnd => {
-                handler.handle_fragment_end(packet)
-            }
-        }
+        handler.handle_packet(packet)
     }
 }
 
@@ -109,47 +75,7 @@ impl MessageDispatcher {
 pub struct DefaultHandler;
 
 impl MessageHandler for DefaultHandler {
-    fn handle_message(&mut self, _packet: &BitchatPacket, _message: &BitchatMessage) -> Result<()> {
-        Ok(())
-    }
-    
-    fn handle_delivery_ack(&mut self, _packet: &BitchatPacket, _ack: &DeliveryAck) -> Result<()> {
-        Ok(())
-    }
-    
-    fn handle_read_receipt(&mut self, _packet: &BitchatPacket, _receipt: &ReadReceipt) -> Result<()> {
-        Ok(())
-    }
-    
-    fn handle_handshake_init(&mut self, _packet: &BitchatPacket) -> Result<()> {
-        Ok(())
-    }
-    
-    fn handle_handshake_response(&mut self, _packet: &BitchatPacket) -> Result<()> {
-        Ok(())
-    }
-    
-    fn handle_handshake_finalize(&mut self, _packet: &BitchatPacket) -> Result<()> {
-        Ok(())
-    }
-    
-    fn handle_announce(&mut self, _packet: &BitchatPacket) -> Result<()> {
-        Ok(())
-    }
-    
-    fn handle_request_sync(&mut self, _packet: &BitchatPacket) -> Result<()> {
-        Ok(())
-    }
-    
-    fn handle_fragment_start(&mut self, _packet: &BitchatPacket) -> Result<()> {
-        Ok(())
-    }
-    
-    fn handle_fragment_continue(&mut self, _packet: &BitchatPacket) -> Result<()> {
-        Ok(())
-    }
-    
-    fn handle_fragment_end(&mut self, _packet: &BitchatPacket) -> Result<()> {
+    fn handle_packet(&mut self, _packet: &BitchatPacket) -> Result<()> {
         Ok(())
     }
 }
@@ -305,7 +231,7 @@ pub trait EventHandler {
     fn handle_event(&mut self, event: BitchatEvent);
 }
 
-/// Message handler that emits events
+/// Message handler that emits events based on packet type
 pub struct EventEmittingHandler<E: EventHandler> {
     event_handler: E,
 }
@@ -328,71 +254,49 @@ impl<E: EventHandler> EventEmittingHandler<E> {
 }
 
 impl<E: EventHandler> MessageHandler for EventEmittingHandler<E> {
-    fn handle_message(&mut self, packet: &BitchatPacket, message: &BitchatMessage) -> Result<()> {
-        let event = BitchatEvent::MessageReceived {
-            from: packet.sender_id,
-            message: message.clone(),
-        };
-        self.event_handler.handle_event(event);
-        Ok(())
-    }
-    
-    fn handle_delivery_ack(&mut self, packet: &BitchatPacket, ack: &DeliveryAck) -> Result<()> {
-        let event = BitchatEvent::DeliveryConfirmed {
-            message_id: ack.message_id,
-            confirmed_by: packet.sender_id,
-        };
-        self.event_handler.handle_event(event);
-        Ok(())
-    }
-    
-    fn handle_read_receipt(&mut self, packet: &BitchatPacket, receipt: &ReadReceipt) -> Result<()> {
-        let event = BitchatEvent::MessageRead {
-            message_id: receipt.message_id,
-            read_by: packet.sender_id,
-        };
-        self.event_handler.handle_event(event);
-        Ok(())
-    }
-    
-    fn handle_handshake_init(&mut self, _packet: &BitchatPacket) -> Result<()> {
-        Ok(())
-    }
-    
-    fn handle_handshake_response(&mut self, _packet: &BitchatPacket) -> Result<()> {
-        Ok(())
-    }
-    
-    fn handle_handshake_finalize(&mut self, packet: &BitchatPacket) -> Result<()> {
-        let event = BitchatEvent::HandshakeCompleted {
-            peer_id: packet.sender_id,
-        };
-        self.event_handler.handle_event(event);
-        Ok(())
-    }
-    
-    fn handle_announce(&mut self, packet: &BitchatPacket) -> Result<()> {
-        let event = BitchatEvent::PeerAnnounced {
-            peer_id: packet.sender_id,
-            announcement: packet.payload.clone(),
-        };
-        self.event_handler.handle_event(event);
-        Ok(())
-    }
-    
-    fn handle_request_sync(&mut self, _packet: &BitchatPacket) -> Result<()> {
-        Ok(())
-    }
-    
-    fn handle_fragment_start(&mut self, _packet: &BitchatPacket) -> Result<()> {
-        Ok(())
-    }
-    
-    fn handle_fragment_continue(&mut self, _packet: &BitchatPacket) -> Result<()> {
-        Ok(())
-    }
-    
-    fn handle_fragment_end(&mut self, _packet: &BitchatPacket) -> Result<()> {
+    fn handle_packet(&mut self, packet: &BitchatPacket) -> Result<()> {
+        match packet.message_type {
+            MessageType::Message => {
+                let message = PacketParser::parse_message(packet)?;
+                let event = BitchatEvent::MessageReceived {
+                    from: packet.sender_id,
+                    message,
+                };
+                self.event_handler.handle_event(event);
+            }
+            MessageType::DeliveryAck => {
+                let ack = PacketParser::parse_delivery_ack(packet)?;
+                let event = BitchatEvent::DeliveryConfirmed {
+                    message_id: ack.message_id,
+                    confirmed_by: packet.sender_id,
+                };
+                self.event_handler.handle_event(event);
+            }
+            MessageType::ReadReceipt => {
+                let receipt = PacketParser::parse_read_receipt(packet)?;
+                let event = BitchatEvent::MessageRead {
+                    message_id: receipt.message_id,
+                    read_by: packet.sender_id,
+                };
+                self.event_handler.handle_event(event);
+            }
+            MessageType::NoiseHandshakeFinalize => {
+                let event = BitchatEvent::HandshakeCompleted {
+                    peer_id: packet.sender_id,
+                };
+                self.event_handler.handle_event(event);
+            }
+            MessageType::Announce => {
+                let event = BitchatEvent::PeerAnnounced {
+                    peer_id: packet.sender_id,
+                    announcement: packet.payload.clone(),
+                };
+                self.event_handler.handle_event(event);
+            }
+            _ => {
+                // Other packet types handled silently
+            }
+        }
         Ok(())
     }
 }
@@ -404,7 +308,6 @@ impl<E: EventHandler> MessageHandler for EventEmittingHandler<E> {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use alloc::vec;
 
     struct TestEventHandler {
         events: Vec<BitchatEvent>,
@@ -438,8 +341,8 @@ mod tests {
         assert_eq!(packet.sender_id, sender_id);
         assert_eq!(packet.recipient_id, recipient_id);
         
-        // Verify payload can be deserialized
-        let message: BitchatMessage = bincode::deserialize(&packet.payload).unwrap();
+        // Verify payload can be parsed
+        let message = PacketParser::parse_message(&packet).unwrap();
         assert_eq!(message.sender, "alice");
         assert_eq!(message.content, "Hello, world!");
     }
@@ -499,7 +402,22 @@ mod tests {
         
         assert_eq!(packet.message_type, MessageType::DeliveryAck);
         
-        let ack: DeliveryAck = bincode::deserialize(&packet.payload).unwrap();
+        let ack = PacketParser::parse_delivery_ack(&packet).unwrap();
         assert_eq!(ack.message_id, message_id);
+    }
+    
+    #[test]
+    fn test_packet_parser_error_handling() {
+        let sender_id = PeerId::new([1, 2, 3, 4, 5, 6, 7, 8]);
+        let packet = MessageBuilder::create_message(
+            sender_id,
+            "alice".to_string(),
+            "Hello, world!".to_string(),
+            None,
+        ).unwrap();
+        
+        // Should fail when parsing message packet as delivery ack
+        let result = PacketParser::parse_delivery_ack(&packet);
+        assert!(result.is_err());
     }
 }

@@ -4,7 +4,7 @@
 //! (BLE, Nostr, etc.) used by the BitChat protocol, enabling clean separation
 //! between protocol logic and transport implementation.
 
-use alloc::{boxed::Box, vec::Vec};
+use alloc::{boxed::Box, vec::Vec, string::String};
 use core::{future::Future, pin::Pin};
 
 use crate::packet::BitchatPacket;

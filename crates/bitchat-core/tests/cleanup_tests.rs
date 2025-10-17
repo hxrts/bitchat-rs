@@ -6,7 +6,7 @@
 use std::time::Duration;
 
 use bitchat_core::*;
-use bitchat_core::delivery::{DeliveryConfig, TrackedMessage};
+use bitchat_core::delivery::DeliveryConfig;
 use bitchat_core::session::{NoiseSessionManager, SessionTimeouts};
 use bitchat_core::fragmentation::MessageReassembler;
 use uuid::Uuid;
@@ -25,7 +25,9 @@ async fn test_session_manager_cleanup() {
         handshake_timeout: Duration::from_millis(10), // Very short timeout for testing
         idle_timeout: Duration::from_millis(50),
     };
-    let mut manager = NoiseSessionManager::with_timeouts(key, timeouts);
+    use bitchat_core::types::StdTimeSource;
+    let time_source = StdTimeSource;
+    let mut manager = NoiseSessionManager::with_timeouts(key, timeouts, time_source);
     
     // Create some sessions
     let peer1 = PeerId::new([1, 0, 0, 0, 0, 0, 0, 0]);
@@ -65,7 +67,9 @@ async fn test_session_manager_partial_cleanup() {
         handshake_timeout: Duration::from_secs(1), // Longer timeout
         idle_timeout: Duration::from_secs(1),
     };
-    let mut manager = NoiseSessionManager::with_timeouts(key, timeouts);
+    use bitchat_core::types::StdTimeSource;
+    let time_source = StdTimeSource;
+    let mut manager = NoiseSessionManager::with_timeouts(key, timeouts, time_source);
     
     // Create sessions at different times
     let peer1 = PeerId::new([1, 0, 0, 0, 0, 0, 0, 0]);
@@ -106,7 +110,9 @@ async fn test_delivery_tracker_cleanup() {
         confirmation_timeout: Duration::from_millis(50), // Short timeout for testing
     };
     
-    let mut tracker = DeliveryTracker::with_config(config);
+    use bitchat_core::types::StdTimeSource;
+    let time_source = StdTimeSource;
+    let mut tracker = DeliveryTracker::with_config(config, time_source);
     
     // Add some messages
     let peer_id = PeerId::new([1, 2, 3, 4, 5, 6, 7, 8]);
@@ -142,7 +148,9 @@ async fn test_delivery_tracker_cleanup() {
 
 #[test]
 fn test_delivery_tracker_manual_cleanup() {
-    let mut tracker = DeliveryTracker::new();
+    use bitchat_core::types::StdTimeSource;
+    let time_source = StdTimeSource;
+    let mut tracker = DeliveryTracker::new(time_source);
     
     let peer_id = PeerId::new([1, 2, 3, 4, 5, 6, 7, 8]);
     let msg1 = Uuid::new_v4();
@@ -233,7 +241,9 @@ async fn test_integrated_resource_management() {
         handshake_timeout: Duration::from_millis(50),
         idle_timeout: Duration::from_millis(100),
     };
-    let mut session_manager = NoiseSessionManager::with_timeouts(key, session_timeouts);
+    use bitchat_core::types::StdTimeSource;
+    let time_source = StdTimeSource;
+    let mut session_manager = NoiseSessionManager::with_timeouts(key, session_timeouts, time_source);
     
     let delivery_config = DeliveryConfig {
         max_retries: 2,
@@ -242,7 +252,7 @@ async fn test_integrated_resource_management() {
         backoff_multiplier: 2.0,
         confirmation_timeout: Duration::from_millis(75),
     };
-    let mut delivery_tracker = DeliveryTracker::with_config(delivery_config);
+    let mut delivery_tracker = DeliveryTracker::with_config(delivery_config, time_source);
     
     let mut reassembler = MessageReassembler::new();
     

@@ -6,6 +6,7 @@
 use alloc::{collections::BTreeMap, vec::Vec};
 use core::cmp;
 use uuid::Uuid;
+use crc32fast::Hasher;
 
 use crate::packet::{BitchatPacket, MessageType};
 use crate::types::{PeerId, Timestamp};
@@ -203,21 +204,11 @@ impl MessageFragmenter {
         Ok(fragments)
     }
     
-    /// Calculate CRC32 checksum
+    /// Calculate CRC32 checksum using crc32fast
     fn calculate_checksum(data: &[u8]) -> u32 {
-        // Simple CRC32 implementation for checksum verification
-        let mut crc = 0xFFFFFFFF;
-        for &byte in data {
-            crc ^= byte as u32;
-            for _ in 0..8 {
-                if crc & 1 != 0 {
-                    crc = (crc >> 1) ^ 0xEDB88320;
-                } else {
-                    crc >>= 1;
-                }
-            }
-        }
-        !crc
+        let mut hasher = Hasher::new();
+        hasher.update(data);
+        hasher.finalize()
     }
 }
 

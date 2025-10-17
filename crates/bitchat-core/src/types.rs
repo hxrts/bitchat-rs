@@ -146,6 +146,32 @@ impl Default for Ttl {
 }
 
 // ----------------------------------------------------------------------------
+// Time Source Trait
+// ----------------------------------------------------------------------------
+
+/// Trait for providing timestamps in a no_std compatible way
+/// 
+/// This trait allows the library to obtain current timestamps without
+/// depending on std. Implementations should provide monotonic timestamps
+/// when possible.
+pub trait TimeSource {
+    /// Get the current timestamp
+    fn now(&self) -> Timestamp;
+}
+
+/// Standard library implementation of TimeSource
+#[cfg(feature = "std")]
+#[derive(Debug, Clone, Copy, Default)]
+pub struct StdTimeSource;
+
+#[cfg(feature = "std")]
+impl TimeSource for StdTimeSource {
+    fn now(&self) -> Timestamp {
+        Timestamp::now()
+    }
+}
+
+// ----------------------------------------------------------------------------
 // Hex Encoding Helper
 // ----------------------------------------------------------------------------
 

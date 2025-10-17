@@ -15,9 +15,8 @@ use uuid::Uuid;
 /// Test peer that combines all BitChat components
 struct TestPeer {
     peer_id: PeerId,
-    session_manager: NoiseSessionManager,
-    delivery_tracker: DeliveryTracker,
-    fragmenter: MessageFragmenter,
+    session_manager: NoiseSessionManager<bitchat_core::types::StdTimeSource>,
+    delivery_tracker: DeliveryTracker<bitchat_core::types::StdTimeSource>,
     reassembler: MessageReassembler,
     received_messages: Vec<BitchatMessage>,
     received_events: Vec<BitchatEvent>,
@@ -25,15 +24,16 @@ struct TestPeer {
 
 impl TestPeer {
     fn new() -> Self {
+        use bitchat_core::types::StdTimeSource;
         let noise_key = bitchat_core::crypto::NoiseKeyPair::generate();
         let peer_id = PeerId::from_bytes(&noise_key.public_key_bytes());
+        let time_source = StdTimeSource;
         
         Self {
             peer_id,
-            session_manager: NoiseSessionManager::new(noise_key),
-            delivery_tracker: DeliveryTracker::new(),
-            fragmenter: MessageFragmenter,
-            reassembler: MessageReassembler::new(),
+            session_manager: NoiseSessionManager::new(noise_key, time_source),
+            delivery_tracker: DeliveryTracker::new(time_source),
+                    reassembler: MessageReassembler::new(),
             received_messages: Vec::new(),
             received_events: Vec::new(),
         }
@@ -57,39 +57,47 @@ impl TestPeer {
         
         // Step 1: Initiator creates first message
         {
+            use bitchat_core::types::StdTimeSource;
+            let time_source = StdTimeSource;
             let session = self.session_manager.get_session_mut(&other_id).unwrap();
-            let msg1 = session.create_handshake_message(b"")?;
+            let msg1 = session.create_handshake_message(b"", &time_source)?;
             messages.push(msg1);
         }
         
         // Step 2: Responder processes and responds
         {
+            use bitchat_core::types::StdTimeSource;
+            let time_source = StdTimeSource;
             let other_session = other_peer.session_manager.get_session_mut(&my_id).unwrap();
-            let response1 = other_session.process_handshake_message(&messages[0])?;
+            let response1 = other_session.process_handshake_message(&messages[0], &time_source)?;
             if let Some(resp) = response1 {
                 messages.push(resp);
             } else {
-                let msg2 = other_session.create_handshake_message(b"")?;
+                let msg2 = other_session.create_handshake_message(b"", &time_source)?;
                 messages.push(msg2);
             }
         }
         
         // Step 3: Initiator processes and finalizes
         {
+            use bitchat_core::types::StdTimeSource;
+            let time_source = StdTimeSource;
             let session = self.session_manager.get_session_mut(&other_id).unwrap();
-            let response2 = session.process_handshake_message(&messages[1])?;
+            let response2 = session.process_handshake_message(&messages[1], &time_source)?;
             if let Some(resp) = response2 {
                 messages.push(resp);
             } else if !session.is_established() {
-                let msg3 = session.create_handshake_message(b"")?;
+                let msg3 = session.create_handshake_message(b"", &time_source)?;
                 messages.push(msg3);
             }
         }
         
         // Step 4: Final processing if needed
         if messages.len() > 2 {
+            use bitchat_core::types::StdTimeSource;
+            let time_source = StdTimeSource;
             let other_session = other_peer.session_manager.get_session_mut(&my_id).unwrap();
-            other_session.process_handshake_message(&messages[2])?;
+            other_session.process_handshake_message(&messages[2], &time_source)?;
         }
         
         Ok(())
@@ -102,25 +110,28 @@ impl TestPeer {
         session: &mut NoiseSession,
         other_session: &mut NoiseSession,
     ) -> bitchat_core::Result<()> {
+        use bitchat_core::types::StdTimeSource;
+        let time_source = StdTimeSource;
+        
         // Step 1: Initiator creates first message
-        let msg1 = session.create_handshake_message(b"")?;
-        let response1 = other_session.process_handshake_message(&msg1)?;
+        let msg1 = session.create_handshake_message(b"", &time_source)?;
+        let response1 = other_session.process_handshake_message(&msg1, &time_source)?;
         
         // Step 2: Responder responds
         let msg2 = if let Some(resp) = response1 {
             resp
         } else {
-            other_session.create_handshake_message(b"")?
+            other_session.create_handshake_message(b"", &time_source)?
         };
-        let response2 = session.process_handshake_message(&msg2)?;
+        let response2 = session.process_handshake_message(&msg2, &time_source)?;
         
         // Step 3: Initiator finalizes
         let msg3 = if let Some(resp) = response2 {
             resp
         } else {
-            session.create_handshake_message(b"")?
+            session.create_handshake_message(b"", &time_source)?
         };
-        other_session.process_handshake_message(&msg3)?;
+        other_session.process_handshake_message(&msg3, &time_source)?;
         
         Ok(())
     }
@@ -139,7 +150,7 @@ impl TestPeer {
         self.delivery_tracker.track_message(message_id, recipient_id, payload.clone());
         
         // Create packet
-        let packet = MessageBuilder::create_message(
+        let _packet = MessageBuilder::create_message(
             self.peer_id,
             "sender".to_string(),
             message.content.clone(),

@@ -7,7 +7,7 @@ use alloc::{collections::BTreeMap, vec::Vec};
 use core::time::Duration;
 
 use crate::crypto::{NoiseHandshake, NoiseKeyPair, NoiseTransport};
-use crate::types::{PeerId, Fingerprint, Timestamp};
+use crate::types::{PeerId, Fingerprint, Timestamp, TimeSource};
 use crate::{BitchatError, Result};
 
 // ----------------------------------------------------------------------------
@@ -49,8 +49,9 @@ pub struct NoiseSession {
 
 impl NoiseSession {
     /// Create a new outbound session (initiator)
-    pub fn new_outbound(peer_id: PeerId, local_key: &NoiseKeyPair) -> Result<Self> {
+    pub fn new_outbound<T: TimeSource>(peer_id: PeerId, local_key: &NoiseKeyPair, time_source: &T) -> Result<Self> {
         let handshake = NoiseHandshake::initiator(local_key)?;
+        let now = time_source.now();
         
         Ok(Self {
             peer_id,
@@ -58,20 +59,15 @@ impl NoiseSession {
             state: SessionState::Handshaking,
             handshake: Some(handshake),
             transport: None,
-            #[cfg(feature = "std")]
-            created_at: Timestamp::now(),
-            #[cfg(not(feature = "std"))]
-            created_at: Timestamp::new(0),
-            #[cfg(feature = "std")]
-            last_activity: Timestamp::now(),
-            #[cfg(not(feature = "std"))]
-            last_activity: Timestamp::new(0),
+            created_at: now,
+            last_activity: now,
         })
     }
     
     /// Create a new inbound session (responder)
-    pub fn new_inbound(peer_id: PeerId, local_key: &NoiseKeyPair) -> Result<Self> {
+    pub fn new_inbound<T: TimeSource>(peer_id: PeerId, local_key: &NoiseKeyPair, time_source: &T) -> Result<Self> {
         let handshake = NoiseHandshake::responder(local_key)?;
+        let now = time_source.now();
         
         Ok(Self {
             peer_id,
@@ -79,14 +75,8 @@ impl NoiseSession {
             state: SessionState::Handshaking,
             handshake: Some(handshake),
             transport: None,
-            #[cfg(feature = "std")]
-            created_at: Timestamp::now(),
-            #[cfg(not(feature = "std"))]
-            created_at: Timestamp::new(0),
-            #[cfg(feature = "std")]
-            last_activity: Timestamp::now(),
-            #[cfg(not(feature = "std"))]
-            last_activity: Timestamp::new(0),
+            created_at: now,
+            last_activity: now,
         })
     }
     
@@ -115,8 +105,13 @@ impl NoiseSession {
         self.state == SessionState::Failed
     }
     
+    /// Get session creation timestamp
+    pub fn created_at(&self) -> Timestamp {
+        self.created_at
+    }
+    
     /// Process handshake message
-    pub fn process_handshake_message(&mut self, input: &[u8]) -> Result<Option<Vec<u8>>> {
+    pub fn process_handshake_message<T: TimeSource>(&mut self, input: &[u8], time_source: &T) -> Result<Option<Vec<u8>>> {
         if self.state != SessionState::Handshaking {
             return Err(BitchatError::InvalidPacket("Not in handshaking state".into()));
         }
@@ -124,9 +119,7 @@ impl NoiseSession {
         let handshake = self.handshake.as_mut()
             .ok_or_else(|| BitchatError::InvalidPacket("No handshake state".into()))?;
         
-        let mut output = vec![0u8; 1024];
-        let len = handshake.read_message(input, &mut output)?;
-        output.truncate(len);
+        let output = handshake.read_message(input)?;
         
         // Check if handshake is complete
         let is_finished = handshake.is_handshake_finished();
@@ -149,13 +142,13 @@ impl NoiseSession {
             self.state = SessionState::Established;
         }
         
-        self.update_activity();
+        self.update_activity(time_source);
         
-        Ok(if len > 0 { Some(output) } else { None })
+        Ok(if output.is_empty() { None } else { Some(output) })
     }
     
     /// Create handshake message
-    pub fn create_handshake_message(&mut self, payload: &[u8]) -> Result<Vec<u8>> {
+    pub fn create_handshake_message<T: TimeSource>(&mut self, payload: &[u8], time_source: &T) -> Result<Vec<u8>> {
         if self.state != SessionState::Handshaking {
             return Err(BitchatError::InvalidPacket("Not in handshaking state".into()));
         }
@@ -163,9 +156,7 @@ impl NoiseSession {
         let handshake = self.handshake.as_mut()
             .ok_or_else(|| BitchatError::InvalidPacket("No handshake state".into()))?;
         
-        let mut output = vec![0u8; 1024];
-        let len = handshake.write_message(payload, &mut output)?;
-        output.truncate(len);
+        let output = handshake.write_message(payload)?;
         
         // Check if handshake is complete after writing
         let is_finished = handshake.is_handshake_finished();
@@ -188,13 +179,13 @@ impl NoiseSession {
             self.state = SessionState::Established;
         }
         
-        self.update_activity();
+        self.update_activity(time_source);
         
         Ok(output)
     }
     
     /// Encrypt a message (only when established)
-    pub fn encrypt(&mut self, plaintext: &[u8]) -> Result<Vec<u8>> {
+    pub fn encrypt<T: TimeSource>(&mut self, plaintext: &[u8], time_source: &T) -> Result<Vec<u8>> {
         if self.state != SessionState::Established {
             return Err(BitchatError::InvalidPacket("Session not established".into()));
         }
@@ -205,12 +196,12 @@ impl NoiseSession {
             transport.encrypt(plaintext)
         };
         
-        self.update_activity();
+        self.update_activity(time_source);
         result
     }
     
     /// Decrypt a message (only when established)
-    pub fn decrypt(&mut self, ciphertext: &[u8]) -> Result<Vec<u8>> {
+    pub fn decrypt<T: TimeSource>(&mut self, ciphertext: &[u8], time_source: &T) -> Result<Vec<u8>> {
         if self.state != SessionState::Established {
             return Err(BitchatError::InvalidPacket("Session not established".into()));
         }
@@ -221,7 +212,7 @@ impl NoiseSession {
             transport.decrypt(ciphertext)
         };
         
-        self.update_activity();
+        self.update_activity(time_source);
         result
     }
     
@@ -233,17 +224,13 @@ impl NoiseSession {
     }
     
     /// Update last activity timestamp
-    fn update_activity(&mut self) {
-        #[cfg(feature = "std")]
-        {
-            self.last_activity = Timestamp::now();
-        }
+    fn update_activity<T: TimeSource>(&mut self, time_source: &T) {
+        self.last_activity = time_source.now();
     }
     
-    /// Get time since last activity (requires std feature)
-    #[cfg(feature = "std")]
-    pub fn time_since_activity(&self) -> Duration {
-        let now = Timestamp::now();
+    /// Get time since last activity
+    pub fn time_since_activity<T: TimeSource>(&self, time_source: &T) -> Duration {
+        let now = time_source.now();
         let diff = now.as_millis().saturating_sub(self.last_activity.as_millis());
         Duration::from_millis(diff)
     }
@@ -272,38 +259,42 @@ impl Default for SessionTimeouts {
 }
 
 /// Manages multiple Noise sessions with different peers
-pub struct NoiseSessionManager {
+pub struct NoiseSessionManager<T: TimeSource> {
     /// Local Noise key pair
     local_key: NoiseKeyPair,
     /// Active sessions by peer ID
     sessions: BTreeMap<PeerId, NoiseSession>,
     /// Session timeout configuration
     timeouts: SessionTimeouts,
+    /// Time source for generating timestamps
+    time_source: T,
 }
 
-impl NoiseSessionManager {
+impl<T: TimeSource> NoiseSessionManager<T> {
     /// Create a new session manager
-    pub fn new(local_key: NoiseKeyPair) -> Self {
+    pub fn new(local_key: NoiseKeyPair, time_source: T) -> Self {
         Self {
             local_key,
             sessions: BTreeMap::new(),
             timeouts: SessionTimeouts::default(),
+            time_source,
         }
     }
     
     /// Create a new session manager with custom timeouts
-    pub fn with_timeouts(local_key: NoiseKeyPair, timeouts: SessionTimeouts) -> Self {
+    pub fn with_timeouts(local_key: NoiseKeyPair, timeouts: SessionTimeouts, time_source: T) -> Self {
         Self {
             local_key,
             sessions: BTreeMap::new(),
             timeouts,
+            time_source,
         }
     }
     
     /// Get or create outbound session
     pub fn get_or_create_outbound(&mut self, peer_id: PeerId) -> Result<&mut NoiseSession> {
         if !self.sessions.contains_key(&peer_id) {
-            let session = NoiseSession::new_outbound(peer_id, &self.local_key)?;
+            let session = NoiseSession::new_outbound(peer_id, &self.local_key, &self.time_source)?;
             self.sessions.insert(peer_id, session);
         }
         
@@ -312,7 +303,7 @@ impl NoiseSessionManager {
     
     /// Create inbound session
     pub fn create_inbound(&mut self, peer_id: PeerId) -> Result<&mut NoiseSession> {
-        let session = NoiseSession::new_inbound(peer_id, &self.local_key)?;
+        let session = NoiseSession::new_inbound(peer_id, &self.local_key, &self.time_source)?;
         self.sessions.insert(peer_id, session);
         Ok(self.sessions.get_mut(&peer_id).unwrap())
     }
@@ -355,7 +346,6 @@ impl NoiseSessionManager {
     }
     
     /// Clean up expired sessions
-    #[cfg(feature = "std")]
     pub fn cleanup_expired(&mut self) {
         let expired_peers: Vec<PeerId> = self.sessions
             .iter()
@@ -366,7 +356,7 @@ impl NoiseSessionManager {
                     SessionState::Failed => Duration::from_secs(1), // Remove failed immediately
                 };
                 
-                if session.time_since_activity() > timeout {
+                if session.time_since_activity(&self.time_source) > timeout {
                     Some(*peer_id)
                 } else {
                     None
@@ -393,16 +383,19 @@ impl NoiseSessionManager {
 mod tests {
     use super::*;
     use crate::crypto::NoiseKeyPair;
+    use crate::types::StdTimeSource;
 
+    #[cfg(feature = "std")]
     #[test]
     fn test_session_creation() {
         let alice_key = NoiseKeyPair::generate();
         let bob_key = NoiseKeyPair::generate();
         let alice_id = PeerId::from_bytes(&alice_key.public_key_bytes());
         let bob_id = PeerId::from_bytes(&bob_key.public_key_bytes());
+        let time_source = StdTimeSource;
         
-        let alice_session = NoiseSession::new_outbound(bob_id, &alice_key).unwrap();
-        let bob_session = NoiseSession::new_inbound(alice_id, &bob_key).unwrap();
+        let alice_session = NoiseSession::new_outbound(bob_id, &alice_key, &time_source).unwrap();
+        let bob_session = NoiseSession::new_inbound(alice_id, &bob_key, &time_source).unwrap();
         
         assert_eq!(alice_session.state(), SessionState::Handshaking);
         assert_eq!(bob_session.state(), SessionState::Handshaking);
@@ -410,10 +403,12 @@ mod tests {
         assert_eq!(bob_session.peer_id(), alice_id);
     }
     
+    #[cfg(feature = "std")]
     #[test]
     fn test_session_manager() {
         let key = NoiseKeyPair::generate();
-        let mut manager = NoiseSessionManager::new(key);
+        let time_source = StdTimeSource;
+        let mut manager = NoiseSessionManager::new(key, time_source);
         
         let peer_id = PeerId::new([1, 2, 3, 4, 5, 6, 7, 8]);
         
@@ -431,27 +426,29 @@ mod tests {
         assert_eq!(failed, 0);
     }
     
+    #[cfg(feature = "std")]
     #[test]
     fn test_full_handshake() {
         let alice_key = NoiseKeyPair::generate();
         let bob_key = NoiseKeyPair::generate();
         let alice_id = PeerId::from_bytes(&alice_key.public_key_bytes());
         let bob_id = PeerId::from_bytes(&bob_key.public_key_bytes());
+        let time_source = StdTimeSource;
         
-        let mut alice_session = NoiseSession::new_outbound(bob_id, &alice_key).unwrap();
-        let mut bob_session = NoiseSession::new_inbound(alice_id, &bob_key).unwrap();
+        let mut alice_session = NoiseSession::new_outbound(bob_id, &alice_key, &time_source).unwrap();
+        let mut bob_session = NoiseSession::new_inbound(alice_id, &bob_key, &time_source).unwrap();
         
         // Step 1: Alice initiates
-        let msg1 = alice_session.create_handshake_message(b"").unwrap();
-        let response1 = bob_session.process_handshake_message(&msg1).unwrap();
+        let msg1 = alice_session.create_handshake_message(b"", &time_source).unwrap();
+        let response1 = bob_session.process_handshake_message(&msg1, &time_source).unwrap();
         
         // Step 2: Bob responds
-        let msg2 = response1.unwrap_or_else(|| bob_session.create_handshake_message(b"").unwrap());
-        let response2 = alice_session.process_handshake_message(&msg2).unwrap();
+        let msg2 = response1.unwrap_or_else(|| bob_session.create_handshake_message(b"", &time_source).unwrap());
+        let response2 = alice_session.process_handshake_message(&msg2, &time_source).unwrap();
         
         // Step 3: Alice finalizes
-        let msg3 = response2.unwrap_or_else(|| alice_session.create_handshake_message(b"").unwrap());
-        bob_session.process_handshake_message(&msg3).unwrap();
+        let msg3 = response2.unwrap_or_else(|| alice_session.create_handshake_message(b"", &time_source).unwrap());
+        bob_session.process_handshake_message(&msg3, &time_source).unwrap();
         
         assert!(alice_session.is_established());
         assert!(bob_session.is_established());
@@ -460,8 +457,8 @@ mod tests {
         
         // Test encrypted communication
         let plaintext = b"Hello, Bob!";
-        let ciphertext = alice_session.encrypt(plaintext).unwrap();
-        let decrypted = bob_session.decrypt(&ciphertext).unwrap();
+        let ciphertext = alice_session.encrypt(plaintext, &time_source).unwrap();
+        let decrypted = bob_session.decrypt(&ciphertext, &time_source).unwrap();
         assert_eq!(plaintext.as_slice(), decrypted.as_slice());
     }
 }

@@ -2,6 +2,9 @@
 resolver = "2"
 members = [
     "crates/bitchat-core",
+    "crates/bitchat-ble-transport",
+    "crates/bitchat-nostr-transport",
+    "crates/bitchat-cli",
 ]
 
 [workspace.dependencies]
@@ -20,7 +23,27 @@ sha2 = { version = "0.10", default-features = false }
 # Utilities
 uuid = { version = "1.0", features = ["v4", "serde", "js"] }
 thiserror = "1.0"
+crc32fast = { version = "1.3", default-features = false }
 
 # WASM support
 getrandom = { version = "0.2", features = ["js"] }
 rand_core = { version = "0.6", default-features = false }
+
+# Async runtime and networking
+tokio = { version = "1.0", features = ["full"] }
+
+# BLE transport dependencies
+btleplug = { version = "0.11" }
+
+# Nostr transport dependencies
+nostr-sdk = { version = "0.31" }
+tokio-tungstenite = { version = "0.20" }
+
+# CLI application dependencies
+clap = { version = "4.0", features = ["derive"] }
+tracing = "0.1"
+tracing-subscriber = "0.3"
+
+# Additional dependencies
+serde_json = "1.0"
+url = "2.0"

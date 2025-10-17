@@ -4,7 +4,7 @@
 //! required by the BitChat protocol, including Noise Protocol, Ed25519 signatures,
 //! and fingerprint generation.
 
-use alloc::vec::Vec;
+use alloc::{vec::Vec, vec};
 use ed25519_dalek::{Signature, Signer, SigningKey, Verifier, VerifyingKey};
 use sha2::{Digest, Sha256};
 use snow::{Builder, HandshakeState, TransportState};
@@ -197,17 +197,23 @@ impl NoiseHandshake {
     }
 
     /// Write handshake message
-    pub fn write_message(&mut self, payload: &[u8], output: &mut [u8]) -> Result<usize> {
-        self.state
-            .write_message(payload, output)
-            .map_err(BitchatError::Noise)
+    pub fn write_message(&mut self, payload: &[u8]) -> Result<Vec<u8>> {
+        let mut output = vec![0u8; 65536]; // Larger buffer for handshake messages
+        let len = self.state
+            .write_message(payload, &mut output)
+            .map_err(BitchatError::Noise)?;
+        output.truncate(len);
+        Ok(output)
     }
 
     /// Read handshake message
-    pub fn read_message(&mut self, input: &[u8], output: &mut [u8]) -> Result<usize> {
-        self.state
-            .read_message(input, output)
-            .map_err(BitchatError::Noise)
+    pub fn read_message(&mut self, input: &[u8]) -> Result<Vec<u8>> {
+        let mut output = vec![0u8; 65536]; // Larger buffer for handshake messages
+        let len = self.state
+            .read_message(input, &mut output)
+            .map_err(BitchatError::Noise)?;
+        output.truncate(len);
+        Ok(output)
     }
 
     /// Check if handshake is complete
@@ -277,7 +283,7 @@ mod tests {
     fn test_identity_keypair() {
         let keypair = IdentityKeyPair::generate().unwrap();
         let public_key = keypair.public_key_bytes();
-        let private_key = keypair.private_key_bytes();
+        let _private_key = keypair.private_key_bytes();
         
         // Test signing and verification
         let data = b"test message";
@@ -309,21 +315,17 @@ mod tests {
         let mut alice = NoiseHandshake::initiator(&alice_key).unwrap();
         let mut bob = NoiseHandshake::responder(&bob_key).unwrap();
         
-        let mut message = vec![0u8; 1024];
-        let mut response = vec![0u8; 1024];
-        let mut final_msg = vec![0u8; 1024];
-        
         // Step 1: Alice -> Bob
-        let len1 = alice.write_message(b"", &mut message).unwrap();
-        let len2 = bob.read_message(&message[..len1], &mut response).unwrap();
+        let message1 = alice.write_message(b"").unwrap();
+        let _response1 = bob.read_message(&message1).unwrap();
         
         // Step 2: Bob -> Alice
-        let len3 = bob.write_message(b"", &mut message).unwrap();
-        let len4 = alice.read_message(&message[..len3], &mut response).unwrap();
+        let message2 = bob.write_message(b"").unwrap();
+        let _response2 = alice.read_message(&message2).unwrap();
         
         // Step 3: Alice -> Bob
-        let len5 = alice.write_message(b"", &mut final_msg).unwrap();
-        let len6 = bob.read_message(&final_msg[..len5], &mut response).unwrap();
+        let message3 = alice.write_message(b"").unwrap();
+        let _response3 = bob.read_message(&message3).unwrap();
         
         assert!(alice.is_handshake_finished());
         assert!(bob.is_handshake_finished());

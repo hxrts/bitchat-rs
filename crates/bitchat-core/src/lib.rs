@@ -8,6 +8,8 @@
 
 extern crate alloc;
 
+use alloc::string::String;
+
 // ----------------------------------------------------------------------------
 // Module Declarations
 // ----------------------------------------------------------------------------
@@ -31,13 +33,24 @@ pub use handlers::{MessageHandler, MessageDispatcher, MessageBuilder, BitchatEve
 pub use packet::{BitchatMessage, BitchatPacket, MessageType};
 pub use session::{NoiseSession, NoiseSessionManager, SessionState};
 pub use transport::{Transport, TransportManager, TransportCapabilities, TransportType};
-pub use types::{PeerId, Fingerprint, Timestamp};
+pub use types::{PeerId, Fingerprint, Timestamp, TimeSource};
+
+// Convenience type aliases for std feature
+#[cfg(feature = "std")]
+pub use types::StdTimeSource;
+
+#[cfg(feature = "std")]
+pub type StdDeliveryTracker = DeliveryTracker<StdTimeSource>;
+
+#[cfg(feature = "std")]
+pub type StdNoiseSessionManager = NoiseSessionManager<StdTimeSource>;
 
 // ----------------------------------------------------------------------------
 // Error Types
 // ----------------------------------------------------------------------------
 
 /// Core error types for the BitChat protocol
+#[cfg(feature = "std")]
 #[derive(Debug, thiserror::Error)]
 pub enum BitchatError {
     #[error("Serialization error: {0}")]
@@ -54,6 +67,31 @@ pub enum BitchatError {
     
     #[error("Ed25519 signature error")]
     Signature,
+}
+
+/// Core error types for the BitChat protocol (no_std version)
+#[cfg(not(feature = "std"))]
+#[derive(Debug)]
+pub enum BitchatError {
+    Serialization(bincode::Error),
+    Crypto(String),
+    InvalidPacket(String),
+    Noise(snow::Error),
+    Signature,
+}
+
+#[cfg(not(feature = "std"))]
+impl From<bincode::Error> for BitchatError {
+    fn from(err: bincode::Error) -> Self {
+        BitchatError::Serialization(err)
+    }
+}
+
+#[cfg(not(feature = "std"))]
+impl From<snow::Error> for BitchatError {
+    fn from(err: snow::Error) -> Self {
+        BitchatError::Noise(err)
+    }
 }
 
 pub type Result<T> = core::result::Result<T, BitchatError>;

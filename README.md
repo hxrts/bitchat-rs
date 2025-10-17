@@ -25,12 +25,15 @@ See `docs/protocol-architecture.md` for complete specification.
 
 ### Native
 ```bash
-nix develop
-cargo build --release
+nix develop              # Enter development environment
+just build               # Build all crates
+just test                # Run tests
+just demo                # Run CLI demo (BLE + Nostr)
 ```
 
 ### WebAssembly
 ```bash
+nix develop
 cargo build --target wasm32-unknown-unknown --release
 ```
 
