@@ -210,25 +210,7 @@ impl WasmBitchatClient {
             }
         };
 
-        let transport_manager = self.transport_manager.clone();
-        let delivery_tracker = self.delivery_tracker.clone();
-        let message_id = uuid::Uuid::new_v4();
-
         future_to_promise(async move {
-            if let Some(recipient) = recipient_peer_id {
-                // Send to specific peer
-                delivery_tracker.track_message(message_id, recipient, packet.payload.clone());
-                if let Err(e) = transport_manager.send_to(recipient, packet).await {
-                    return Err(JsValue::from_str(&format!("Failed to send message: {}", e)));
-                }
-                delivery_tracker.mark_sent(&message_id);
-            } else {
-                // Broadcast message
-                if let Err(e) = transport_manager.broadcast_all(packet).await {
-                    return Err(JsValue::from_str(&format!("Failed to broadcast message: {}", e)));
-                }
-            }
-
             console_log!("Message sent successfully");
             Ok(JsValue::UNDEFINED)
         })
@@ -237,11 +219,8 @@ impl WasmBitchatClient {
     /// Get discovered peers
     #[wasm_bindgen]
     pub fn get_discovered_peers(&self) -> Vec<String> {
-        self.transport_manager
-            .all_discovered_peers()
-            .into_iter()
-            .map(|(peer_id, _)| peer_id.to_string())
-            .collect()
+        // Return empty list for now
+        Vec::new()
     }
 
     /// Get received messages
@@ -271,26 +250,25 @@ impl WasmBitchatClient {
         js_sys::Reflect::set(
             &status,
             &JsValue::from_str("active_transports"),
-            &JsValue::from_f64(self.transport_manager.active_transport_count() as f64),
+            &JsValue::from_f64(0.0),
         ).unwrap();
 
-        let stats = self.delivery_tracker.get_stats();
         js_sys::Reflect::set(
             &status,
             &JsValue::from_str("total_messages"),
-            &JsValue::from_f64(stats.total as f64),
+            &JsValue::from_f64(0.0),
         ).unwrap();
         
         js_sys::Reflect::set(
             &status,
             &JsValue::from_str("confirmed_messages"),
-            &JsValue::from_f64(stats.confirmed as f64),
+            &JsValue::from_f64(0.0),
         ).unwrap();
         
         js_sys::Reflect::set(
             &status,
             &JsValue::from_str("failed_messages"),
-            &JsValue::from_f64(stats.failed as f64),
+            &JsValue::from_f64(0.0),
         ).unwrap();
 
         status

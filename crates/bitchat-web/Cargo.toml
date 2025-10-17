@@ -9,7 +9,7 @@ license = "MIT OR Apache-2.0"
 crate-type = ["cdylib"]
 
 [dependencies]
-# Core BitChat protocol
+# Core BitChat protocol  
 bitchat-core = { path = "../bitchat-core" }
 
 # WASM and JS bindings
