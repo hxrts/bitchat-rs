@@ -1,5 +1,5 @@
 [package]
-name = "bitchat-ble-transport"
+name = "bitchat-ble"
 version = "0.1.0"
 edition = "2021"
 description = "Bluetooth Low Energy transport implementation for BitChat protocol"
