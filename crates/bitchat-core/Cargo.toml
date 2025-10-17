@@ -36,4 +36,4 @@ rand_core = { workspace = true }
 getrandom = { workspace = true }
 
 [dev-dependencies]
-# Test utilities will be added as needed
+tokio = { version = "1.0", features = ["full"] }

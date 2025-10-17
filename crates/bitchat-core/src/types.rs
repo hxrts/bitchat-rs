@@ -11,7 +11,7 @@ use serde::{Deserialize, Serialize};
 // ----------------------------------------------------------------------------
 
 /// Unique identifier for a peer (8-byte truncated from full public key)
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, Serialize, Deserialize)]
 pub struct PeerId([u8; 8]);
 
 impl PeerId {

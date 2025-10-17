@@ -13,14 +13,24 @@ extern crate alloc;
 // ----------------------------------------------------------------------------
 
 pub mod crypto;
+pub mod delivery;
+pub mod fragmentation;
+pub mod handlers;
 pub mod packet;
+pub mod session;
+pub mod transport;
 pub mod types;
 
 // ----------------------------------------------------------------------------
 // Public API
 // ----------------------------------------------------------------------------
 
+pub use delivery::{DeliveryTracker, DeliveryStatus, DeliveryConfig};
+pub use fragmentation::{MessageFragmenter, MessageReassembler, Fragment};
+pub use handlers::{MessageHandler, MessageDispatcher, MessageBuilder, BitchatEvent, EventHandler};
 pub use packet::{BitchatMessage, BitchatPacket, MessageType};
+pub use session::{NoiseSession, NoiseSessionManager, SessionState};
+pub use transport::{Transport, TransportManager, TransportCapabilities, TransportType};
 pub use types::{PeerId, Fingerprint, Timestamp};
 
 // ----------------------------------------------------------------------------
