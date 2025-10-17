@@ -27,13 +27,13 @@ pub mod types;
 // Public API
 // ----------------------------------------------------------------------------
 
-pub use delivery::{DeliveryTracker, DeliveryStatus, DeliveryConfig};
-pub use fragmentation::{MessageFragmenter, MessageReassembler, Fragment};
-pub use handlers::{MessageHandler, MessageDispatcher, MessageBuilder, BitchatEvent, EventHandler};
+pub use delivery::{DeliveryConfig, DeliveryStatus, DeliveryTracker};
+pub use fragmentation::{Fragment, MessageFragmenter, MessageReassembler};
+pub use handlers::{BitchatEvent, EventHandler, MessageBuilder, MessageDispatcher, MessageHandler};
 pub use packet::{BitchatMessage, BitchatPacket, MessageType};
 pub use session::{NoiseSession, NoiseSessionManager, SessionState};
-pub use transport::{Transport, TransportManager, TransportCapabilities, TransportType};
-pub use types::{PeerId, Fingerprint, Timestamp, TimeSource};
+pub use transport::{Transport, TransportCapabilities, TransportManager, TransportType};
+pub use types::{Fingerprint, PeerId, TimeSource, Timestamp};
 
 // Convenience type aliases for std feature
 #[cfg(feature = "std")]
@@ -55,16 +55,16 @@ pub type StdNoiseSessionManager = NoiseSessionManager<StdTimeSource>;
 pub enum BitchatError {
     #[error("Serialization error: {0}")]
     Serialization(#[from] bincode::Error),
-    
+
     #[error("Cryptographic error: {0}")]
     Crypto(String),
-    
+
     #[error("Invalid packet format: {0}")]
     InvalidPacket(String),
-    
+
     #[error("Noise protocol error: {0}")]
     Noise(#[from] snow::Error),
-    
+
     #[error("Ed25519 signature error")]
     Signature,
 }

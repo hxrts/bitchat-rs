@@ -150,7 +150,7 @@ impl Default for Ttl {
 // ----------------------------------------------------------------------------
 
 /// Trait for providing timestamps in a no_std compatible way
-/// 
+///
 /// This trait allows the library to obtain current timestamps without
 /// depending on std. Implementations should provide monotonic timestamps
 /// when possible.
@@ -181,7 +181,8 @@ mod hex {
     use alloc::vec::Vec;
 
     pub fn encode(bytes: &[u8]) -> String {
-        bytes.iter()
+        bytes
+            .iter()
             .map(|b| alloc::format!("{:02x}", b))
             .collect::<Vec<_>>()
             .join("")
@@ -201,7 +202,7 @@ mod tests {
         let bytes = [1, 2, 3, 4, 5, 6, 7, 8];
         let peer_id = PeerId::new(bytes);
         assert_eq!(peer_id.as_bytes(), &bytes);
-        
+
         let from_long = PeerId::from_bytes(&[1, 2, 3, 4, 5, 6, 7, 8, 9, 10]);
         assert_eq!(from_long.as_bytes(), &bytes);
     }
@@ -210,16 +211,16 @@ mod tests {
     fn test_ttl() {
         let mut ttl = Ttl::new(3);
         assert_eq!(ttl.value(), 3);
-        
+
         ttl = ttl.decrement().unwrap();
         assert_eq!(ttl.value(), 2);
-        
+
         ttl = ttl.decrement().unwrap();
         assert_eq!(ttl.value(), 1);
-        
+
         ttl = ttl.decrement().unwrap();
         assert_eq!(ttl.value(), 0);
-        
+
         assert!(ttl.decrement().is_none());
     }
 

@@ -4,7 +4,7 @@
 //! required by the BitChat protocol, including Noise Protocol, Ed25519 signatures,
 //! and fingerprint generation.
 
-use alloc::{vec::Vec, vec};
+use alloc::{vec, vec::Vec};
 use ed25519_dalek::{Signature, Signer, SigningKey, Verifier, VerifyingKey};
 use sha2::{Digest, Sha256};
 use snow::{Builder, HandshakeState, TransportState};
@@ -37,10 +37,10 @@ impl IdentityKeyPair {
         let mut rng = rand_core::OsRng;
         let mut secret_bytes = [0u8; 32];
         rng.fill_bytes(&mut secret_bytes);
-        
+
         let signing_key = SigningKey::from_bytes(&secret_bytes);
         let verifying_key = signing_key.verifying_key();
-        
+
         Ok(Self {
             signing_key,
             verifying_key,
@@ -51,7 +51,7 @@ impl IdentityKeyPair {
     pub fn from_bytes(private_key: &[u8; 32]) -> Result<Self> {
         let signing_key = SigningKey::from_bytes(private_key);
         let verifying_key = signing_key.verifying_key();
-        
+
         Ok(Self {
             signing_key,
             verifying_key,
@@ -75,10 +75,10 @@ impl IdentityKeyPair {
 
     /// Verify a signature from another key
     pub fn verify(public_key: &[u8; 32], data: &[u8], signature: &[u8; 64]) -> Result<()> {
-        let verifying_key = VerifyingKey::from_bytes(public_key)
-            .map_err(|_| BitchatError::Signature)?;
+        let verifying_key =
+            VerifyingKey::from_bytes(public_key).map_err(|_| BitchatError::Signature)?;
         let signature = Signature::from_bytes(signature);
-        
+
         verifying_key
             .verify(data, &signature)
             .map_err(|_| BitchatError::Signature)
@@ -103,15 +103,15 @@ impl NoiseKeyPair {
         let mut rng = rand_core::OsRng;
         let mut private_key = [0u8; 32];
         rng.fill_bytes(&mut private_key);
-        
+
         // Use curve25519-dalek for key derivation
-        use curve25519_dalek::scalar::Scalar;
         use curve25519_dalek::constants::X25519_BASEPOINT;
-        
+        use curve25519_dalek::scalar::Scalar;
+
         let scalar = Scalar::from_bytes_mod_order(private_key);
         let point = &scalar * &X25519_BASEPOINT;
         let public_key = point.to_bytes();
-        
+
         Self {
             private_key,
             public_key,
@@ -120,13 +120,13 @@ impl NoiseKeyPair {
 
     /// Create from raw private key bytes
     pub fn from_bytes(private_key: &[u8; 32]) -> Self {
-        use curve25519_dalek::scalar::Scalar;
         use curve25519_dalek::constants::X25519_BASEPOINT;
-        
+        use curve25519_dalek::scalar::Scalar;
+
         let scalar = Scalar::from_bytes_mod_order(*private_key);
         let point = &scalar * &X25519_BASEPOINT;
         let public_key = point.to_bytes();
-        
+
         Self {
             private_key: *private_key,
             public_key,
@@ -158,7 +158,7 @@ pub fn generate_fingerprint(public_key: &[u8; 32]) -> Fingerprint {
     let mut hasher = Sha256::new();
     hasher.update(public_key);
     let hash = hasher.finalize();
-    
+
     let mut fingerprint = [0u8; 32];
     fingerprint.copy_from_slice(&hash);
     Fingerprint::new(fingerprint)
@@ -181,7 +181,7 @@ impl NoiseHandshake {
             .local_private_key(&local_key.private_key_bytes())
             .build_initiator()
             .map_err(BitchatError::Noise)?;
-        
+
         Ok(Self { state })
     }
 
@@ -192,14 +192,15 @@ impl NoiseHandshake {
             .local_private_key(&local_key.private_key_bytes())
             .build_responder()
             .map_err(BitchatError::Noise)?;
-        
+
         Ok(Self { state })
     }
 
     /// Write handshake message
     pub fn write_message(&mut self, payload: &[u8]) -> Result<Vec<u8>> {
         let mut output = vec![0u8; 65536]; // Larger buffer for handshake messages
-        let len = self.state
+        let len = self
+            .state
             .write_message(payload, &mut output)
             .map_err(BitchatError::Noise)?;
         output.truncate(len);
@@ -209,7 +210,8 @@ impl NoiseHandshake {
     /// Read handshake message
     pub fn read_message(&mut self, input: &[u8]) -> Result<Vec<u8>> {
         let mut output = vec![0u8; 65536]; // Larger buffer for handshake messages
-        let len = self.state
+        let len = self
+            .state
             .read_message(input, &mut output)
             .map_err(BitchatError::Noise)?;
         output.truncate(len);
@@ -223,10 +225,11 @@ impl NoiseHandshake {
 
     /// Convert to transport mode
     pub fn into_transport_mode(self) -> Result<NoiseTransport> {
-        let transport = self.state
+        let transport = self
+            .state
             .into_transport_mode()
             .map_err(BitchatError::Noise)?;
-        
+
         Ok(NoiseTransport { state: transport })
     }
 
@@ -253,7 +256,8 @@ impl NoiseTransport {
     /// Encrypt a message
     pub fn encrypt(&mut self, plaintext: &[u8]) -> Result<Vec<u8>> {
         let mut ciphertext = vec![0u8; plaintext.len() + 16]; // +16 for tag
-        let len = self.state
+        let len = self
+            .state
             .write_message(plaintext, &mut ciphertext)
             .map_err(BitchatError::Noise)?;
         ciphertext.truncate(len);
@@ -263,7 +267,8 @@ impl NoiseTransport {
     /// Decrypt a message
     pub fn decrypt(&mut self, ciphertext: &[u8]) -> Result<Vec<u8>> {
         let mut plaintext = vec![0u8; ciphertext.len()];
-        let len = self.state
+        let len = self
+            .state
             .read_message(ciphertext, &mut plaintext)
             .map_err(BitchatError::Noise)?;
         plaintext.truncate(len);
@@ -284,13 +289,13 @@ mod tests {
         let keypair = IdentityKeyPair::generate().unwrap();
         let public_key = keypair.public_key_bytes();
         let _private_key = keypair.private_key_bytes();
-        
+
         // Test signing and verification
         let data = b"test message";
         let signature = keypair.sign(data);
-        
+
         IdentityKeyPair::verify(&public_key, data, &signature).unwrap();
-        
+
         // Test that wrong signature fails
         let wrong_signature = [0u8; 64];
         assert!(IdentityKeyPair::verify(&public_key, data, &wrong_signature).is_err());
@@ -301,7 +306,7 @@ mod tests {
         let keypair = NoiseKeyPair::generate();
         let public_key = keypair.public_key_bytes();
         let fingerprint = keypair.fingerprint();
-        
+
         // Test fingerprint generation
         let expected_fingerprint = generate_fingerprint(&public_key);
         assert_eq!(fingerprint.as_bytes(), expected_fingerprint.as_bytes());
@@ -311,33 +316,33 @@ mod tests {
     fn test_noise_handshake() {
         let alice_key = NoiseKeyPair::generate();
         let bob_key = NoiseKeyPair::generate();
-        
+
         let mut alice = NoiseHandshake::initiator(&alice_key).unwrap();
         let mut bob = NoiseHandshake::responder(&bob_key).unwrap();
-        
+
         // Step 1: Alice -> Bob
         let message1 = alice.write_message(b"").unwrap();
         let _response1 = bob.read_message(&message1).unwrap();
-        
+
         // Step 2: Bob -> Alice
         let message2 = bob.write_message(b"").unwrap();
         let _response2 = alice.read_message(&message2).unwrap();
-        
+
         // Step 3: Alice -> Bob
         let message3 = alice.write_message(b"").unwrap();
         let _response3 = bob.read_message(&message3).unwrap();
-        
+
         assert!(alice.is_handshake_finished());
         assert!(bob.is_handshake_finished());
-        
+
         // Test transport mode
         let mut alice_transport = alice.into_transport_mode().unwrap();
         let mut bob_transport = bob.into_transport_mode().unwrap();
-        
+
         let plaintext = b"Hello, Bob!";
         let ciphertext = alice_transport.encrypt(plaintext).unwrap();
         let decrypted = bob_transport.decrypt(&ciphertext).unwrap();
-        
+
         assert_eq!(plaintext.as_slice(), decrypted.as_slice());
     }
 }

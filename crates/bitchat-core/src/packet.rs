@@ -77,9 +77,15 @@ impl PacketFlags {
     /// Convert flags to a single byte
     pub fn to_byte(self) -> u8 {
         let mut flags = 0u8;
-        if self.has_recipient { flags |= 0x01; }
-        if self.has_signature { flags |= 0x02; }
-        if self.is_compressed { flags |= 0x04; }
+        if self.has_recipient {
+            flags |= 0x01;
+        }
+        if self.has_signature {
+            flags |= 0x02;
+        }
+        if self.is_compressed {
+            flags |= 0x04;
+        }
         flags
     }
 
@@ -121,7 +127,7 @@ pub struct BitchatPacket {
     pub payload: Vec<u8>,
     /// Optional Ed25519 signature
     #[serde(
-        serialize_with = "serialize_signature", 
+        serialize_with = "serialize_signature",
         deserialize_with = "deserialize_signature"
     )]
     pub signature: Option<[u8; 64]>,
@@ -132,11 +138,7 @@ impl BitchatPacket {
     pub const CURRENT_VERSION: u8 = 1;
 
     /// Create a new packet with required fields
-    pub fn new(
-        message_type: MessageType,
-        sender_id: PeerId,
-        payload: Vec<u8>,
-    ) -> Self {
+    pub fn new(message_type: MessageType, sender_id: PeerId, payload: Vec<u8>) -> Self {
         Self {
             version: Self::CURRENT_VERSION,
             message_type,
@@ -169,8 +171,7 @@ impl BitchatPacket {
 
     /// Check if this is a broadcast message
     pub fn is_broadcast(&self) -> bool {
-        self.recipient_id.is_none() || 
-        self.recipient_id == Some(PeerId::BROADCAST)
+        self.recipient_id.is_none() || self.recipient_id == Some(PeerId::BROADCAST)
     }
 
     /// Get the payload length
@@ -214,9 +215,15 @@ impl MessageFlags {
     /// Convert flags to a single byte
     pub fn to_byte(self) -> u8 {
         let mut flags = 0u8;
-        if self.is_relay { flags |= 0x01; }
-        if self.is_private { flags |= 0x02; }
-        if self.has_original_sender { flags |= 0x04; }
+        if self.is_relay {
+            flags |= 0x01;
+        }
+        if self.is_private {
+            flags |= 0x02;
+        }
+        if self.has_original_sender {
+            flags |= 0x04;
+        }
         flags
     }
 
@@ -374,10 +381,10 @@ mod tests {
             has_signature: false,
             is_compressed: true,
         };
-        
+
         let byte = flags.to_byte();
         assert_eq!(byte, 0x05); // 0x01 | 0x04
-        
+
         let parsed = PacketFlags::from_byte(byte);
         assert_eq!(parsed.has_recipient, true);
         assert_eq!(parsed.has_signature, false);
@@ -388,13 +395,9 @@ mod tests {
     fn test_packet_creation() {
         let sender = PeerId::new([1, 2, 3, 4, 5, 6, 7, 8]);
         let payload = b"test payload".to_vec();
-        
-        let packet = BitchatPacket::new(
-            MessageType::Message,
-            sender,
-            payload.clone(),
-        );
-        
+
+        let packet = BitchatPacket::new(MessageType::Message, sender, payload.clone());
+
         assert_eq!(packet.version, BitchatPacket::CURRENT_VERSION);
         assert_eq!(packet.message_type, MessageType::Message);
         assert_eq!(packet.sender_id, sender);
@@ -404,11 +407,8 @@ mod tests {
 
     #[test]
     fn test_message_creation() {
-        let msg = BitchatMessage::new(
-            "alice".to_string(),
-            "Hello, world!".to_string(),
-        );
-        
+        let msg = BitchatMessage::new("alice".to_string(), "Hello, world!".to_string());
+
         assert_eq!(msg.sender, "alice");
         assert_eq!(msg.content, "Hello, world!");
         assert!(!msg.flags.is_private);

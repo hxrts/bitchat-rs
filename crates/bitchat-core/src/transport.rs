@@ -4,7 +4,7 @@
 //! (BLE, Nostr, etc.) used by the BitChat protocol, enabling clean separation
 //! between protocol logic and transport implementation.
 
-use alloc::{boxed::Box, vec::Vec, string::String};
+use alloc::{boxed::Box, string::String, vec::Vec};
 use core::{future::Future, pin::Pin};
 
 use crate::packet::BitchatPacket;
@@ -18,26 +18,35 @@ use crate::{BitchatError, Result};
 /// Unified transport interface for BitChat communication
 pub trait Transport: Send + Sync {
     /// Send a packet to a specific peer
-    fn send_to(&mut self, peer_id: PeerId, packet: BitchatPacket) -> Pin<Box<dyn Future<Output = Result<()>> + Send + '_>>;
-    
+    fn send_to(
+        &mut self,
+        peer_id: PeerId,
+        packet: BitchatPacket,
+    ) -> Pin<Box<dyn Future<Output = Result<()>> + Send + '_>>;
+
     /// Broadcast a packet to all reachable peers
-    fn broadcast(&mut self, packet: BitchatPacket) -> Pin<Box<dyn Future<Output = Result<()>> + Send + '_>>;
-    
+    fn broadcast(
+        &mut self,
+        packet: BitchatPacket,
+    ) -> Pin<Box<dyn Future<Output = Result<()>> + Send + '_>>;
+
     /// Receive the next packet from any peer
-    fn receive(&mut self) -> Pin<Box<dyn Future<Output = Result<(PeerId, BitchatPacket)>> + Send + '_>>;
-    
+    fn receive(
+        &mut self,
+    ) -> Pin<Box<dyn Future<Output = Result<(PeerId, BitchatPacket)>> + Send + '_>>;
+
     /// Get list of currently discoverable peers
     fn discovered_peers(&self) -> Vec<PeerId>;
-    
+
     /// Start the transport (begin scanning, advertising, etc.)
     fn start(&mut self) -> Pin<Box<dyn Future<Output = Result<()>> + Send + '_>>;
-    
+
     /// Stop the transport and clean up resources
     fn stop(&mut self) -> Pin<Box<dyn Future<Output = Result<()>> + Send + '_>>;
-    
+
     /// Check if transport is currently active
     fn is_active(&self) -> bool;
-    
+
     /// Get transport-specific metadata/capabilities
     fn capabilities(&self) -> TransportCapabilities;
 }
@@ -122,13 +131,9 @@ pub enum TransportEvent {
         transport_type: TransportType,
     },
     /// Transport started successfully
-    Started {
-        transport_type: TransportType,
-    },
+    Started { transport_type: TransportType },
     /// Transport stopped
-    Stopped {
-        transport_type: TransportType,
-    },
+    Stopped { transport_type: TransportType },
     /// Transport error occurred
     Error {
         transport_type: TransportType,
@@ -180,22 +185,22 @@ impl TransportManager {
             selection_policy: TransportSelectionPolicy::FirstAvailable,
         }
     }
-    
+
     /// Add a transport to the manager
     pub fn add_transport(&mut self, transport: Box<dyn Transport>) {
         self.transports.push(transport);
     }
-    
+
     /// Set the event handler
     pub fn set_event_handler(&mut self, handler: Box<dyn TransportEventHandler>) {
         self.event_handler = Some(handler);
     }
-    
+
     /// Set the transport selection policy
     pub fn set_selection_policy(&mut self, policy: TransportSelectionPolicy) {
         self.selection_policy = policy;
     }
-    
+
     /// Start all transports
     pub async fn start_all(&mut self) -> Result<()> {
         for transport in &mut self.transports {
@@ -208,7 +213,7 @@ impl TransportManager {
         }
         Ok(())
     }
-    
+
     /// Stop all transports
     pub async fn stop_all(&mut self) -> Result<()> {
         for transport in &mut self.transports {
@@ -223,17 +228,17 @@ impl TransportManager {
         }
         Ok(())
     }
-    
+
     /// Send a packet to a specific peer using the best available transport
     pub async fn send_to(&mut self, peer_id: PeerId, packet: BitchatPacket) -> Result<()> {
         let transport = self.select_transport_for_peer(&peer_id)?;
         transport.send_to(peer_id, packet).await
     }
-    
+
     /// Broadcast a packet on all active transports
     pub async fn broadcast_all(&mut self, packet: BitchatPacket) -> Result<()> {
         let mut errors = Vec::new();
-        
+
         for transport in &mut self.transports {
             if transport.is_active() {
                 if let Err(e) = transport.broadcast(packet.clone()).await {
@@ -241,48 +246,52 @@ impl TransportManager {
                 }
             }
         }
-        
+
         if errors.is_empty() {
             Ok(())
         } else {
-            Err(BitchatError::InvalidPacket("Broadcast failed on all transports".into()))
+            Err(BitchatError::InvalidPacket(
+                "Broadcast failed on all transports".into(),
+            ))
         }
     }
-    
+
     /// Get all discovered peers across all transports
     pub fn all_discovered_peers(&self) -> Vec<(PeerId, TransportType)> {
         let mut peers = Vec::new();
-        
+
         for transport in &self.transports {
             let transport_type = transport.capabilities().transport_type;
             for peer_id in transport.discovered_peers() {
                 peers.push((peer_id, transport_type));
             }
         }
-        
+
         peers
     }
-    
+
     /// Get active transport count
     pub fn active_transport_count(&self) -> usize {
         self.transports.iter().filter(|t| t.is_active()).count()
     }
-    
+
     /// Select the best transport for a specific peer
     fn select_transport_for_peer(&mut self, peer_id: &PeerId) -> Result<&mut Box<dyn Transport>> {
         // Find transports that can reach this peer
         let mut available_transports = Vec::new();
-        
+
         for (i, transport) in self.transports.iter().enumerate() {
             if transport.is_active() && transport.discovered_peers().contains(peer_id) {
                 available_transports.push(i);
             }
         }
-        
+
         if available_transports.is_empty() {
-            return Err(BitchatError::InvalidPacket("No transport can reach peer".into()));
+            return Err(BitchatError::InvalidPacket(
+                "No transport can reach peer".into(),
+            ));
         }
-        
+
         // Select transport based on policy
         let selected_index = match &self.selection_policy {
             TransportSelectionPolicy::FirstAvailable => available_transports[0],
@@ -301,7 +310,7 @@ impl TransportManager {
                 // Find transport with lowest latency
                 let mut best_index = available_transports[0];
                 let mut best_latency = self.transports[best_index].capabilities().latency_class;
-                
+
                 for &i in &available_transports[1..] {
                     let latency = self.transports[i].capabilities().latency_class;
                     if (latency as u8) < (best_latency as u8) {
@@ -314,8 +323,9 @@ impl TransportManager {
             TransportSelectionPolicy::HighestReliability => {
                 // Find transport with highest reliability
                 let mut best_index = available_transports[0];
-                let mut best_reliability = self.transports[best_index].capabilities().reliability_class;
-                
+                let mut best_reliability =
+                    self.transports[best_index].capabilities().reliability_class;
+
                 for &i in &available_transports[1..] {
                     let reliability = self.transports[i].capabilities().reliability_class;
                     if (reliability as u8) > (best_reliability as u8) {
@@ -330,7 +340,7 @@ impl TransportManager {
                 available_transports[0]
             }
         };
-        
+
         Ok(&mut self.transports[selected_index])
     }
 }
@@ -380,19 +390,19 @@ impl MockTransport {
             },
         }
     }
-    
+
     /// Add a peer to the discovered peers list
     pub fn add_peer(&mut self, peer_id: PeerId) {
         if !self.peers.contains(&peer_id) {
             self.peers.push(peer_id);
         }
     }
-    
+
     /// Queue a packet for reception
     pub fn queue_receive(&mut self, from: PeerId, packet: BitchatPacket) {
         self.receive_queue.push((from, packet));
     }
-    
+
     /// Get sent packets (for verification)
     pub fn sent_packets(&self) -> &[(Option<PeerId>, BitchatPacket)] {
         &self.sent_packets
@@ -401,42 +411,51 @@ impl MockTransport {
 
 #[cfg(test)]
 impl Transport for MockTransport {
-    fn send_to(&mut self, peer_id: PeerId, packet: BitchatPacket) -> Pin<Box<dyn Future<Output = Result<()>> + Send + '_>> {
+    fn send_to(
+        &mut self,
+        peer_id: PeerId,
+        packet: BitchatPacket,
+    ) -> Pin<Box<dyn Future<Output = Result<()>> + Send + '_>> {
         self.sent_packets.push((Some(peer_id), packet));
         Box::pin(async { Ok(()) })
     }
-    
-    fn broadcast(&mut self, packet: BitchatPacket) -> Pin<Box<dyn Future<Output = Result<()>> + Send + '_>> {
+
+    fn broadcast(
+        &mut self,
+        packet: BitchatPacket,
+    ) -> Pin<Box<dyn Future<Output = Result<()>> + Send + '_>> {
         self.sent_packets.push((None, packet));
         Box::pin(async { Ok(()) })
     }
-    
-    fn receive(&mut self) -> Pin<Box<dyn Future<Output = Result<(PeerId, BitchatPacket)>> + Send + '_>> {
+
+    fn receive(
+        &mut self,
+    ) -> Pin<Box<dyn Future<Output = Result<(PeerId, BitchatPacket)>> + Send + '_>> {
         if let Some((peer_id, packet)) = self.receive_queue.pop() {
             Box::pin(async move { Ok((peer_id, packet)) })
         } else {
             Box::pin(async { Err(BitchatError::InvalidPacket("No packets to receive".into())) })
         }
     }
-    
+
     fn discovered_peers(&self) -> Vec<PeerId> {
         self.peers.clone()
     }
-    
+
     fn start(&mut self) -> Pin<Box<dyn Future<Output = Result<()>> + Send + '_>> {
         self.active = true;
         Box::pin(async { Ok(()) })
     }
-    
+
     fn stop(&mut self) -> Pin<Box<dyn Future<Output = Result<()>> + Send + '_>> {
         self.active = false;
         Box::pin(async { Ok(()) })
     }
-    
+
     fn is_active(&self) -> bool {
         self.active
     }
-    
+
     fn capabilities(&self) -> TransportCapabilities {
         self.capabilities.clone()
     }
@@ -455,47 +474,43 @@ mod tests {
     async fn test_mock_transport() {
         let mut transport = MockTransport::new(TransportType::Local);
         let peer_id = PeerId::new([1, 2, 3, 4, 5, 6, 7, 8]);
-        let packet = BitchatPacket::new(
-            MessageType::Message,
-            peer_id,
-            b"test".to_vec(),
-        );
-        
+        let packet = BitchatPacket::new(MessageType::Message, peer_id, b"test".to_vec());
+
         assert!(!transport.is_active());
-        
+
         transport.start().await.unwrap();
         assert!(transport.is_active());
-        
+
         transport.add_peer(peer_id);
         assert_eq!(transport.discovered_peers(), vec![peer_id]);
-        
+
         transport.send_to(peer_id, packet.clone()).await.unwrap();
         assert_eq!(transport.sent_packets().len(), 1);
-        
+
         transport.broadcast(packet).await.unwrap();
         assert_eq!(transport.sent_packets().len(), 2);
-        
+
         transport.stop().await.unwrap();
         assert!(!transport.is_active());
     }
-    
+
     #[tokio::test]
     async fn test_transport_manager() {
         let mut manager = TransportManager::new();
-        
+
         let transport1 = Box::new(MockTransport::new(TransportType::Ble));
         let transport2 = Box::new(MockTransport::new(TransportType::Nostr));
-        
+
         manager.add_transport(transport1);
         manager.add_transport(transport2);
-        
+
         manager.start_all().await.unwrap();
         assert_eq!(manager.active_transport_count(), 2);
-        
+
         manager.stop_all().await.unwrap();
         assert_eq!(manager.active_transport_count(), 0);
     }
-    
+
     #[test]
     fn test_transport_capabilities() {
         let caps = TransportCapabilities {
@@ -507,7 +522,7 @@ mod tests {
             latency_class: LatencyClass::Low,
             reliability_class: ReliabilityClass::High,
         };
-        
+
         assert_eq!(caps.transport_type, TransportType::Ble);
         assert!(caps.supports_discovery);
         assert!(caps.supports_broadcast);

@@ -31,23 +31,29 @@ impl PacketParser {
     /// Parse a message packet payload
     pub fn parse_message(packet: &BitchatPacket) -> Result<BitchatMessage> {
         if packet.message_type != MessageType::Message {
-            return Err(crate::BitchatError::InvalidPacket("Not a message packet".into()));
+            return Err(crate::BitchatError::InvalidPacket(
+                "Not a message packet".into(),
+            ));
         }
         Ok(bincode::deserialize(&packet.payload)?)
     }
-    
+
     /// Parse a delivery ack packet payload
     pub fn parse_delivery_ack(packet: &BitchatPacket) -> Result<DeliveryAck> {
         if packet.message_type != MessageType::DeliveryAck {
-            return Err(crate::BitchatError::InvalidPacket("Not a delivery ack packet".into()));
+            return Err(crate::BitchatError::InvalidPacket(
+                "Not a delivery ack packet".into(),
+            ));
         }
         Ok(bincode::deserialize(&packet.payload)?)
     }
-    
+
     /// Parse a read receipt packet payload
     pub fn parse_read_receipt(packet: &BitchatPacket) -> Result<ReadReceipt> {
         if packet.message_type != MessageType::ReadReceipt {
-            return Err(crate::BitchatError::InvalidPacket("Not a read receipt packet".into()));
+            return Err(crate::BitchatError::InvalidPacket(
+                "Not a read receipt packet".into(),
+            ));
         }
         Ok(bincode::deserialize(&packet.payload)?)
     }
@@ -97,15 +103,15 @@ impl MessageBuilder {
     ) -> Result<BitchatPacket> {
         let message = BitchatMessage::new(sender_name, content);
         let payload = bincode::serialize(&message)?;
-        
+
         let mut packet = BitchatPacket::new(MessageType::Message, sender_id, payload);
         if let Some(recipient) = recipient_id {
             packet = packet.with_recipient(recipient);
         }
-        
+
         Ok(packet)
     }
-    
+
     /// Create a delivery acknowledgment packet
     pub fn create_delivery_ack(
         sender_id: PeerId,
@@ -114,15 +120,15 @@ impl MessageBuilder {
     ) -> Result<BitchatPacket> {
         let ack = DeliveryAck::new(message_id);
         let payload = bincode::serialize(&ack)?;
-        
+
         let mut packet = BitchatPacket::new(MessageType::DeliveryAck, sender_id, payload);
         if let Some(recipient) = recipient_id {
             packet = packet.with_recipient(recipient);
         }
-        
+
         Ok(packet)
     }
-    
+
     /// Create a read receipt packet
     pub fn create_read_receipt(
         sender_id: PeerId,
@@ -131,58 +137,64 @@ impl MessageBuilder {
     ) -> Result<BitchatPacket> {
         let receipt = ReadReceipt::new(message_id);
         let payload = bincode::serialize(&receipt)?;
-        
+
         let mut packet = BitchatPacket::new(MessageType::ReadReceipt, sender_id, payload);
         if let Some(recipient) = recipient_id {
             packet = packet.with_recipient(recipient);
         }
-        
+
         Ok(packet)
     }
-    
+
     /// Create a handshake initiation packet
     pub fn create_handshake_init(
         sender_id: PeerId,
         handshake_payload: Vec<u8>,
         recipient_id: PeerId,
     ) -> BitchatPacket {
-        BitchatPacket::new(MessageType::NoiseHandshakeInit, sender_id, handshake_payload)
-            .with_recipient(recipient_id)
+        BitchatPacket::new(
+            MessageType::NoiseHandshakeInit,
+            sender_id,
+            handshake_payload,
+        )
+        .with_recipient(recipient_id)
     }
-    
+
     /// Create a handshake response packet
     pub fn create_handshake_response(
         sender_id: PeerId,
         handshake_payload: Vec<u8>,
         recipient_id: PeerId,
     ) -> BitchatPacket {
-        BitchatPacket::new(MessageType::NoiseHandshakeResponse, sender_id, handshake_payload)
-            .with_recipient(recipient_id)
+        BitchatPacket::new(
+            MessageType::NoiseHandshakeResponse,
+            sender_id,
+            handshake_payload,
+        )
+        .with_recipient(recipient_id)
     }
-    
+
     /// Create a handshake finalization packet
     pub fn create_handshake_finalize(
         sender_id: PeerId,
         handshake_payload: Vec<u8>,
         recipient_id: PeerId,
     ) -> BitchatPacket {
-        BitchatPacket::new(MessageType::NoiseHandshakeFinalize, sender_id, handshake_payload)
-            .with_recipient(recipient_id)
+        BitchatPacket::new(
+            MessageType::NoiseHandshakeFinalize,
+            sender_id,
+            handshake_payload,
+        )
+        .with_recipient(recipient_id)
     }
-    
+
     /// Create an announcement packet
-    pub fn create_announce(
-        sender_id: PeerId,
-        announcement_data: Vec<u8>,
-    ) -> BitchatPacket {
+    pub fn create_announce(sender_id: PeerId, announcement_data: Vec<u8>) -> BitchatPacket {
         BitchatPacket::new(MessageType::Announce, sender_id, announcement_data)
     }
-    
+
     /// Create a sync request packet
-    pub fn create_request_sync(
-        sender_id: PeerId,
-        sync_data: Vec<u8>,
-    ) -> BitchatPacket {
+    pub fn create_request_sync(sender_id: PeerId, sync_data: Vec<u8>) -> BitchatPacket {
         BitchatPacket::new(MessageType::RequestSync, sender_id, sync_data)
     }
 }
@@ -205,24 +217,16 @@ pub enum BitchatEvent {
         confirmed_by: PeerId,
     },
     /// Message read by recipient
-    MessageRead {
-        message_id: Uuid,
-        read_by: PeerId,
-    },
+    MessageRead { message_id: Uuid, read_by: PeerId },
     /// New peer announced
     PeerAnnounced {
         peer_id: PeerId,
         announcement: Vec<u8>,
     },
     /// Handshake completed
-    HandshakeCompleted {
-        peer_id: PeerId,
-    },
+    HandshakeCompleted { peer_id: PeerId },
     /// Handshake failed
-    HandshakeFailed {
-        peer_id: PeerId,
-        reason: String,
-    },
+    HandshakeFailed { peer_id: PeerId, reason: String },
 }
 
 /// Trait for handling BitChat events
@@ -241,12 +245,12 @@ impl<E: EventHandler> EventEmittingHandler<E> {
     pub fn new(event_handler: E) -> Self {
         Self { event_handler }
     }
-    
+
     /// Get a reference to the event handler
     pub fn event_handler(&self) -> &E {
         &self.event_handler
     }
-    
+
     /// Get a mutable reference to the event handler
     pub fn event_handler_mut(&mut self) -> &mut E {
         &mut self.event_handler
@@ -312,13 +316,13 @@ mod tests {
     struct TestEventHandler {
         events: Vec<BitchatEvent>,
     }
-    
+
     impl TestEventHandler {
         fn new() -> Self {
             Self { events: Vec::new() }
         }
     }
-    
+
     impl EventHandler for TestEventHandler {
         fn handle_event(&mut self, event: BitchatEvent) {
             self.events.push(event);
@@ -329,55 +333,58 @@ mod tests {
     fn test_message_builder() {
         let sender_id = PeerId::new([1, 2, 3, 4, 5, 6, 7, 8]);
         let recipient_id = Some(PeerId::new([8, 7, 6, 5, 4, 3, 2, 1]));
-        
+
         let packet = MessageBuilder::create_message(
             sender_id,
             "alice".to_string(),
             "Hello, world!".to_string(),
             recipient_id,
-        ).unwrap();
-        
+        )
+        .unwrap();
+
         assert_eq!(packet.message_type, MessageType::Message);
         assert_eq!(packet.sender_id, sender_id);
         assert_eq!(packet.recipient_id, recipient_id);
-        
+
         // Verify payload can be parsed
         let message = PacketParser::parse_message(&packet).unwrap();
         assert_eq!(message.sender, "alice");
         assert_eq!(message.content, "Hello, world!");
     }
-    
+
     #[test]
     fn test_message_dispatcher() {
         let mut handler = DefaultHandler;
-        
+
         let sender_id = PeerId::new([1, 2, 3, 4, 5, 6, 7, 8]);
         let packet = MessageBuilder::create_message(
             sender_id,
             "alice".to_string(),
             "Hello, world!".to_string(),
             None,
-        ).unwrap();
-        
+        )
+        .unwrap();
+
         // Should not panic
         MessageDispatcher::dispatch(&mut handler, &packet).unwrap();
     }
-    
+
     #[test]
     fn test_event_emitting_handler() {
         let event_handler = TestEventHandler::new();
         let mut handler = EventEmittingHandler::new(event_handler);
-        
+
         let sender_id = PeerId::new([1, 2, 3, 4, 5, 6, 7, 8]);
         let packet = MessageBuilder::create_message(
             sender_id,
             "alice".to_string(),
             "Hello, world!".to_string(),
             None,
-        ).unwrap();
-        
+        )
+        .unwrap();
+
         MessageDispatcher::dispatch(&mut handler, &packet).unwrap();
-        
+
         assert_eq!(handler.event_handler().events.len(), 1);
         match &handler.event_handler().events[0] {
             BitchatEvent::MessageReceived { from, message } => {
@@ -388,24 +395,20 @@ mod tests {
             _ => panic!("Expected MessageReceived event"),
         }
     }
-    
+
     #[test]
     fn test_delivery_ack_flow() {
         let sender_id = PeerId::new([1, 2, 3, 4, 5, 6, 7, 8]);
         let message_id = Uuid::new_v4();
-        
-        let packet = MessageBuilder::create_delivery_ack(
-            sender_id,
-            message_id,
-            None,
-        ).unwrap();
-        
+
+        let packet = MessageBuilder::create_delivery_ack(sender_id, message_id, None).unwrap();
+
         assert_eq!(packet.message_type, MessageType::DeliveryAck);
-        
+
         let ack = PacketParser::parse_delivery_ack(&packet).unwrap();
         assert_eq!(ack.message_id, message_id);
     }
-    
+
     #[test]
     fn test_packet_parser_error_handling() {
         let sender_id = PeerId::new([1, 2, 3, 4, 5, 6, 7, 8]);
@@ -414,8 +417,9 @@ mod tests {
             "alice".to_string(),
             "Hello, world!".to_string(),
             None,
-        ).unwrap();
-        
+        )
+        .unwrap();
+
         // Should fail when parsing message packet as delivery ack
         let result = PacketParser::parse_delivery_ack(&packet);
         assert!(result.is_err());

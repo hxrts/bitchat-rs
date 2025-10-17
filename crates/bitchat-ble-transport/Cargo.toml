@@ -1,0 +1,31 @@
+[package]
+name = "bitchat-ble-transport"
+version = "0.1.0"
+edition = "2021"
+description = "Bluetooth Low Energy transport implementation for BitChat protocol"
+license = "MIT OR Apache-2.0"
+
+[dependencies]
+# Core BitChat protocol
+bitchat-core = { path = "../bitchat-core" }
+
+# BLE dependencies
+btleplug = { workspace = true }
+
+# Async runtime
+tokio = { workspace = true }
+
+# Utilities
+uuid = { workspace = true }
+thiserror = { workspace = true }
+serde = { workspace = true }
+bincode = { workspace = true }
+
+# Logging
+tracing = { workspace = true }
+
+# Hex encoding/decoding
+hex = "0.4"
+
+[dev-dependencies]
+tokio-test = "0.4"
