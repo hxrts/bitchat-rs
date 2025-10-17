@@ -14,6 +14,7 @@ btleplug = { workspace = true }
 
 # Async runtime
 tokio = { workspace = true }
+futures = "0.3"
 
 # Utilities
 uuid = { workspace = true }

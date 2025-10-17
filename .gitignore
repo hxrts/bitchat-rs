@@ -34,3 +34,4 @@ work/
 .env
 .env.local
 ext/
+CLAUDE.md

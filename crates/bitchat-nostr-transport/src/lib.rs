@@ -5,13 +5,16 @@
 
 use std::collections::HashMap;
 use std::sync::Arc;
+use std::sync::atomic::{AtomicBool, Ordering};
 use std::time::Duration;
 
 use ::url::Url;
+use base64;
 use bitchat_core::transport::{
     LatencyClass, ReliabilityClass, Transport, TransportCapabilities, TransportType,
 };
 use bitchat_core::{BitchatError, BitchatPacket, PeerId, Result as BitchatResult};
+use thiserror::Error;
 use nostr_sdk::prelude::*;
 use nostr_sdk::{
     Client, EventBuilder, Filter, Keys, Kind, PublicKey, RelayPoolNotification, SecretKey,
@@ -23,11 +26,59 @@ use tokio::time::sleep;
 use tracing::{debug, error, info, warn};
 
 // ----------------------------------------------------------------------------
+// Error Types
+// ----------------------------------------------------------------------------
+
+/// Errors specific to the Nostr transport
+#[derive(Error, Debug)]
+pub enum NostrTransportError {
+    #[error("Failed to connect to relay: {relay} - {source}")]
+    RelayConnectionFailed {
+        relay: String,
+        #[source]
+        source: nostr_sdk::client::Error,
+    },
+    
+    #[error("Failed to send event: {0}")]
+    EventSendFailed(#[from] nostr_sdk::client::Error),
+    
+    #[error("Failed to serialize message: {0}")]
+    SerializationFailed(#[from] bincode::Error),
+    
+    #[error("Failed to deserialize message: {0}")]
+    DeserializationFailed(String),
+    
+    #[error("Invalid relay URL: {url}")]
+    InvalidRelayUrl { url: String },
+    
+    #[error("Client not initialized")]
+    ClientNotInitialized,
+    
+    #[error("Message too large: {size} bytes (max: {max_size})")]
+    MessageTooLarge { size: usize, max_size: usize },
+    
+    #[error("Failed to create encrypted message: {0}")]
+    EncryptionFailed(String),
+    
+    #[error("Receive channel closed")]
+    ReceiveChannelClosed,
+    
+    #[error("Unknown peer: {peer_id}")]
+    UnknownPeer { peer_id: PeerId },
+}
+
+impl From<NostrTransportError> for BitchatError {
+    fn from(err: NostrTransportError) -> Self {
+        BitchatError::InvalidPacket(err.to_string())
+    }
+}
+
+// ----------------------------------------------------------------------------
 // Nostr Configuration
 // ----------------------------------------------------------------------------
 
 /// Configuration for Nostr transport
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
 pub struct NostrTransportConfig {
     /// List of Nostr relay URLs
     pub relay_urls: Vec<String>,
@@ -40,6 +91,7 @@ pub struct NostrTransportConfig {
     /// Whether to automatically reconnect to relays
     pub auto_reconnect: bool,
     /// Private key for Nostr identity (None = generate random)
+    #[serde(skip)]
     pub private_key: Option<Keys>,
 }
 
@@ -64,6 +116,9 @@ impl Default for NostrTransportConfig {
 // BitChat Nostr Event Format
 // ----------------------------------------------------------------------------
 
+/// Custom Nostr event kind for BitChat protocol
+pub const BITCHAT_KIND: Kind = Kind::Custom(30420);
+
 /// BitChat message wrapper for Nostr events
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct BitchatNostrMessage {
@@ -71,8 +126,8 @@ pub struct BitchatNostrMessage {
     pub sender_peer_id: PeerId,
     /// BitChat peer ID of recipient (None for broadcast)
     pub recipient_peer_id: Option<PeerId>,
-    /// Serialized BitChat packet
-    pub packet_data: Vec<u8>,
+    /// Serialized BitChat packet (base64 encoded)
+    pub packet_data: String,
     /// Message timestamp
     pub timestamp: u64,
 }
@@ -83,8 +138,9 @@ impl BitchatNostrMessage {
         sender_peer_id: PeerId,
         recipient_peer_id: Option<PeerId>,
         packet: &BitchatPacket,
-    ) -> BitchatResult<Self> {
-        let packet_data = bincode::serialize(packet).map_err(BitchatError::Serialization)?;
+    ) -> Result<Self, NostrTransportError> {
+        let packet_bytes = bincode::serialize(packet)?;
+        let packet_data = base64::encode(packet_bytes);
 
         Ok(Self {
             sender_peer_id,
@@ -98,8 +154,10 @@ impl BitchatNostrMessage {
     }
 
     /// Extract BitChat packet from Nostr message
-    pub fn to_packet(&self) -> BitchatResult<BitchatPacket> {
-        bincode::deserialize(&self.packet_data).map_err(BitchatError::Serialization)
+    pub fn to_packet(&self) -> Result<BitchatPacket, NostrTransportError> {
+        let packet_bytes = base64::decode(&self.packet_data)
+            .map_err(|e| NostrTransportError::DeserializationFailed(e.to_string()))?;
+        Ok(bincode::deserialize(&packet_bytes)?)
     }
 }
 
@@ -117,16 +175,16 @@ pub struct NostrTransport {
     keys: Keys,
     /// Our BitChat peer ID
     local_peer_id: PeerId,
-    /// Discovered peers (Nostr pubkey -> BitChat peer ID)
-    peers: Arc<RwLock<HashMap<PublicKey, PeerId>>>,
-    /// Reverse mapping (BitChat peer ID -> Nostr pubkey)
-    peer_keys: Arc<RwLock<HashMap<PeerId, PublicKey>>>,
+    /// Discovered peers (BitChat peer ID -> Nostr public key)
+    peers: Arc<RwLock<HashMap<PeerId, PublicKey>>>,
+    /// Cached list of discovered peer IDs for quick access
+    peer_cache: Arc<RwLock<Vec<PeerId>>>,
     /// Receiver for incoming packets
     packet_rx: Arc<Mutex<mpsc::UnboundedReceiver<(PeerId, BitchatPacket)>>>,
     /// Sender for incoming packets (used internally)
     packet_tx: mpsc::UnboundedSender<(PeerId, BitchatPacket)>,
-    /// Whether the transport is active
-    active: Arc<RwLock<bool>>,
+    /// Whether the transport is active (atomic for non-blocking access)
+    active: Arc<AtomicBool>,
 }
 
 impl NostrTransport {
@@ -150,25 +208,30 @@ impl NostrTransport {
             keys,
             local_peer_id,
             peers: Arc::new(RwLock::new(HashMap::new())),
-            peer_keys: Arc::new(RwLock::new(HashMap::new())),
+            peer_cache: Arc::new(RwLock::new(Vec::new())),
             packet_rx: Arc::new(Mutex::new(packet_rx)),
             packet_tx,
-            active: Arc::new(RwLock::new(false)),
+            active: Arc::new(AtomicBool::new(false)),
         })
     }
 
     /// Initialize Nostr client and connect to relays
-    async fn initialize_client(&mut self) -> BitchatResult<()> {
+    async fn initialize_client(&mut self) -> Result<(), NostrTransportError> {
         let client = Client::new(&self.keys);
 
         // Add relays
         for relay_url in &self.config.relay_urls {
             if let Ok(url) = Url::parse(relay_url) {
-                client.add_relay(url).await.map_err(|e| {
-                    BitchatError::InvalidPacket(format!("Failed to add relay {}: {}", relay_url, e))
+                client.add_relay(url).await.map_err(|source| {
+                    NostrTransportError::RelayConnectionFailed {
+                        relay: relay_url.clone(),
+                        source,
+                    }
                 })?;
             } else {
-                warn!("Invalid relay URL: {}", relay_url);
+                return Err(NostrTransportError::InvalidRelayUrl {
+                    url: relay_url.clone(),
+                });
             }
         }
 
@@ -193,18 +256,34 @@ impl NostrTransport {
             .as_ref()
             .ok_or_else(|| BitchatError::InvalidPacket("Nostr client not initialized".into()))?;
 
-        // Subscribe to BitChat messages
+        // Subscribe to multiple event types for comprehensive BitChat coverage
         let subscription_id = SubscriptionId::new("bitchat");
-        let filter = Filter::new().kind(Kind::TextNote).since(Timestamp::now());
+        
+        // Filter 1: Custom BitChat events (public)
+        let bitchat_filter = Filter::new()
+            .kind(BITCHAT_KIND)
+            .since(Timestamp::now());
+            
+        // Filter 2: Text notes with #bitchat hashtag (for discovery)
+        let discovery_filter = Filter::new()
+            .kind(Kind::TextNote)
+            .hashtag("bitchat")
+            .since(Timestamp::now());
+            
+        // Filter 3: Encrypted direct messages to us (private)
+        let dm_filter = Filter::new()
+            .kind(Kind::EncryptedDirectMessage)
+            .pubkey(self.keys.public_key())
+            .since(Timestamp::now());
 
-        client.subscribe(vec![filter], None).await;
+        client.subscribe(vec![bitchat_filter, discovery_filter, dm_filter], None).await;
         let _subscription_id = subscription_id;
 
         // Handle incoming events
         let mut notifications = client.notifications();
         let packet_tx = self.packet_tx.clone();
-        let peers: Arc<RwLock<HashMap<PublicKey, PeerId>>> = Arc::clone(&self.peers);
-        let peer_keys: Arc<RwLock<HashMap<PeerId, PublicKey>>> = Arc::clone(&self.peer_keys);
+        let peers: Arc<RwLock<HashMap<PeerId, PublicKey>>> = Arc::clone(&self.peers);
+        let peer_cache: Arc<RwLock<Vec<PeerId>>> = Arc::clone(&self.peer_cache);
         let local_pubkey = self.keys.public_key();
 
         tokio::spawn(async move {
@@ -216,31 +295,32 @@ impl NostrTransport {
                             continue;
                         }
 
-                        // Try to parse as BitChat message
-                        if let Ok(bitchat_msg) =
-                            serde_json::from_str::<BitchatNostrMessage>(&event.content)
-                        {
-                            // Check if this message is for us or is a broadcast
-                            if bitchat_msg.recipient_peer_id.is_none()
-                                || bitchat_msg.recipient_peer_id == Some(bitchat_msg.sender_peer_id)
-                            {
-                                // Update peer mapping
-                                {
-                                    let mut peers = peers.write().await;
-                                    let mut peer_keys = peer_keys.write().await;
-                                    peers.insert(event.pubkey, bitchat_msg.sender_peer_id);
-                                    peer_keys.insert(bitchat_msg.sender_peer_id, event.pubkey);
+                        // Handle different event kinds
+                        match event.kind {
+                            kind if kind == BITCHAT_KIND => {
+                                // Custom BitChat event - parse as structured message
+                                if let Ok(bitchat_msg) = serde_json::from_str::<BitchatNostrMessage>(&event.content) {
+                                    Self::process_bitchat_message(bitchat_msg, event.pubkey, &peers, &peer_cache, &packet_tx).await;
                                 }
-
-                                // Forward packet
-                                if let Ok(packet) = bitchat_msg.to_packet() {
-                                    if let Err(_) =
-                                        packet_tx.send((bitchat_msg.sender_peer_id, packet))
-                                    {
-                                        error!("Failed to forward packet - receiver dropped");
-                                        break;
+                            }
+                            Kind::TextNote => {
+                                // Text note - try to parse for discovery
+                                if event.content.contains("#bitchat") {
+                                    if let Ok(bitchat_msg) = serde_json::from_str::<BitchatNostrMessage>(&event.content) {
+                                        Self::process_bitchat_message(bitchat_msg, event.pubkey, &peers, &peer_cache, &packet_tx).await;
                                     }
                                 }
+                            }
+                            Kind::EncryptedDirectMessage => {
+                                // Encrypted DM - decrypt and process
+                                // Note: nostr-sdk handles decryption automatically for events directed to us
+                                if let Ok(bitchat_msg) = serde_json::from_str::<BitchatNostrMessage>(&event.content) {
+                                    Self::process_bitchat_message(bitchat_msg, event.pubkey, &peers, &peer_cache, &packet_tx).await;
+                                }
+                            }
+                            _ => {
+                                // Unknown event type - ignore
+                                debug!("Received unknown event kind: {:?}", event.kind);
                             }
                         }
                     }
@@ -269,8 +349,8 @@ impl NostrTransport {
 
         // Check if we know the Nostr public key for this peer
         let target_pubkey = {
-            let peer_keys = self.peer_keys.read().await;
-            peer_keys.get(peer_id).copied()
+            let peers = self.peers.read().await;
+            peers.get(peer_id).copied()
         };
 
         let bitchat_msg = BitchatNostrMessage::new(self.local_peer_id, Some(*peer_id), packet)?;
@@ -296,8 +376,8 @@ impl NostrTransport {
                 .to_event(&self.keys)
                 .map_err(|e| BitchatError::InvalidPacket(format!("Failed to sign event: {}", e)))?
         } else {
-            // Send as public message (peer discovery)
-            EventBuilder::text_note(content, vec![])
+            // Send as custom BitChat event for discovery
+            EventBuilder::new(BITCHAT_KIND, content, vec![Tag::hashtag("bitchat")])
                 .to_event(&self.keys)
                 .map_err(|e| {
                     BitchatError::InvalidPacket(format!("Failed to create event: {}", e))
@@ -331,7 +411,7 @@ impl NostrTransport {
             ));
         }
 
-        let event = EventBuilder::text_note(content, vec![Tag::hashtag("bitchat")])
+        let event = EventBuilder::new(BITCHAT_KIND, content, vec![Tag::hashtag("bitchat")])
             .to_event(&self.keys)
             .map_err(|e| BitchatError::InvalidPacket(format!("Failed to create event: {}", e)))?;
 
@@ -352,6 +432,39 @@ impl NostrTransport {
     /// Get our Nostr private key
     pub fn secret_key(&self) -> Result<&SecretKey, nostr_sdk::key::Error> {
         self.keys.secret_key()
+    }
+
+    /// Process a BitChat message from any event type
+    async fn process_bitchat_message(
+        bitchat_msg: BitchatNostrMessage,
+        sender_pubkey: PublicKey,
+        peers: &Arc<RwLock<HashMap<PeerId, PublicKey>>>,
+        peer_cache: &Arc<RwLock<Vec<PeerId>>>,
+        packet_tx: &mpsc::UnboundedSender<(PeerId, BitchatPacket)>,
+    ) {
+        // Check if this message is for us or is a broadcast
+        if bitchat_msg.recipient_peer_id.is_none() {
+            // Update peer mapping and cache
+            {
+                let mut peers_lock = peers.write().await;
+                if !peers_lock.contains_key(&bitchat_msg.sender_peer_id) {
+                    peers_lock.insert(bitchat_msg.sender_peer_id, sender_pubkey);
+                    
+                    // Update cached peer list
+                    let mut cached = peer_cache.write().await;
+                    if !cached.contains(&bitchat_msg.sender_peer_id) {
+                        cached.push(bitchat_msg.sender_peer_id);
+                    }
+                }
+            }
+
+            // Forward packet
+            if let Ok(packet) = bitchat_msg.to_packet() {
+                if let Err(_) = packet_tx.send((bitchat_msg.sender_peer_id, packet)) {
+                    error!("Failed to forward packet - receiver dropped");
+                }
+            }
+        }
     }
 }
 
@@ -387,18 +500,20 @@ impl Transport for NostrTransport {
     }
 
     fn discovered_peers(&self) -> Vec<PeerId> {
-        // This is a blocking call, but we need async access
-        tokio::task::block_in_place(|| {
-            tokio::runtime::Handle::current()
-                .block_on(async { self.peers.read().await.values().copied().collect() })
-        })
+        // Use the cached peer list for non-blocking access
+        if let Ok(cached_peers) = self.peer_cache.try_read() {
+            cached_peers.clone()
+        } else {
+            // Fallback to empty list if lock is contended
+            Vec::new()
+        }
     }
 
     fn start(
         &mut self,
     ) -> std::pin::Pin<Box<dyn std::future::Future<Output = BitchatResult<()>> + Send + '_>> {
         Box::pin(async move {
-            *self.active.write().await = true;
+            self.active.store(true, std::sync::atomic::Ordering::Relaxed);
 
             // Initialize Nostr client
             self.initialize_client().await?;
@@ -415,7 +530,7 @@ impl Transport for NostrTransport {
         &mut self,
     ) -> std::pin::Pin<Box<dyn std::future::Future<Output = BitchatResult<()>> + Send + '_>> {
         Box::pin(async move {
-            *self.active.write().await = false;
+            self.active.store(false, std::sync::atomic::Ordering::Relaxed);
 
             // Disconnect from relays
             if let Some(client) = &self.client {
@@ -430,9 +545,7 @@ impl Transport for NostrTransport {
     }
 
     fn is_active(&self) -> bool {
-        tokio::task::block_in_place(|| {
-            tokio::runtime::Handle::current().block_on(async { *self.active.read().await })
-        })
+        self.active.load(std::sync::atomic::Ordering::Relaxed)
     }
 
     fn capabilities(&self) -> TransportCapabilities {

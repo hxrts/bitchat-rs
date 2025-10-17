@@ -23,7 +23,7 @@ test-verbose:
 
 # Run only integration tests
 test-integration:
-    cargo test --test phase3_integration
+    cargo test --test integration_tests
 
 # Check code without building
 check:

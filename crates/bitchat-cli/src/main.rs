@@ -15,8 +15,8 @@ use tracing::{debug, error, info, warn};
 use bitchat_ble_transport::{BleTransport, BleTransportConfig};
 use bitchat_core::{
     transport::{TransportManager, TransportSelectionPolicy, TransportType},
-    BitchatMessage, BitchatPacket, DeliveryTracker, MessageBuilder, MessageFragmenter,
-    MessageReassembler, NoiseSessionManager, PeerId, Result as BitchatResult,
+    BitchatMessage, MessageBuilder, MessageFragmenter,
+    MessageReassembler, PeerId, StdDeliveryTracker, StdNoiseSessionManager, StdTimeSource,
 };
 use bitchat_nostr_transport::{NostrTransport, NostrTransportConfig};
 use uuid::Uuid;
@@ -123,9 +123,9 @@ struct BitchatApp {
     /// Our peer ID
     peer_id: PeerId,
     /// Session manager for handling peer connections
-    session_manager: NoiseSessionManager,
+    session_manager: StdNoiseSessionManager,
     /// Delivery tracker for message reliability
-    delivery_tracker: DeliveryTracker,
+    delivery_tracker: StdDeliveryTracker,
     /// Transport manager with intelligent routing
     transport_manager: TransportManager,
     /// Message fragmenter for large messages
@@ -147,8 +147,8 @@ impl BitchatApp {
 
         info!("Starting BitChat with peer ID: {}", peer_id);
 
-        let session_manager = NoiseSessionManager::new(noise_key);
-        let delivery_tracker = DeliveryTracker::new();
+        let session_manager = StdNoiseSessionManager::new(noise_key, StdTimeSource);
+        let delivery_tracker = StdDeliveryTracker::new(StdTimeSource);
         let transport_manager = TransportManager::new();
         let fragmenter = MessageFragmenter;
         let reassembler = MessageReassembler::new();
@@ -175,16 +175,10 @@ impl BitchatApp {
         // Add BLE transport if enabled
         if use_ble {
             info!("Initializing BLE transport...");
-            match BleTransport::with_config(self.peer_id, self.config.ble.clone()) {
-                Ok(ble_transport) => {
-                    self.transport_manager
-                        .add_transport(Box::new(ble_transport));
-                    info!("BLE transport added");
-                }
-                Err(e) => {
-                    warn!("Failed to initialize BLE transport: {}", e);
-                }
-            }
+            let ble_transport = BleTransport::with_config(self.peer_id, self.config.ble.clone());
+            self.transport_manager
+                .add_transport(Box::new(ble_transport));
+            info!("BLE transport added");
         }
 
         // Add Nostr transport if enabled
@@ -466,12 +460,11 @@ async fn main() -> Result<()> {
     // Initialize logging
     let log_level = if cli.verbose { "debug" } else { "info" };
     tracing_subscriber::fmt()
-        .with_env_filter(format!(
-            "bitchat={},{}={}",
-            log_level,
-            env!("CARGO_PKG_NAME"),
-            log_level
-        ))
+        .with_max_level(if cli.verbose {
+            tracing::Level::DEBUG
+        } else {
+            tracing::Level::INFO
+        })
         .init();
 
     // Load configuration
