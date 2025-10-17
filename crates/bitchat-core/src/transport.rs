@@ -243,9 +243,9 @@ impl TransportManager {
         if errors.is_empty() {
             Ok(())
         } else {
-            Err(BitchatError::InvalidPacket(
-                "Broadcast failed on all transports".into(),
-            ))
+            Err(BitchatError::Transport { 
+                message: "Broadcast failed on all transports".to_string() 
+            })
         }
     }
 
@@ -280,9 +280,9 @@ impl TransportManager {
         }
 
         if available_transports.is_empty() {
-            return Err(BitchatError::InvalidPacket(
-                "No transport can reach peer".into(),
-            ));
+            return Err(BitchatError::Transport { 
+                message: "No transport can reach peer".to_string() 
+            });
         }
 
         // Select transport based on policy
@@ -419,7 +419,7 @@ impl Transport for MockTransport {
         if let Some((peer_id, packet)) = self.receive_queue.pop() {
             Ok((peer_id, packet))
         } else {
-            Err(BitchatError::InvalidPacket("No packets to receive".into()))
+            Err(crate::PacketError::Generic { message: "No packets to receive".to_string() }.into())
         }
     }
 

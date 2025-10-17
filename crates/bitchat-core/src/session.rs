@@ -4,12 +4,8 @@
 //! including Noise protocol handshakes, message encryption/decryption, and session lifecycle.
 
 use alloc::vec::Vec;
-use core::time::Duration;
-
-#[cfg(feature = "std")]
-use std::collections::HashMap;
-#[cfg(not(feature = "std"))]
 use hashbrown::HashMap;
+use core::time::Duration;
 
 use crate::crypto::{NoiseHandshake, NoiseKeyPair, NoiseTransport};
 use crate::types::{Fingerprint, PeerId, TimeSource, Timestamp};
@@ -138,7 +134,7 @@ impl NoiseSession {
         let handshake = self
             .handshake
             .as_mut()
-            .ok_or_else(|| BitchatError::InvalidPacket("No handshake state".into()))?;
+            .ok_or_else(|| BitchatError::Session { message: "No handshake state".to_string() })?;
 
         let output = handshake.read_message(input)?;
 
@@ -159,7 +155,7 @@ impl NoiseSession {
 
             // Convert to transport mode
             let handshake = self.handshake.take()
-                .ok_or_else(|| BitchatError::InvalidPacket("No handshake available for transport conversion".into()))?;
+                .ok_or_else(|| BitchatError::Session { message: "No handshake available for transport conversion".to_string() })?;
             self.transport = Some(handshake.into_transport_mode()?);
             self.state = SessionState::Established;
         }
@@ -188,7 +184,7 @@ impl NoiseSession {
         let handshake = self
             .handshake
             .as_mut()
-            .ok_or_else(|| BitchatError::InvalidPacket("No handshake state".into()))?;
+            .ok_or_else(|| BitchatError::Session { message: "No handshake state".to_string() })?;
 
         let output = handshake.write_message(payload)?;
 
@@ -209,7 +205,7 @@ impl NoiseSession {
 
             // Convert to transport mode
             let handshake = self.handshake.take()
-                .ok_or_else(|| BitchatError::InvalidPacket("No handshake available for transport conversion".into()))?;
+                .ok_or_else(|| BitchatError::Session { message: "No handshake available for transport conversion".to_string() })?;
             self.transport = Some(handshake.into_transport_mode()?);
             self.state = SessionState::Established;
         }
@@ -231,7 +227,7 @@ impl NoiseSession {
             let transport = self
                 .transport
                 .as_mut()
-                .ok_or_else(|| BitchatError::InvalidPacket("No transport state".into()))?;
+                .ok_or_else(|| BitchatError::Session { message: "No transport state".to_string() })?;
             transport.encrypt(plaintext)
         };
 
@@ -255,7 +251,7 @@ impl NoiseSession {
             let transport = self
                 .transport
                 .as_mut()
-                .ok_or_else(|| BitchatError::InvalidPacket("No transport state".into()))?;
+                .ok_or_else(|| BitchatError::Session { message: "No transport state".to_string() })?;
             transport.decrypt(ciphertext)
         };
 
@@ -352,7 +348,7 @@ impl<T: TimeSource> NoiseSessionManager<T> {
         }
 
         self.sessions.get_mut(&peer_id)
-            .ok_or_else(|| BitchatError::InvalidPacket("Session not found after creation".into()))
+            .ok_or_else(|| BitchatError::Session { message: "Session not found after creation".to_string() })
     }
 
     /// Create inbound session
@@ -360,7 +356,7 @@ impl<T: TimeSource> NoiseSessionManager<T> {
         let session = NoiseSession::new_inbound(peer_id, &self.local_key, &self.time_source)?;
         self.sessions.insert(peer_id, session);
         self.sessions.get_mut(&peer_id)
-            .ok_or_else(|| BitchatError::InvalidPacket("Session not found after creation".into()))
+            .ok_or_else(|| BitchatError::Session { message: "Session not found after creation".to_string() })
     }
 
     /// Get existing session

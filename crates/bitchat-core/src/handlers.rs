@@ -31,9 +31,9 @@ impl PacketParser {
     /// Parse a message packet payload
     pub fn parse_message(packet: &BitchatPacket) -> Result<BitchatMessage> {
         if packet.message_type != MessageType::Message {
-            return Err(crate::BitchatError::InvalidPacket(
-                "Not a message packet".into(),
-            ));
+            return Err(crate::PacketError::UnknownMessageType { 
+                message_type: packet.message_type as u8 
+            }.into());
         }
         Ok(bincode::deserialize(&packet.payload)?)
     }
@@ -41,9 +41,9 @@ impl PacketParser {
     /// Parse a delivery ack packet payload
     pub fn parse_delivery_ack(packet: &BitchatPacket) -> Result<DeliveryAck> {
         if packet.message_type != MessageType::DeliveryAck {
-            return Err(crate::BitchatError::InvalidPacket(
-                "Not a delivery ack packet".into(),
-            ));
+            return Err(crate::PacketError::UnknownMessageType { 
+                message_type: packet.message_type as u8 
+            }.into());
         }
         Ok(bincode::deserialize(&packet.payload)?)
     }
@@ -51,9 +51,9 @@ impl PacketParser {
     /// Parse a read receipt packet payload
     pub fn parse_read_receipt(packet: &BitchatPacket) -> Result<ReadReceipt> {
         if packet.message_type != MessageType::ReadReceipt {
-            return Err(crate::BitchatError::InvalidPacket(
-                "Not a read receipt packet".into(),
-            ));
+            return Err(crate::PacketError::UnknownMessageType { 
+                message_type: packet.message_type as u8 
+            }.into());
         }
         Ok(bincode::deserialize(&packet.payload)?)
     }

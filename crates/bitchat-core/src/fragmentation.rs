@@ -179,9 +179,9 @@ impl MessageFragmenter {
         max_fragment_size: usize,
     ) -> Result<Vec<Fragment>> {
         if data.is_empty() {
-            return Err(BitchatError::InvalidPacket(
-                "Cannot fragment empty message".into(),
-            ));
+            return Err(BitchatError::Fragmentation { 
+                message: "Cannot fragment empty message".to_string() 
+            });
         }
 
         let total_size = data.len() as u32;
@@ -192,9 +192,9 @@ impl MessageFragmenter {
         let header_size = bincode::serialized_size(&header)? as usize;
 
         if max_fragment_size <= header_size {
-            return Err(BitchatError::InvalidPacket(
-                "Fragment size too small for header".into(),
-            ));
+            return Err(BitchatError::Fragmentation { 
+                message: "Fragment size too small for header".to_string() 
+            });
         }
 
         let fragment_payload_size = max_fragment_size - header_size;
@@ -202,9 +202,9 @@ impl MessageFragmenter {
             ((data.len() + fragment_payload_size - 1) / fragment_payload_size) as u16;
 
         if total_fragments > MAX_FRAGMENTS {
-            return Err(BitchatError::InvalidPacket(
-                "Message too large to fragment".into(),
-            ));
+            return Err(BitchatError::Fragmentation { 
+                message: "Message too large to fragment".to_string() 
+            });
         }
 
         let mut fragments = Vec::with_capacity(total_fragments as usize);
@@ -284,7 +284,7 @@ impl ReassemblyState {
             .fragments
             .contains_key(&fragment.header.fragment_number)
         {
-            return Err(BitchatError::InvalidPacket("Duplicate fragment".into()));
+            return Err(crate::PacketError::DuplicateFragment.into());
         }
 
         // Track memory usage
@@ -309,7 +309,7 @@ impl ReassemblyState {
             if let Some(fragment_data) = self.fragments.get(&i) {
                 assembled.extend_from_slice(fragment_data);
             } else {
-                return Err(BitchatError::InvalidPacket("Missing fragment".into()));
+                return Err(crate::PacketError::FragmentSequenceError.into());
             }
         }
 
@@ -395,7 +395,7 @@ impl MessageReassembler {
 
         let fragment_size = fragment.data.len();
         let state = self.reassembly_states.get_mut(&message_id)
-            .ok_or_else(|| BitchatError::InvalidPacket("Reassembly state not found".into()))?;
+            .ok_or_else(|| crate::PacketError::Generic { message: "Reassembly state not found".to_string() })?;
         
         // Check if adding this fragment would exceed memory limit
         if self.total_memory_used + fragment_size > MAX_FRAGMENT_MEMORY {
@@ -411,7 +411,7 @@ impl MessageReassembler {
         if state.is_complete() {
             let assembled = state.assemble()?;
             let state = self.reassembly_states.remove(&message_id)
-                .ok_or_else(|| BitchatError::InvalidPacket("Reassembly state missing during completion".into()))?;
+                .ok_or_else(|| crate::PacketError::Generic { message: "Reassembly state missing during completion".to_string() })?;
             self.total_memory_used = self.total_memory_used.saturating_sub(state.memory_used);
             Ok(Some(assembled))
         } else {

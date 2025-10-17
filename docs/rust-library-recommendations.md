@@ -343,13 +343,13 @@ web-sys = { version = "0.3", features = ["Bluetooth"] }
 ### Browser-Specific Considerations
 
 #### WebBluetooth Limitations
-- **Chrome**: ✅ Supported but requires user gesture
-- **Firefox**: ❌ No support planned
-- **Safari**: ❌ No support
-- **Edge**: ✅ Supported (Chromium-based)
+- **Chrome**: Supported but requires user gesture
+- **Firefox**: No support planned
+- **Safari**: No support
+- **Edge**: Supported (Chromium-based)
 
 #### WebSocket Support
-- **All Browsers**: ✅ Universal support since 2014
+- **All Browsers**: Universal support since 2014
 - **Performance**: Can handle hundreds of concurrent connections
 - **Security**: Requires HTTPS for secure WebSocket (WSS)
 

@@ -53,11 +53,11 @@ impl Tab {
     
     fn title(&self) -> &'static str {
         match self {
-            Tab::Chat => "💬 Chat",
-            Tab::Peers => "👥 Peers",
-            Tab::Transports => "🚀 Transports",
-            Tab::Logs => "📝 Logs",
-            Tab::Stats => "📊 Stats",
+            Tab::Chat => "Chat",
+            Tab::Peers => "Peers",
+            Tab::Transports => "Transports",
+            Tab::Logs => "Logs",
+            Tab::Stats => "Stats",
         }
     }
     
@@ -713,9 +713,9 @@ impl TuiManager {
 
                 let delivery_indicator = if msg.is_own {
                     if msg.is_delivered {
-                        "✓"
+                        "[DELIVERED]"
                     } else {
-                        "○"
+                        "[PENDING]"
                     }
                 } else {
                     ""
@@ -770,18 +770,18 @@ impl TuiManager {
             .iter()
             .map(|peer| {
                 let status_indicator = match peer.status {
-                    PeerStatus::Online => "🟢",
-                    PeerStatus::Offline => "🔴",
-                    PeerStatus::Connecting => "🟡",
+                    PeerStatus::Online => "[ONLINE]",
+                    PeerStatus::Offline => "[OFFLINE]",
+                    PeerStatus::Connecting => "[CONNECTING]",
                 };
 
                 let transports = peer
                     .transport_types
                     .iter()
                     .map(|t| match t {
-                        TransportType::Ble => "📶",
-                        TransportType::Nostr => "🌐",
-                        _ => "❓",
+                        TransportType::Ble => "[BLE]",
+                        TransportType::Nostr => "[NOSTR]",
+                        _ => "[UNKNOWN]",
                     })
                     .collect::<String>();
 

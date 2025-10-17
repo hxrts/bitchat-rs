@@ -4,13 +4,9 @@
 //! exponential backoff, and delivery confirmation tracking.
 
 use alloc::vec::Vec;
+use hashbrown::HashMap;
 use core::time::Duration;
 use uuid::Uuid;
-
-#[cfg(feature = "std")]
-use std::collections::HashMap;
-#[cfg(not(feature = "std"))]
-use hashbrown::HashMap;
 
 use crate::types::{PeerId, TimeSource, Timestamp};
 
