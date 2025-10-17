@@ -12,8 +12,8 @@ use bitchat_core::{
     transport::{TransportManager, TransportType, TransportSelectionPolicy, MockTransport},
     NoiseSessionManager, DeliveryTracker, MessageBuilder
 };
-use bitchat_ble_transport::{BleTransport, BleTransportConfig};
-use bitchat_nostr_transport::{NostrTransport, NostrTransportConfig, create_local_relay_config};
+use bitchat_ble::{BleTransport, BleTransportConfig};
+use bitchat_nostr::{NostrTransport, NostrTransportConfig, create_local_relay_config};
 
 // ----------------------------------------------------------------------------
 // Test Configuration
@@ -195,7 +195,7 @@ async fn test_nostr_transport_initialization() {
 
 #[tokio::test]
 async fn test_nostr_transport_message_format() {
-    use bitchat_nostr_transport::BitchatNostrMessage;
+    use bitchat_nostr::BitchatNostrMessage;
     
     let (sender_id, _) = setup_test_peer();
     let (recipient_id, _) = setup_test_peer();
