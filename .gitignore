@@ -1,0 +1,36 @@
+# Rust
+target/
+Cargo.lock
+*.rs.bk
+
+# Nix
+result
+result-*
+
+# Build artifacts
+*.o
+*.so
+*.dylib
+*.a
+
+# Debug logs
+*.log
+debug.log
+noise*.log
+packet*.log
+
+# OS
+.DS_Store
+
+# Editors
+.vscode/
+*.swp
+*.swo
+*~
+
+# Local dev
+work/
+.claude/
+.env
+.env.local
+ext/
