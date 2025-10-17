@@ -4,8 +4,8 @@ use std::path::PathBuf;
 use std::time::Duration;
 use serde::{Deserialize, Serialize};
 
-use bitchat_ble_transport::BleTransportConfig;
-use bitchat_nostr_transport::NostrTransportConfig;
+use bitchat_ble::BleTransportConfig;
+use bitchat_nostr::NostrTransportConfig;
 use crate::error::{CliError, Result};
 
 #[derive(Debug, Clone, Serialize, Deserialize)]

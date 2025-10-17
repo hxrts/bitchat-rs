@@ -12,8 +12,8 @@ path = "src/main.rs"
 [dependencies]
 # BitChat protocol and transports
 bitchat-core = { path = "../bitchat-core" }
-bitchat-ble-transport = { path = "../bitchat-ble-transport" }
-bitchat-nostr-transport = { path = "../bitchat-nostr-transport" }
+bitchat-ble = { path = "../bitchat-ble" }
+bitchat-nostr = { path = "../bitchat-nostr" }
 
 # CLI and configuration
 clap = { workspace = true }

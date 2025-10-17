@@ -6,7 +6,7 @@ use tokio::sync::{mpsc, RwLock, Mutex};
 use tracing::{debug, error, info, warn};
 use uuid::Uuid;
 
-use bitchat_ble_transport::BleTransport;
+use bitchat_ble::BleTransport;
 use bitchat_core::{
     BitchatMessage, MessageBuilder, MessageFragmenter, MessageReassembler,
     PeerId, StdDeliveryTracker, StdNoiseSessionManager, StdTimeSource,
@@ -14,7 +14,7 @@ use bitchat_core::{
     handlers::{BitchatEvent, EventEmittingHandler, EventHandler, MessageHandler},
     packet::BitchatPacket,
 };
-use bitchat_nostr_transport::NostrTransport;
+use bitchat_nostr::NostrTransport;
 
 use crate::config::AppConfig;
 use crate::state::{StateManager, AppState};
@@ -255,7 +255,7 @@ impl BitchatApp {
     /// Try to add Nostr transport with error handling
     async fn try_add_nostr_transport(&mut self, local_relay: bool) -> Result<()> {
         let nostr_config = if local_relay {
-            bitchat_nostr_transport::create_local_relay_config()
+            bitchat_nostr::create_local_relay_config()
         } else {
             self.config.nostr.clone()
         };
