@@ -127,3 +127,48 @@ release:
 # Generate documentation
 docs:
     cargo doc --workspace --no-deps --open
+
+# Build WASM module for web
+build-wasm:
+    @echo "Building BitChat WASM module..."
+    @echo "Checking for wasm-pack..."
+    @which wasm-pack || (echo "wasm-pack not found. Install with: cargo install wasm-pack" && exit 1)
+    @echo "Building for web target..."
+    cd crates/bitchat-web && wasm-pack build --target web --out-dir ../../web/pkg --out-name bitchat-web
+    @echo "WASM build complete. Files generated in web/pkg/"
+
+# Build WASM for Node.js
+build-wasm-node:
+    @echo "Building BitChat WASM module for Node.js..."
+    @which wasm-pack || (echo "wasm-pack not found. Install with: cargo install wasm-pack" && exit 1)
+    cd crates/bitchat-web && wasm-pack build --target nodejs --out-dir ../../web/pkg-node --out-name bitchat-web
+    @echo "Node.js WASM build complete. Files generated in web/pkg-node/"
+
+# Build WASM for bundlers (webpack, rollup, etc.)
+build-wasm-bundler:
+    @echo "Building BitChat WASM module for bundlers..."
+    @which wasm-pack || (echo "wasm-pack not found. Install with: cargo install wasm-pack" && exit 1)
+    cd crates/bitchat-web && wasm-pack build --target bundler --out-dir ../../web/pkg-bundler --out-name bitchat-web
+    @echo "Bundler WASM build complete. Files generated in web/pkg-bundler/"
+
+# Clean WASM build artifacts
+clean-wasm:
+    @echo "Cleaning WASM build artifacts..."
+    rm -rf web/pkg web/pkg-node web/pkg-bundler
+    @echo "WASM artifacts cleaned"
+
+# Serve web demo locally
+serve-web:
+    @echo "Starting local web server for BitChat demo..."
+    @echo "Make sure to run 'just build-wasm' first"
+    @echo "Demo will be available at http://localhost:8000"
+    cd web && python3 -m http.server 8000
+
+# Run Phase 4 demo (Web + WASM)
+demo-web:
+    @echo "Starting BitChat Phase 4 Demo (Web + WASM)..."
+    @echo "Building WASM module..."
+    just build-wasm
+    @echo "Starting web server..."
+    @echo "Open http://localhost:8000 in your browser"
+    just serve-web

@@ -1,0 +1,591 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>BitChat Web Demo - Phase 4</title>
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+
+        body {
+            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            min-height: 100vh;
+            padding: 20px;
+        }
+
+        .container {
+            max-width: 1200px;
+            margin: 0 auto;
+            background: white;
+            border-radius: 15px;
+            box-shadow: 0 20px 40px rgba(0,0,0,0.1);
+            overflow: hidden;
+        }
+
+        .header {
+            background: linear-gradient(45deg, #4facfe 0%, #00f2fe 100%);
+            color: white;
+            padding: 20px;
+            text-align: center;
+        }
+
+        .header h1 {
+            margin-bottom: 10px;
+            font-size: 2rem;
+        }
+
+        .header p {
+            opacity: 0.9;
+            font-size: 1.1rem;
+        }
+
+        .main-content {
+            display: grid;
+            grid-template-columns: 1fr 1fr;
+            gap: 20px;
+            padding: 20px;
+        }
+
+        .panel {
+            background: #f8f9fa;
+            border-radius: 10px;
+            padding: 20px;
+            border: 1px solid #e9ecef;
+        }
+
+        .panel h3 {
+            color: #495057;
+            margin-bottom: 15px;
+            font-size: 1.2rem;
+        }
+
+        .status-panel {
+            grid-column: 1 / -1;
+        }
+
+        .status-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+            gap: 15px;
+            margin-top: 15px;
+        }
+
+        .status-item {
+            background: white;
+            padding: 15px;
+            border-radius: 8px;
+            border-left: 4px solid #4facfe;
+        }
+
+        .status-label {
+            font-size: 0.9rem;
+            color: #6c757d;
+            margin-bottom: 5px;
+        }
+
+        .status-value {
+            font-size: 1.2rem;
+            font-weight: bold;
+            color: #495057;
+        }
+
+        .input-group {
+            margin-bottom: 15px;
+        }
+
+        .input-group label {
+            display: block;
+            margin-bottom: 5px;
+            color: #495057;
+            font-weight: 500;
+        }
+
+        .input-group input, .input-group textarea {
+            width: 100%;
+            padding: 10px;
+            border: 2px solid #e9ecef;
+            border-radius: 5px;
+            font-size: 14px;
+            transition: border-color 0.3s;
+        }
+
+        .input-group input:focus, .input-group textarea:focus {
+            outline: none;
+            border-color: #4facfe;
+        }
+
+        .btn {
+            background: linear-gradient(45deg, #4facfe 0%, #00f2fe 100%);
+            color: white;
+            border: none;
+            padding: 12px 24px;
+            border-radius: 5px;
+            cursor: pointer;
+            font-size: 14px;
+            font-weight: 500;
+            transition: transform 0.2s, box-shadow 0.2s;
+            margin-right: 10px;
+            margin-bottom: 10px;
+        }
+
+        .btn:hover {
+            transform: translateY(-2px);
+            box-shadow: 0 4px 12px rgba(79, 172, 254, 0.4);
+        }
+
+        .btn:disabled {
+            opacity: 0.5;
+            cursor: not-allowed;
+            transform: none;
+        }
+
+        .btn-secondary {
+            background: linear-gradient(45deg, #f093fb 0%, #f5576c 100%);
+        }
+
+        .btn-success {
+            background: linear-gradient(45deg, #4facfe 0%, #00f2fe 100%);
+        }
+
+        .messages {
+            max-height: 300px;
+            overflow-y: auto;
+            background: white;
+            border: 1px solid #e9ecef;
+            border-radius: 5px;
+            padding: 10px;
+        }
+
+        .message {
+            padding: 10px;
+            margin-bottom: 10px;
+            border-radius: 5px;
+            background: #f8f9fa;
+            border-left: 3px solid #4facfe;
+        }
+
+        .message-header {
+            font-size: 0.9rem;
+            color: #6c757d;
+            margin-bottom: 5px;
+        }
+
+        .message-content {
+            color: #495057;
+        }
+
+        .peers-list {
+            background: white;
+            border: 1px solid #e9ecef;
+            border-radius: 5px;
+            padding: 10px;
+            max-height: 200px;
+            overflow-y: auto;
+        }
+
+        .peer-item {
+            padding: 8px;
+            margin-bottom: 5px;
+            background: #f8f9fa;
+            border-radius: 3px;
+            font-family: monospace;
+            font-size: 0.9rem;
+        }
+
+        .log {
+            background: #2d3748;
+            color: #e2e8f0;
+            border-radius: 5px;
+            padding: 10px;
+            max-height: 150px;
+            overflow-y: auto;
+            font-family: monospace;
+            font-size: 0.9rem;
+            white-space: pre-wrap;
+        }
+
+        .error {
+            color: #e53e3e;
+            background: #fed7d7;
+            border: 1px solid #f56565;
+            padding: 10px;
+            border-radius: 5px;
+            margin-bottom: 15px;
+        }
+
+        .success {
+            color: #38a169;
+            background: #c6f6d5;
+            border: 1px solid #68d391;
+            padding: 10px;
+            border-radius: 5px;
+            margin-bottom: 15px;
+        }
+
+        @media (max-width: 768px) {
+            .main-content {
+                grid-template-columns: 1fr;
+            }
+            
+            .status-grid {
+                grid-template-columns: 1fr;
+            }
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <div class="header">
+            <h1>🔗 BitChat Web Demo</h1>
+            <p>Phase 4: WebAssembly + Nostr Transport</p>
+        </div>
+
+        <div class="main-content">
+            <!-- Status Panel -->
+            <div class="panel status-panel">
+                <h3>📊 Status</h3>
+                <div class="status-grid">
+                    <div class="status-item">
+                        <div class="status-label">Client Status</div>
+                        <div class="status-value" id="clientStatus">Disconnected</div>
+                    </div>
+                    <div class="status-item">
+                        <div class="status-label">Peer ID</div>
+                        <div class="status-value" id="peerId">Not Available</div>
+                    </div>
+                    <div class="status-item">
+                        <div class="status-label">Active Transports</div>
+                        <div class="status-value" id="activeTransports">0</div>
+                    </div>
+                    <div class="status-item">
+                        <div class="status-label">Messages Sent</div>
+                        <div class="status-value" id="messagesSent">0</div>
+                    </div>
+                    <div class="status-item">
+                        <div class="status-label">Messages Received</div>
+                        <div class="status-value" id="messagesReceived">0</div>
+                    </div>
+                    <div class="status-item">
+                        <div class="status-label">Discovered Peers</div>
+                        <div class="status-value" id="discoveredPeers">0</div>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Connection Panel -->
+            <div class="panel">
+                <h3>🔌 Connection</h3>
+                <div class="input-group">
+                    <label for="displayName">Display Name:</label>
+                    <input type="text" id="displayName" value="Web User" placeholder="Enter your display name">
+                </div>
+                <div class="input-group">
+                    <label for="relayUrls">Nostr Relays (one per line):</label>
+                    <textarea id="relayUrls" rows="3" placeholder="wss://relay.damus.io">wss://relay.damus.io
+wss://nos.lol
+wss://relay.nostr.band</textarea>
+                </div>
+                <button class="btn btn-success" id="connectBtn" onclick="connect()">Connect</button>
+                <button class="btn btn-secondary" id="disconnectBtn" onclick="disconnect()" disabled>Disconnect</button>
+            </div>
+
+            <!-- Messaging Panel -->
+            <div class="panel">
+                <h3>💬 Messaging</h3>
+                <div class="input-group">
+                    <label for="messageContent">Message:</label>
+                    <textarea id="messageContent" rows="3" placeholder="Type your message here..."></textarea>
+                </div>
+                <div class="input-group">
+                    <label for="recipientId">Recipient (leave empty for broadcast):</label>
+                    <input type="text" id="recipientId" placeholder="Peer ID (optional)">
+                </div>
+                <button class="btn" id="sendBtn" onclick="sendMessage()" disabled>Send Message</button>
+                <button class="btn btn-secondary" onclick="clearMessages()">Clear Messages</button>
+            </div>
+
+            <!-- Messages Panel -->
+            <div class="panel">
+                <h3>📨 Messages</h3>
+                <div class="messages" id="messagesContainer">
+                    <div class="message">
+                        <div class="message-header">System</div>
+                        <div class="message-content">Welcome to BitChat Web Demo! Connect to start messaging.</div>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Peers Panel -->
+            <div class="panel">
+                <h3>👥 Discovered Peers</h3>
+                <div class="peers-list" id="peersContainer">
+                    <div style="text-align: center; color: #6c757d; padding: 20px;">
+                        No peers discovered yet
+                    </div>
+                </div>
+                <button class="btn btn-secondary" onclick="refreshPeers()">Refresh Peers</button>
+            </div>
+
+            <!-- Debug Panel -->
+            <div class="panel">
+                <h3>🔧 Debug Log</h3>
+                <div class="log" id="debugLog"></div>
+                <button class="btn btn-secondary" onclick="clearLog()">Clear Log</button>
+            </div>
+        </div>
+    </div>
+
+    <script type="module">
+        import init, { 
+            WasmBitchatClient, 
+            WasmClientConfig, 
+            WasmNostrConfig,
+            create_bitchat_client 
+        } from './pkg/bitchat-web.js';
+
+        let client = null;
+        let isConnected = false;
+
+        // Initialize WASM module
+        async function initWasm() {
+            try {
+                await init();
+                log('WASM module loaded successfully');
+                updateStatus();
+            } catch (error) {
+                logError('Failed to load WASM module: ' + error);
+            }
+        }
+
+        // Connect to BitChat network
+        window.connect = async function() {
+            try {
+                const displayName = document.getElementById('displayName').value.trim();
+                const relayUrls = document.getElementById('relayUrls').value
+                    .split('\n')
+                    .map(url => url.trim())
+                    .filter(url => url.length > 0);
+
+                if (!displayName) {
+                    throw new Error('Display name is required');
+                }
+
+                if (relayUrls.length === 0) {
+                    throw new Error('At least one relay URL is required');
+                }
+
+                log('Creating BitChat client...');
+                client = create_bitchat_client(displayName);
+                
+                log('Configuring Nostr transport...');
+                const nostrConfig = new WasmNostrConfig();
+                nostrConfig.set_relay_urls(relayUrls);
+
+                log('Starting client...');
+                await client.start(nostrConfig);
+
+                isConnected = true;
+                log('Connected successfully!');
+                showSuccess('Connected to BitChat network');
+                updateUI();
+                updateStatus();
+
+                // Start periodic status updates
+                setInterval(updateStatus, 2000);
+
+            } catch (error) {
+                logError('Connection failed: ' + error);
+                showError('Failed to connect: ' + error);
+            }
+        };
+
+        // Disconnect from BitChat network
+        window.disconnect = async function() {
+            try {
+                if (client) {
+                    log('Disconnecting...');
+                    await client.stop();
+                    client = null;
+                }
+                isConnected = false;
+                log('Disconnected');
+                showSuccess('Disconnected from BitChat network');
+                updateUI();
+                updateStatus();
+            } catch (error) {
+                logError('Disconnect failed: ' + error);
+            }
+        };
+
+        // Send a message
+        window.sendMessage = async function() {
+            try {
+                if (!client) {
+                    throw new Error('Not connected');
+                }
+
+                const content = document.getElementById('messageContent').value.trim();
+                const recipientId = document.getElementById('recipientId').value.trim();
+
+                if (!content) {
+                    throw new Error('Message content is required');
+                }
+
+                log('Sending message...');
+                const recipient = recipientId.length > 0 ? recipientId : null;
+                await client.send_message(recipient, content);
+
+                log('Message sent successfully');
+                document.getElementById('messageContent').value = '';
+                
+                // Add to local messages display
+                addMessage('You', content, new Date());
+
+            } catch (error) {
+                logError('Failed to send message: ' + error);
+                showError('Failed to send message: ' + error);
+            }
+        };
+
+        // Clear messages
+        window.clearMessages = function() {
+            document.getElementById('messagesContainer').innerHTML = '';
+        };
+
+        // Refresh peers list
+        window.refreshPeers = function() {
+            if (client) {
+                updatePeers();
+            }
+        };
+
+        // Clear debug log
+        window.clearLog = function() {
+            document.getElementById('debugLog').innerHTML = '';
+        };
+
+        // Update UI state
+        function updateUI() {
+            document.getElementById('connectBtn').disabled = isConnected;
+            document.getElementById('disconnectBtn').disabled = !isConnected;
+            document.getElementById('sendBtn').disabled = !isConnected;
+            document.getElementById('displayName').disabled = isConnected;
+            document.getElementById('relayUrls').disabled = isConnected;
+        }
+
+        // Update status display
+        function updateStatus() {
+            document.getElementById('clientStatus').textContent = isConnected ? 'Connected' : 'Disconnected';
+            
+            if (client) {
+                document.getElementById('peerId').textContent = client.peer_id || 'Unknown';
+                
+                const status = client.get_status();
+                document.getElementById('activeTransports').textContent = status.active_transports || 0;
+                document.getElementById('messagesSent').textContent = status.total_messages || 0;
+                
+                updatePeers();
+            } else {
+                document.getElementById('peerId').textContent = 'Not Available';
+                document.getElementById('activeTransports').textContent = '0';
+                document.getElementById('messagesSent').textContent = '0';
+                document.getElementById('discoveredPeers').textContent = '0';
+            }
+        }
+
+        // Update peers list
+        async function updatePeers() {
+            try {
+                if (!client) return;
+                
+                const peers = client.get_discovered_peers();
+                document.getElementById('discoveredPeers').textContent = peers.length;
+                
+                const container = document.getElementById('peersContainer');
+                if (peers.length === 0) {
+                    container.innerHTML = '<div style="text-align: center; color: #6c757d; padding: 20px;">No peers discovered yet</div>';
+                } else {
+                    container.innerHTML = peers.map(peerId => 
+                        `<div class="peer-item">${peerId}</div>`
+                    ).join('');
+                }
+            } catch (error) {
+                logError('Failed to update peers: ' + error);
+            }
+        }
+
+        // Add message to display
+        function addMessage(sender, content, timestamp) {
+            const container = document.getElementById('messagesContainer');
+            const messageDiv = document.createElement('div');
+            messageDiv.className = 'message';
+            messageDiv.innerHTML = `
+                <div class="message-header">${sender} - ${timestamp.toLocaleTimeString()}</div>
+                <div class="message-content">${content}</div>
+            `;
+            container.appendChild(messageDiv);
+            container.scrollTop = container.scrollHeight;
+            
+            // Update received messages count
+            const current = parseInt(document.getElementById('messagesReceived').textContent);
+            document.getElementById('messagesReceived').textContent = current + 1;
+        }
+
+        // Logging functions
+        function log(message) {
+            console.log(message);
+            const logDiv = document.getElementById('debugLog');
+            const timestamp = new Date().toLocaleTimeString();
+            logDiv.textContent += `[${timestamp}] ${message}\n`;
+            logDiv.scrollTop = logDiv.scrollHeight;
+        }
+
+        function logError(message) {
+            console.error(message);
+            log('ERROR: ' + message);
+        }
+
+        function showError(message) {
+            // Remove existing alerts
+            document.querySelectorAll('.error, .success').forEach(el => el.remove());
+            
+            const errorDiv = document.createElement('div');
+            errorDiv.className = 'error';
+            errorDiv.textContent = message;
+            document.querySelector('.main-content').insertBefore(errorDiv, document.querySelector('.main-content').firstChild);
+            
+            setTimeout(() => errorDiv.remove(), 5000);
+        }
+
+        function showSuccess(message) {
+            // Remove existing alerts
+            document.querySelectorAll('.error, .success').forEach(el => el.remove());
+            
+            const successDiv = document.createElement('div');
+            successDiv.className = 'success';
+            successDiv.textContent = message;
+            document.querySelector('.main-content').insertBefore(successDiv, document.querySelector('.main-content').firstChild);
+            
+            setTimeout(() => successDiv.remove(), 3000);
+        }
+
+        // Handle Enter key in message input
+        document.getElementById('messageContent').addEventListener('keypress', function(e) {
+            if (e.key === 'Enter' && !e.shiftKey) {
+                e.preventDefault();
+                if (isConnected) {
+                    sendMessage();
+                }
+            }
+        });
+
+        // Initialize when page loads
+        initWasm();
+    </script>
+</body>
+</html>

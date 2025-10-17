@@ -5,6 +5,7 @@ members = [
     "crates/bitchat-ble-transport",
     "crates/bitchat-nostr-transport",
     "crates/bitchat-cli",
+    "crates/bitchat-web",
 ]
 
 [workspace.dependencies]
