@@ -1,0 +1,39 @@
+[package]
+name = "bitchat-core"
+version = "0.1.0"
+edition = "2021"
+description = "Core protocol implementation for the BitChat P2P messaging protocol"
+license = "MIT OR Apache-2.0"
+
+[features]
+default = ["std"]
+std = [
+    "serde/std",
+    "ed25519-dalek/std",
+    "sha2/std",
+    "uuid/std",
+]
+
+[dependencies]
+# Core serialization
+serde = { workspace = true, default-features = false }
+bincode = { workspace = true }
+
+# Cryptography (WASM-compatible, no_std)
+snow = { workspace = true }
+curve25519-dalek = { workspace = true }
+ed25519-dalek = { workspace = true }
+x25519-dalek = { workspace = true }
+chacha20poly1305 = { workspace = true }
+sha2 = { workspace = true }
+
+# Utilities
+uuid = { workspace = true, default-features = false }
+thiserror = { workspace = true }
+rand_core = { workspace = true }
+
+[target.'cfg(target_arch = "wasm32")'.dependencies]
+getrandom = { workspace = true }
+
+[dev-dependencies]
+# Test utilities will be added as needed

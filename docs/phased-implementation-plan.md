@@ -5,7 +5,7 @@ This document outlines a phased implementation plan for creating a portable, per
 
 ## Implementation Philosophy
 
-**Core Principle**: We prioritize **concise, clean, and elegant implementation** over feature completeness. Every line of code should serve a clear purpose, and the overall architecture should be immediately understandable to new contributors.
+**Core Principle**: We prioritize concise, clean, and elegant implementation over feature completeness. Every line of code should serve a clear purpose, and the overall architecture should be immediately understandable to new contributors.
 
 **Design Guidelines**:
 - **Minimal Surface Area**: Prefer fewer, well-designed APIs over many specialized ones
@@ -62,14 +62,14 @@ An analysis of the existing `bitchat-tui` Rust implementation provides valuable 
 
 *   **Validation of Core Libraries**: The TUI uses `btleplug`, `tokio`, and the `dalek` cryptography suite, validating our choice of these core dependencies.
 *   **Custom Noise & Serialization**: The TUI implements the Noise protocol and binary packet serialization manually, rather than using the `snow` and `bincode` crates. This was likely done to ensure byte-for-byte compatibility with the Swift implementation and to have fine-grained control over the protocol logic.
-*   **Rationale for Manual Implementation**: The decision to implement the Noise protocol and serialization manually in `bitchat-tui` seems to be driven by a desire for **maximum control and cross-platform compatibility**. The Bitchat protocol has a precise binary format, and the developers of the TUI and Swift versions likely collaborated to ensure their implementations were perfectly interoperable. Manual serialization is the most straightforward way to guarantee this. Similarly, while the Noise protocol is a standard, different libraries can have slightly different APIs or behaviors. By implementing it manually, the developers can ensure that their state machine and message handling logic are identical across platforms.
+*   **Rationale for Manual Implementation**: The decision to implement the Noise protocol and serialization manually in `bitchat-tui` seems to be driven by a desire for maximum control and cross-platform compatibility. The Bitchat protocol has a precise binary format, and the developers of the TUI and Swift versions likely collaborated to ensure their implementations were perfectly interoperable. Manual serialization is the most straightforward way to guarantee this. Similarly, while the Noise protocol is a standard, different libraries can have slightly different APIs or behaviors. By implementing it manually, the developers can ensure that their state machine and message handling logic are identical across platforms.
 *   **Our Approach**: We will proceed with `snow` and `bincode` for their maturity and to accelerate development. However, a crucial part of our process will be to create a suite of test vectors from the `bitchat-tui` and `bitchat-swift` implementations to verify that our library produces identical binary output. This de-risks our choice of higher-level crates and ensures cross-platform compatibility.
 
 ### Phase 1: Core Protocol & Cryptography
 
 **Goal**: To build the foundational `bitchat-core` library with all necessary data structures and cryptographic primitives. This phase will result in a testable library that can create, serialize, and deserialize Bitchat packets, as well as perform all required cryptographic operations.
 
-**Implementation Directive**: Focus on **data structure elegance** and **cryptographic safety**. Every type should be self-validating, and the API should make misuse difficult.
+**Implementation Directive**: Focus on data structure elegance and cryptographic safety. Every type should be self-validating, and the API should make misuse difficult.
 
 **What's being built**:
 *   All data structures from `data_structures.rs` (e.g., `BitchatPacket`, `BitchatMessage`).
@@ -104,7 +104,7 @@ An analysis of the existing `bitchat-tui` Rust implementation provides valuable 
 
 **Goal**: To build upon the core library by adding session management and application-level logic. This phase will result in a library that can manage multiple peer sessions and handle various message types.
 
-**Implementation Directive**: Build **stateful components** that are **easy to reason about**. Session state should be explicit, and message flow should be predictable.
+**Implementation Directive**: Build stateful components that are easy to reason about. Session state should be explicit, and message flow should be predictable.
 
 **What's being built**:
 *   `NoiseSession` and `NoiseSessionManager` to manage the lifecycle of Noise sessions.
@@ -134,7 +134,7 @@ An analysis of the existing `bitchat-tui` Rust implementation provides valuable 
 
 **Goal**: To implement native transport layers using both Bluetooth Low Energy (BLE) and Nostr. This phase will result in a runnable native application (e.g., a TUI or CLI) that can communicate with other Bitchat peers over both transports with intelligent routing.
 
-**Implementation Directive**: Build **transport abstractions** that are **unified and simple**. Different transports should feel identical to the core protocol layer.
+**Implementation Directive**: Build transport abstractions that are unified and simple. Different transports should feel identical to the core protocol layer.
 
 **What's being built**:
 *   A `bitchat-ble-transport` crate that implements the `Transport` trait.
@@ -173,7 +173,7 @@ An analysis of the existing `bitchat-tui` Rust implementation provides valuable 
 
 **Note**: Web version will NOT have Bluetooth support due to limited WebBluetooth API support (Chromium-only, experimental). The web client will be Nostr-only and can communicate with native clients through Nostr relays.
 
-**Implementation Directive**: Create **browser-native** experience with **minimal JavaScript glue**. WASM module should be self-contained and easy to integrate.
+**Implementation Directive**: Create browser-native experience with minimal JavaScript glue. WASM module should be self-contained and easy to integrate.
 
 **What's being built**:
 *   A web-compatible `bitchat-nostr-transport` crate using WASM-friendly libraries.
@@ -210,7 +210,7 @@ An analysis of the existing `bitchat-tui` Rust implementation provides valuable 
 
 For comprehensive testing and development, we will include a local Nostr relay in this repository to provide a controlled testing environment that doesn't depend on external services.
 
-**Implementation Directive**: Keep test infrastructure **simple and reliable**. The relay should "just work" with minimal configuration.
+**Implementation Directive**: Keep test infrastructure simple and reliable. The relay should "just work" with minimal configuration.
 
 **Implementation Plan**:
 *   **Relay Choice**: Use a Rust-based Nostr relay for consistency with our tech stack

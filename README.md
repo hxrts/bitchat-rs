@@ -6,7 +6,7 @@ A performant Rust implementation of the Bitchat protocol with WebAssembly suppor
 
 Decentralized, peer-to-peer messaging protocol designed for secure, private, and censorship-resistant communication over ephemeral mesh networks.
 
-**Features:**
+Features:
 - End-to-end encryption using Noise Protocol Framework (XX pattern)
 - BLE mesh networking with Nostr fallback
 - Compiles to native and WebAssembly
@@ -48,4 +48,4 @@ cargo build --target wasm32-unknown-unknown --release
 
 ## License
 
-This project is licensed under the Apache License, Version 2.0. See the [LICENSE](LICENSE) file for details.
+Licensed under Apache 2.0, see [LICENSE](LICENSE).

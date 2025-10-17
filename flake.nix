@@ -16,6 +16,7 @@
         };
         rustToolchain = pkgs.rust-bin.stable.latest.default.override {
           extensions = [ "rust-src" "clippy" ];
+          targets = [ "wasm32-unknown-unknown" ];
         };
       in
       {
