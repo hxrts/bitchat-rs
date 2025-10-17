@@ -41,3 +41,6 @@ anyhow = "1.0"
 
 # Hex encoding/decoding
 hex = "0.4"
+
+# Directory utilities
+dirs = "5.0"
