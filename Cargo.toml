@@ -6,6 +6,7 @@ members = [
     "crates/bitchat-nostr",
     "crates/bitchat-cli",
     "crates/bitchat-web",
+    "simulator/test_runner",
 ]
 
 [workspace.dependencies]
@@ -41,6 +42,7 @@ rand_core = { version = "0.6", default-features = false }
 # Async runtime and networking
 tokio = { version = "1.0", features = ["full"] }
 futures = "0.3"
+async-trait = "0.1"
 
 # BLE transport dependencies
 btleplug = { version = "0.11" }
