@@ -32,7 +32,7 @@ pub use delivery::{DeliveryConfig, DeliveryStatus, DeliveryTracker};
 pub use fragmentation::{Fragment, MessageFragmenter, MessageReassembler};
 pub use handlers::{BitchatEvent, EventHandler, MessageBuilder, MessageDispatcher, MessageHandler};
 pub use packet::{BitchatMessage, BitchatPacket, MessageType};
-pub use rate_limiter::{RateLimitConfig, RateLimiter, RateLimitStats};
+pub use rate_limiter::{RateLimitConfig, RateLimitStats, RateLimiter};
 pub use session::{NoiseSession, NoiseSessionManager, SessionState};
 pub use transport::{Transport, TransportCapabilities, TransportManager, TransportType};
 pub use types::{Fingerprint, PeerId, TimeSource, Timestamp};
@@ -110,7 +110,9 @@ impl From<String> for PacketError {
 #[cfg(feature = "std")]
 impl From<&str> for PacketError {
     fn from(message: &str) -> Self {
-        PacketError::Generic { message: message.to_string() }
+        PacketError::Generic {
+            message: message.to_string(),
+        }
     }
 }
 
@@ -181,7 +183,9 @@ impl From<String> for PacketError {
 #[cfg(not(feature = "std"))]
 impl From<&str> for PacketError {
     fn from(message: &str) -> Self {
-        PacketError::Generic { message: message.to_string() }
+        PacketError::Generic {
+            message: message.to_string(),
+        }
     }
 }
 

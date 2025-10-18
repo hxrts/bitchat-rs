@@ -6,6 +6,7 @@
 
 use alloc::{vec, vec::Vec};
 use ed25519_dalek::{Signature, Signer, SigningKey, Verifier, VerifyingKey};
+use rand_core::{CryptoRng, RngCore};
 use sha2::{Digest, Sha256};
 use snow::{Builder, HandshakeState, TransportState};
 
@@ -33,8 +34,12 @@ pub struct IdentityKeyPair {
 impl IdentityKeyPair {
     /// Generate a new random identity key pair
     pub fn generate() -> Result<Self> {
-        use rand_core::RngCore;
         let mut rng = rand_core::OsRng;
+        Self::generate_with_rng(&mut rng)
+    }
+
+    /// Generate a new identity key pair with custom RNG
+    pub fn generate_with_rng<R: RngCore + CryptoRng>(rng: &mut R) -> Result<Self> {
         let mut secret_bytes = [0u8; 32];
         rng.fill_bytes(&mut secret_bytes);
 
@@ -99,8 +104,12 @@ pub struct NoiseKeyPair {
 impl NoiseKeyPair {
     /// Generate a new random Noise key pair
     pub fn generate() -> Self {
-        use rand_core::RngCore;
         let mut rng = rand_core::OsRng;
+        Self::generate_with_rng(&mut rng)
+    }
+
+    /// Generate a new Noise key pair with custom RNG
+    pub fn generate_with_rng<R: RngCore + CryptoRng>(rng: &mut R) -> Self {
         let mut private_key = [0u8; 32];
         rng.fill_bytes(&mut private_key);
 
@@ -109,7 +118,7 @@ impl NoiseKeyPair {
         use curve25519_dalek::scalar::Scalar;
 
         let scalar = Scalar::from_bytes_mod_order(private_key);
-        let point = &scalar * &X25519_BASEPOINT;
+        let point = scalar * X25519_BASEPOINT;
         let public_key = point.to_bytes();
 
         Self {
@@ -124,7 +133,7 @@ impl NoiseKeyPair {
         use curve25519_dalek::scalar::Scalar;
 
         let scalar = Scalar::from_bytes_mod_order(*private_key);
-        let point = &scalar * &X25519_BASEPOINT;
+        let point = scalar * X25519_BASEPOINT;
         let public_key = point.to_bytes();
 
         Self {
@@ -176,8 +185,7 @@ pub struct NoiseHandshake {
 impl NoiseHandshake {
     /// Create initiator handshake
     pub fn initiator(local_key: &NoiseKeyPair) -> Result<Self> {
-        let builder = Builder::new(NOISE_PATTERN.parse()
-            .map_err(|e| BitchatError::Noise(e))?);
+        let builder = Builder::new(NOISE_PATTERN.parse().map_err(BitchatError::Noise)?);
         let state = builder
             .local_private_key(&local_key.private_key_bytes())
             .build_initiator()
@@ -188,8 +196,7 @@ impl NoiseHandshake {
 
     /// Create responder handshake
     pub fn responder(local_key: &NoiseKeyPair) -> Result<Self> {
-        let builder = Builder::new(NOISE_PATTERN.parse()
-            .map_err(|e| BitchatError::Noise(e))?);
+        let builder = Builder::new(NOISE_PATTERN.parse().map_err(BitchatError::Noise)?);
         let state = builder
             .local_private_key(&local_key.private_key_bytes())
             .build_responder()

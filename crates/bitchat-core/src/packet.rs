@@ -7,7 +7,7 @@ use alloc::{string::String, vec::Vec};
 use serde::{Deserialize, Serialize};
 use uuid::Uuid;
 
-use crate::types::{PeerId, Timestamp, Ttl};
+use crate::types::{PeerId, TimeSource, Timestamp, Ttl};
 
 // ----------------------------------------------------------------------------
 // Message Types
@@ -155,6 +155,26 @@ impl BitchatPacket {
         }
     }
 
+    /// Create a new packet with custom time source
+    pub fn new_with_time<T: TimeSource>(
+        message_type: MessageType,
+        sender_id: PeerId,
+        payload: Vec<u8>,
+        time_source: &T,
+    ) -> Self {
+        Self {
+            version: Self::CURRENT_VERSION,
+            message_type,
+            ttl: Ttl::default(),
+            timestamp: time_source.now(),
+            flags: PacketFlags::default(),
+            sender_id,
+            recipient_id: None,
+            payload,
+            signature: None,
+        }
+    }
+
     /// Set the recipient (for private messages)
     pub fn with_recipient(mut self, recipient_id: PeerId) -> Self {
         self.recipient_id = Some(recipient_id);
@@ -254,6 +274,19 @@ impl BitchatMessage {
         }
     }
 
+    /// Create a new message with custom time source
+    pub fn new_with_time<T: TimeSource>(sender: String, content: String, time_source: &T) -> Self {
+        Self {
+            flags: MessageFlags::default(),
+            timestamp: time_source.now(),
+            id: Uuid::new_v4(), // Uses CSPRNG via getrandom
+            sender,
+            content,
+            original_sender: None,
+            recipient_nickname: None,
+        }
+    }
+
     /// Mark as a private message
     pub fn as_private(mut self, recipient_nickname: String) -> Self {
         self.flags.is_private = true;
@@ -294,6 +327,14 @@ impl DeliveryAck {
             timestamp: Timestamp::new(0),
         }
     }
+
+    /// Create a new delivery acknowledgment with custom time source
+    pub fn new_with_time<T: TimeSource>(message_id: Uuid, time_source: &T) -> Self {
+        Self {
+            message_id,
+            timestamp: time_source.now(),
+        }
+    }
 }
 
 // ----------------------------------------------------------------------------
@@ -318,6 +359,14 @@ impl ReadReceipt {
             timestamp: Timestamp::now(),
             #[cfg(not(feature = "std"))]
             timestamp: Timestamp::new(0),
+        }
+    }
+
+    /// Create a new read receipt with custom time source
+    pub fn new_with_time<T: TimeSource>(message_id: Uuid, time_source: &T) -> Self {
+        Self {
+            message_id,
+            timestamp: time_source.now(),
         }
     }
 }

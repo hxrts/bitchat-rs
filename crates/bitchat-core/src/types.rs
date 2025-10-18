@@ -39,7 +39,7 @@ impl PeerId {
 
 impl fmt::Display for PeerId {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        write!(f, "{}", hex::encode(&self.0))
+        write!(f, "{}", hex::encode(self.0))
     }
 }
 
@@ -70,7 +70,7 @@ impl Fingerprint {
 
 impl fmt::Display for Fingerprint {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        write!(f, "{}", hex::encode(&self.0))
+        write!(f, "{}", hex::encode(self.0))
     }
 }
 
@@ -102,12 +102,12 @@ impl Timestamp {
     #[cfg(target_arch = "wasm32")]
     pub fn now() -> Self {
         use instant::Instant;
-        
+
         // For WASM, we use instant::Instant which is epoch-based
         // The instant crate provides WASM-compatible timing
         let now = Instant::now();
         let millis = now.elapsed().as_millis() as u64;
-        
+
         // Add a base timestamp to simulate Unix epoch (approximation for WASM)
         // This is a compromise since WASM doesn't have direct access to system time
         const WASM_BASE_TIMESTAMP: u64 = 1_640_995_200_000; // Jan 1, 2022 as base

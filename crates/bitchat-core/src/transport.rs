@@ -5,8 +5,8 @@
 //! between protocol logic and transport implementation.
 
 use alloc::{boxed::Box, string::String, vec::Vec};
-use smallvec::SmallVec;
 use async_trait::async_trait;
+use smallvec::SmallVec;
 
 use crate::packet::BitchatPacket;
 use crate::types::PeerId;
@@ -68,7 +68,7 @@ pub struct TransportCapabilities {
 }
 
 /// Transport type identifier
-#[derive(Debug, Clone, Copy, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
+#[derive(Debug, Clone, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
 pub enum TransportType {
     /// Bluetooth Low Energy
     Ble,
@@ -76,8 +76,10 @@ pub enum TransportType {
     Nostr,
     /// Local network (for testing)
     Local,
+    /// Mock transport (for testing)
+    Mock,
     /// Custom transport implementation
-    Custom(&'static str),
+    Custom(String),
 }
 
 /// Latency characteristics of a transport
@@ -243,8 +245,8 @@ impl TransportManager {
         if errors.is_empty() {
             Ok(())
         } else {
-            Err(BitchatError::Transport { 
-                message: "Broadcast failed on all transports".to_string() 
+            Err(BitchatError::Transport {
+                message: "Broadcast failed on all transports".to_string(),
             })
         }
     }
@@ -256,7 +258,7 @@ impl TransportManager {
         for transport in &self.transports {
             let transport_type = transport.capabilities().transport_type;
             for peer_id in transport.discovered_peers() {
-                peers.push((peer_id, transport_type));
+                peers.push((peer_id, transport_type.clone()));
             }
         }
 
@@ -280,8 +282,8 @@ impl TransportManager {
         }
 
         if available_transports.is_empty() {
-            return Err(BitchatError::Transport { 
-                message: "No transport can reach peer".to_string() 
+            return Err(BitchatError::Transport {
+                message: "No transport can reach peer".to_string(),
             });
         }
 
@@ -419,7 +421,10 @@ impl Transport for MockTransport {
         if let Some((peer_id, packet)) = self.receive_queue.pop() {
             Ok((peer_id, packet))
         } else {
-            Err(crate::PacketError::Generic { message: "No packets to receive".to_string() }.into())
+            Err(crate::PacketError::Generic {
+                message: "No packets to receive".to_string(),
+            }
+            .into())
         }
     }
 

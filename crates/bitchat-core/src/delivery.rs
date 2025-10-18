@@ -4,8 +4,11 @@
 //! exponential backoff, and delivery confirmation tracking.
 
 use alloc::vec::Vec;
-use hashbrown::HashMap;
 use core::time::Duration;
+#[cfg(not(feature = "std"))]
+use hashbrown::HashMap;
+#[cfg(feature = "std")]
+use std::collections::HashMap;
 use uuid::Uuid;
 
 use crate::types::{PeerId, TimeSource, Timestamp};
@@ -255,7 +258,8 @@ impl<T: TimeSource> DeliveryTracker<T> {
         );
 
         self.tracked_messages.insert(message_id, tracked);
-        self.tracked_messages.get_mut(&message_id)
+        self.tracked_messages
+            .get_mut(&message_id)
             .expect("Message must exist as it was just inserted")
     }
 
