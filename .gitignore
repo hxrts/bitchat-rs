@@ -35,3 +35,54 @@ work/
 .env.local
 ext/
 CLAUDE.md
+
+# Simulation and testing artifacts
+simulator/clients/kotlin-cli/build/
+simulator/clients/swift-cli/.build/
+simulator/test_runner/target/
+simulator/clients/*/target/
+
+# Kotlin/Gradle
+build/
+.gradle/
+gradle-app.setting
+!gradle-wrapper.jar
+!gradle-wrapper.properties
+*.jar
+!gradle/wrapper/gradle-wrapper.jar
+
+# Swift Package Manager
+.build/
+.swiftpm/
+Package.resolved
+xcuserdata/
+DerivedData/
+
+# Test artifacts
+*.test
+test-results/
+coverage/
+*.profraw
+*.profdata
+
+# Runtime artifacts
+*.pid
+*.seed
+*.tmp
+tmp/
+temp/
+
+# IDE and development tools
+.idea/
+*.iml
+*.xcworkspace/
+project.xcworkspace/
+
+# Performance and profiling
+*.dSYM/
+*.trace
+flamegraph*
+
+# Documentation builds
+docs/_build/
+docs/build/
