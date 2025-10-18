@@ -5,8 +5,8 @@
 
 use wasm_bindgen::prelude::*;
 
-mod transport;
 mod client;
+mod transport;
 mod utils;
 
 pub use client::*;

@@ -1,17 +1,16 @@
 //! WASM BitChat client implementation
 
-use std::collections::HashMap;
 use std::sync::Arc;
 
 use bitchat_core::{
-    BitchatMessage, MessageBuilder, PeerId, StdDeliveryTracker, StdNoiseSessionManager, StdTimeSource,
-    transport::TransportManager,
+    transport::TransportManager, MessageBuilder, PeerId, StdDeliveryTracker,
+    StdNoiseSessionManager, StdTimeSource,
 };
 use tokio::sync::RwLock;
 use wasm_bindgen::prelude::*;
 use wasm_bindgen_futures::future_to_promise;
 
-use crate::transport::{WasmNostrTransport, WasmNostrConfig};
+use crate::transport::{WasmNostrConfig, WasmNostrTransport};
 use crate::utils::console_log;
 
 /// WASM-compatible BitChat client
@@ -19,7 +18,9 @@ use crate::utils::console_log;
 pub struct WasmBitchatClient {
     peer_id: PeerId,
     display_name: String,
+    #[allow(dead_code)]
     session_manager: StdNoiseSessionManager,
+    #[allow(dead_code)]
     delivery_tracker: StdDeliveryTracker,
     transport_manager: TransportManager,
     messages: Arc<RwLock<Vec<ReceivedMessage>>>,
@@ -157,7 +158,10 @@ impl WasmBitchatClient {
         let transport = match WasmNostrTransport::with_config(self.peer_id, config) {
             Ok(transport) => transport,
             Err(e) => {
-                return js_sys::Promise::reject(&JsValue::from_str(&format!("Failed to create transport: {}", e)));
+                return js_sys::Promise::reject(&JsValue::from_str(&format!(
+                    "Failed to create transport: {}",
+                    e
+                )));
             }
         };
 
@@ -182,7 +186,11 @@ impl WasmBitchatClient {
 
     /// Send a message to a specific peer
     #[wasm_bindgen]
-    pub fn send_message(&mut self, recipient_id: Option<String>, content: String) -> js_sys::Promise {
+    pub fn send_message(
+        &mut self,
+        recipient_id: Option<String>,
+        content: String,
+    ) -> js_sys::Promise {
         console_log!("Sending message: {}", content);
 
         let recipient_peer_id = if let Some(id_str) = recipient_id {
@@ -198,7 +206,7 @@ impl WasmBitchatClient {
             None
         };
 
-        let packet = match MessageBuilder::create_message(
+        let _packet = match MessageBuilder::create_message(
             self.peer_id,
             self.display_name.clone(),
             content,
@@ -206,7 +214,10 @@ impl WasmBitchatClient {
         ) {
             Ok(packet) => packet,
             Err(e) => {
-                return js_sys::Promise::reject(&JsValue::from_str(&format!("Failed to create message: {}", e)));
+                return js_sys::Promise::reject(&JsValue::from_str(&format!(
+                    "Failed to create message: {}",
+                    e
+                )));
             }
         };
 
@@ -233,8 +244,9 @@ impl WasmBitchatClient {
             let js_array = js_sys::Array::new();
 
             for msg in messages_guard.iter() {
-                let js_msg = serde_wasm_bindgen::to_value(msg)
-                    .map_err(|e| JsValue::from_str(&format!("Failed to serialize message: {}", e)))?;
+                let js_msg = serde_wasm_bindgen::to_value(msg).map_err(|e| {
+                    JsValue::from_str(&format!("Failed to serialize message: {}", e))
+                })?;
                 js_array.push(&js_msg);
             }
 
@@ -246,30 +258,34 @@ impl WasmBitchatClient {
     #[wasm_bindgen]
     pub fn get_status(&self) -> js_sys::Object {
         let status = js_sys::Object::new();
-        
+
         js_sys::Reflect::set(
             &status,
             &JsValue::from_str("active_transports"),
             &JsValue::from_f64(0.0),
-        ).unwrap();
+        )
+        .unwrap();
 
         js_sys::Reflect::set(
             &status,
             &JsValue::from_str("total_messages"),
             &JsValue::from_f64(0.0),
-        ).unwrap();
-        
+        )
+        .unwrap();
+
         js_sys::Reflect::set(
             &status,
             &JsValue::from_str("confirmed_messages"),
             &JsValue::from_f64(0.0),
-        ).unwrap();
-        
+        )
+        .unwrap();
+
         js_sys::Reflect::set(
             &status,
             &JsValue::from_str("failed_messages"),
             &JsValue::from_f64(0.0),
-        ).unwrap();
+        )
+        .unwrap();
 
         status
     }

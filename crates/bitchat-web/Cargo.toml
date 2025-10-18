@@ -41,6 +41,8 @@ nostr-sdk = { workspace = true, default-features = false, features = ["nip04", "
 # Async runtime for WASM
 tokio = { workspace = true, features = ["macros", "sync", "time"] }
 tokio-util = { version = "0.7", features = ["time"] }
+async-trait = { workspace = true }
+smallvec = { workspace = true }
 
 # Utilities
 serde = { workspace = true, features = ["derive"] }
@@ -58,6 +60,9 @@ url = "2.5"
 
 # Base64 encoding
 base64 = "0.22"
+
+# Debug helpers
+console_error_panic_hook = { version = "0.1", optional = true }
 
 [dependencies.getrandom]
 version = "0.2"

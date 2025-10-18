@@ -3,11 +3,14 @@
 use std::collections::HashMap;
 use std::sync::Arc;
 
+use async_trait::async_trait;
 use bitchat_core::{
-    transport::{Transport, TransportCapabilities, TransportType, LatencyClass, ReliabilityClass},
+    transport::{LatencyClass, ReliabilityClass, Transport, TransportCapabilities, TransportType},
     BitchatError, BitchatPacket, PeerId, Result as BitchatResult,
 };
+use nostr_sdk::base64::{engine::general_purpose, Engine as _};
 use nostr_sdk::prelude::*;
+use smallvec::SmallVec;
 use tokio::sync::{mpsc, Mutex, RwLock};
 use wasm_bindgen::prelude::*;
 use wasm_bindgen_futures::spawn_local;
@@ -20,6 +23,7 @@ use crate::utils::console_log;
 pub struct WasmNostrConfig {
     relay_urls: Vec<String>,
     connection_timeout_ms: u32,
+    #[allow(dead_code)]
     message_timeout_ms: u32,
     max_packet_size: usize,
 }
@@ -82,9 +86,8 @@ impl WasmBitchatNostrMessage {
         recipient_peer_id: Option<PeerId>,
         packet: &BitchatPacket,
     ) -> Result<Self, BitchatError> {
-        let packet_bytes = bincode::serialize(packet)
-            .map_err(|e| BitchatError::Serialization(e))?;
-        let packet_data = base64::encode(packet_bytes);
+        let packet_bytes = bincode::serialize(packet).map_err(BitchatError::Serialization)?;
+        let packet_data = general_purpose::STANDARD.encode(packet_bytes);
 
         Ok(Self {
             sender_peer_id,
@@ -95,10 +98,12 @@ impl WasmBitchatNostrMessage {
     }
 
     pub fn to_packet(&self) -> Result<BitchatPacket, BitchatError> {
-        let packet_bytes = base64::decode(&self.packet_data)
-            .map_err(|e| BitchatError::InvalidPacket(format!("Base64 decode error: {}", e)))?;
-        bincode::deserialize(&packet_bytes)
-            .map_err(|e| BitchatError::Serialization(e))
+        let packet_bytes = general_purpose::STANDARD
+            .decode(&self.packet_data)
+            .map_err(|e| BitchatError::Transport {
+                message: format!("Base64 decode error: {}", e),
+            })?;
+        bincode::deserialize(&packet_bytes).map_err(BitchatError::Serialization)
     }
 }
 
@@ -139,18 +144,23 @@ impl WasmNostrTransport {
 
     async fn initialize_client(&mut self) -> BitchatResult<()> {
         console_log!("Initializing Nostr client for WASM...");
-        
+
         let client = Client::new(&self.keys);
 
         // Add relays
         for relay_url in &self.config.relay_urls {
             console_log!("Adding relay: {}", relay_url);
             if let Ok(url) = url::Url::parse(relay_url) {
-                client.add_relay(url).await.map_err(|e| {
-                    BitchatError::InvalidPacket(format!("Failed to add relay {}: {}", relay_url, e))
-                })?;
+                client
+                    .add_relay(url)
+                    .await
+                    .map_err(|e| BitchatError::Transport {
+                        message: format!("Failed to add relay {}: {}", relay_url, e),
+                    })?;
             } else {
-                return Err(BitchatError::InvalidPacket(format!("Invalid relay URL: {}", relay_url)));
+                return Err(BitchatError::Transport {
+                    message: format!("Invalid relay URL: {}", relay_url),
+                });
             }
         }
 
@@ -162,19 +172,24 @@ impl WasmNostrTransport {
         tokio::time::sleep(std::time::Duration::from_secs(2)).await;
 
         self.client = Some(client);
-        console_log!("Nostr client initialized with {} relays", self.config.relay_urls.len());
+        console_log!(
+            "Nostr client initialized with {} relays",
+            self.config.relay_urls.len()
+        );
         Ok(())
     }
 
     async fn start_listening(&self) -> BitchatResult<()> {
-        let client = self.client.as_ref()
+        let client = self
+            .client
+            .as_ref()
             .ok_or_else(|| BitchatError::InvalidPacket("Nostr client not initialized".into()))?;
 
         console_log!("Starting to listen for BitChat messages...");
 
         // Subscribe to BitChat events
-        let subscription_id = SubscriptionId::new("bitchat-wasm");
-        
+        let _subscription_id = SubscriptionId::new("bitchat-wasm");
+
         let bitchat_filter = Filter::new()
             .kind(Kind::Custom(30420)) // BITCHAT_KIND
             .since(Timestamp::now());
@@ -198,8 +213,17 @@ impl WasmNostrTransport {
                         }
 
                         if event.kind == Kind::Custom(30420) {
-                            if let Ok(bitchat_msg) = serde_json::from_str::<WasmBitchatNostrMessage>(&event.content) {
-                                Self::process_bitchat_message(bitchat_msg, event.pubkey, &peers, &peer_cache, &packet_tx).await;
+                            if let Ok(bitchat_msg) =
+                                serde_json::from_str::<WasmBitchatNostrMessage>(&event.content)
+                            {
+                                Self::process_bitchat_message(
+                                    bitchat_msg,
+                                    event.pubkey,
+                                    &peers,
+                                    &peer_cache,
+                                    &packet_tx,
+                                )
+                                .await;
                             }
                         }
                     }
@@ -226,147 +250,159 @@ impl WasmNostrTransport {
         // Update peer mapping and cache
         {
             let mut peers_lock = peers.write().await;
-            if !peers_lock.contains_key(&bitchat_msg.sender_peer_id) {
-                peers_lock.insert(bitchat_msg.sender_peer_id, sender_pubkey);
-                
+            if let std::collections::hash_map::Entry::Vacant(e) =
+                peers_lock.entry(bitchat_msg.sender_peer_id)
+            {
+                e.insert(sender_pubkey);
+
                 let mut cached = peer_cache.write().await;
                 if !cached.contains(&bitchat_msg.sender_peer_id) {
                     cached.push(bitchat_msg.sender_peer_id);
                 }
-                
+
                 console_log!("New peer discovered: {}", bitchat_msg.sender_peer_id);
             }
         }
 
         // Forward packet
         if let Ok(packet) = bitchat_msg.to_packet() {
-            if let Err(_) = packet_tx.send((bitchat_msg.sender_peer_id, packet)) {
+            if packet_tx
+                .send((bitchat_msg.sender_peer_id, packet))
+                .is_err()
+            {
                 console_log!("Failed to forward packet - receiver dropped");
             }
         }
     }
 
     async fn send_to_peer(&self, peer_id: &PeerId, packet: &BitchatPacket) -> BitchatResult<()> {
-        let client = self.client.as_ref()
+        let client = self
+            .client
+            .as_ref()
             .ok_or_else(|| BitchatError::InvalidPacket("Nostr client not initialized".into()))?;
 
         let bitchat_msg = WasmBitchatNostrMessage::new(self.local_peer_id, Some(*peer_id), packet)?;
-        let content = serde_json::to_string(&bitchat_msg)
-            .map_err(|e| BitchatError::InvalidPacket(format!("Failed to serialize message: {}", e)))?;
+        let content = serde_json::to_string(&bitchat_msg).map_err(|e| BitchatError::Transport {
+            message: format!("Failed to serialize message: {}", e),
+        })?;
 
         if content.len() > self.config.max_packet_size {
-            return Err(BitchatError::InvalidPacket("Message too large for Nostr".into()));
+            return Err(BitchatError::InvalidPacket(
+                "Message too large for Nostr".into(),
+            ));
         }
 
         // Send as custom BitChat event
         let event = EventBuilder::new(Kind::Custom(30420), content, vec![Tag::hashtag("bitchat")])
             .to_event(&self.keys)
-            .map_err(|e| BitchatError::InvalidPacket(format!("Failed to create event: {}", e)))?;
+            .map_err(|e| BitchatError::Transport {
+                message: format!("Failed to create event: {}", e),
+            })?;
 
-        client.send_event(event).await
-            .map_err(|e| BitchatError::InvalidPacket(format!("Failed to send event: {}", e)))?;
+        client
+            .send_event(event)
+            .await
+            .map_err(|e| BitchatError::Transport {
+                message: format!("Failed to send event: {}", e),
+            })?;
 
         console_log!("Sent BitChat packet to peer {} via Nostr", peer_id);
         Ok(())
     }
 
     async fn broadcast_packet(&self, packet: &BitchatPacket) -> BitchatResult<()> {
-        let client = self.client.as_ref()
+        let client = self
+            .client
+            .as_ref()
             .ok_or_else(|| BitchatError::InvalidPacket("Nostr client not initialized".into()))?;
 
         let bitchat_msg = WasmBitchatNostrMessage::new(self.local_peer_id, None, packet)?;
-        let content = serde_json::to_string(&bitchat_msg)
-            .map_err(|e| BitchatError::InvalidPacket(format!("Failed to serialize message: {}", e)))?;
+        let content = serde_json::to_string(&bitchat_msg).map_err(|e| BitchatError::Transport {
+            message: format!("Failed to serialize message: {}", e),
+        })?;
 
         if content.len() > self.config.max_packet_size {
-            return Err(BitchatError::InvalidPacket("Message too large for Nostr".into()));
+            return Err(BitchatError::InvalidPacket(
+                "Message too large for Nostr".into(),
+            ));
         }
 
         let event = EventBuilder::new(Kind::Custom(30420), content, vec![Tag::hashtag("bitchat")])
             .to_event(&self.keys)
-            .map_err(|e| BitchatError::InvalidPacket(format!("Failed to create event: {}", e)))?;
+            .map_err(|e| BitchatError::Transport {
+                message: format!("Failed to create event: {}", e),
+            })?;
 
-        client.send_event(event).await
-            .map_err(|e| BitchatError::InvalidPacket(format!("Failed to send event: {}", e)))?;
+        client
+            .send_event(event)
+            .await
+            .map_err(|e| BitchatError::Transport {
+                message: format!("Failed to send event: {}", e),
+            })?;
 
         console_log!("Broadcast BitChat packet via Nostr");
         Ok(())
     }
 }
 
+#[async_trait]
 impl Transport for WasmNostrTransport {
-    fn send_to(
-        &mut self,
-        peer_id: PeerId,
-        packet: BitchatPacket,
-    ) -> std::pin::Pin<Box<dyn std::future::Future<Output = BitchatResult<()>> + Send + '_>> {
-        Box::pin(async move { self.send_to_peer(&peer_id, &packet).await })
+    async fn send_to(&mut self, peer_id: PeerId, packet: BitchatPacket) -> BitchatResult<()> {
+        self.send_to_peer(&peer_id, &packet).await
     }
 
-    fn broadcast(
-        &mut self,
-        packet: BitchatPacket,
-    ) -> std::pin::Pin<Box<dyn std::future::Future<Output = BitchatResult<()>> + Send + '_>> {
-        Box::pin(async move { self.broadcast_packet(&packet).await })
+    async fn broadcast(&mut self, packet: BitchatPacket) -> BitchatResult<()> {
+        self.broadcast_packet(&packet).await
     }
 
-    fn receive(
-        &mut self,
-    ) -> std::pin::Pin<
-        Box<dyn std::future::Future<Output = BitchatResult<(PeerId, BitchatPacket)>> + Send + '_>,
-    > {
-        let packet_rx = Arc::clone(&self.packet_rx);
-
-        Box::pin(async move {
-            let mut rx = packet_rx.lock().await;
-            rx.recv().await
-                .ok_or_else(|| BitchatError::InvalidPacket("Receive channel closed".into()))
+    async fn receive(&mut self) -> BitchatResult<(PeerId, BitchatPacket)> {
+        let mut rx = self.packet_rx.lock().await;
+        rx.recv().await.ok_or_else(|| BitchatError::Transport {
+            message: "Receive channel closed".to_string(),
         })
     }
 
-    fn discovered_peers(&self) -> Vec<PeerId> {
+    fn discovered_peers(&self) -> SmallVec<[PeerId; 8]> {
         // Use cached peers for non-blocking access
         if let Ok(cached_peers) = self.peer_cache.try_read() {
-            cached_peers.clone()
+            SmallVec::from_vec(cached_peers.clone())
         } else {
-            Vec::new()
+            SmallVec::new()
         }
     }
 
-    fn start(
-        &mut self,
-    ) -> std::pin::Pin<Box<dyn std::future::Future<Output = BitchatResult<()>> + Send + '_>> {
-        Box::pin(async move {
-            *self.active.write().await = true;
+    async fn start(&mut self) -> BitchatResult<()> {
+        *self.active.write().await = true;
 
-            self.initialize_client().await?;
-            self.start_listening().await?;
+        self.initialize_client().await?;
+        self.start_listening().await?;
 
-            console_log!("WASM Nostr transport started");
-            Ok(())
-        })
+        console_log!("WASM Nostr transport started");
+        Ok(())
     }
 
-    fn stop(
-        &mut self,
-    ) -> std::pin::Pin<Box<dyn std::future::Future<Output = BitchatResult<()>> + Send + '_>> {
-        Box::pin(async move {
-            *self.active.write().await = false;
+    async fn stop(&mut self) -> BitchatResult<()> {
+        *self.active.write().await = false;
 
-            if let Some(client) = &self.client {
-                client.disconnect().await.map_err(|e| {
-                    BitchatError::InvalidPacket(format!("Failed to disconnect: {}", e))
+        if let Some(client) = &self.client {
+            client
+                .disconnect()
+                .await
+                .map_err(|e| BitchatError::Transport {
+                    message: format!("Failed to disconnect: {}", e),
                 })?;
-            }
+        }
 
-            console_log!("WASM Nostr transport stopped");
-            Ok(())
-        })
+        console_log!("WASM Nostr transport stopped");
+        Ok(())
     }
 
     fn is_active(&self) -> bool {
         // Simple non-blocking check for WASM
-        self.active.try_read().map(|active| *active).unwrap_or(false)
+        self.active
+            .try_read()
+            .map(|active| *active)
+            .unwrap_or(false)
     }
 
     fn capabilities(&self) -> TransportCapabilities {
