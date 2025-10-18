@@ -2,23 +2,23 @@
 
 use std::sync::Arc;
 use std::time::{Duration, Instant};
-use tokio::sync::{mpsc, RwLock, Mutex};
+use tokio::sync::{mpsc, Mutex, RwLock};
 use tracing::{debug, error, info, warn};
 use uuid::Uuid;
 
 use bitchat_ble::BleTransport;
 use bitchat_core::{
-    BitchatMessage, MessageBuilder, MessageFragmenter, MessageReassembler,
-    PeerId, StdDeliveryTracker, StdNoiseSessionManager, StdTimeSource,
-    transport::{TransportManager, TransportSelectionPolicy, TransportType},
-    handlers::{BitchatEvent, EventEmittingHandler, EventHandler},
     delivery::DeliveryStats,
+    handlers::{BitchatEvent, EventEmittingHandler, EventHandler},
+    transport::{TransportManager, TransportSelectionPolicy, TransportType},
+    BitchatMessage, MessageBuilder, MessageFragmenter, MessageReassembler, PeerId,
+    StdDeliveryTracker, StdNoiseSessionManager, StdTimeSource,
 };
 use bitchat_nostr::NostrTransport;
 
 use crate::config::AppConfig;
-use crate::state::{StateManager, AppState};
 use crate::error::{CliError, Result};
+use crate::state::{AppState, StateManager};
 
 /// Message event for the UI
 #[derive(Debug, Clone)]
@@ -39,19 +39,14 @@ pub enum AppEvent {
         transport_type: TransportType,
     },
     /// Peer status changed
-    PeerStatusChanged {
-        peer_id: PeerId,
-        status: PeerStatus,
-    },
+    PeerStatusChanged { peer_id: PeerId, status: PeerStatus },
     /// Transport status changed
     TransportStatusChanged {
         transport_type: TransportType,
         status: TransportStatus,
     },
     /// Error occurred
-    Error {
-        message: String,
-    },
+    Error { message: String },
 }
 
 #[derive(Debug, Clone)]
@@ -80,9 +75,13 @@ impl EventHandler for AppEventHandler {
             BitchatEvent::MessageReceived { from, message } => {
                 AppEvent::MessageReceived { from, message }
             }
-            BitchatEvent::DeliveryConfirmed { message_id, confirmed_by } => {
-                AppEvent::DeliveryConfirmed { message_id, confirmed_by }
-            }
+            BitchatEvent::DeliveryConfirmed {
+                message_id,
+                confirmed_by,
+            } => AppEvent::DeliveryConfirmed {
+                message_id,
+                confirmed_by,
+            },
             BitchatEvent::PeerAnnounced { peer_id, .. } => {
                 AppEvent::PeerDiscovered {
                     peer_id,
@@ -130,11 +129,13 @@ pub struct BitchatApp {
 
 impl BitchatApp {
     /// Create a new BitChat application
-    pub async fn new(mut config: AppConfig) -> Result<Self> {
+    pub async fn new(config: AppConfig) -> Result<Self> {
         // Set up state directory
         let state_dir = config.get_state_dir()?;
         let mut state_manager = StateManager::new(state_dir, config.state.auto_save_interval)
-            .map_err(|e| CliError::StatePersistence(format!("Failed to initialize state manager: {}", e)))?;
+            .map_err(|e| {
+                CliError::StatePersistence(format!("Failed to initialize state manager: {}", e))
+            })?;
 
         // Record startup
         state_manager.state_mut().record_startup();
@@ -143,7 +144,10 @@ impl BitchatApp {
         let noise_key = bitchat_core::crypto::NoiseKeyPair::generate();
         let peer_id = PeerId::from_bytes(&noise_key.public_key_bytes());
 
-        info!("Starting BitChat with peer ID: {}...", &peer_id.to_string()[..8]);
+        info!(
+            "Starting BitChat with peer ID: {}...",
+            &peer_id.to_string()[..8]
+        );
 
         // Create event channel
         let (event_sender, event_receiver) = mpsc::unbounded_channel();
@@ -247,23 +251,25 @@ impl BitchatApp {
     /// Try to add BLE transport with error handling
     async fn try_add_ble_transport(&mut self) -> Result<()> {
         info!("Initializing BLE transport...");
-        
+
         let ble_config = self.config.ble.clone();
-        let mut ble_transport = BleTransport::with_config(self.peer_id, ble_config);
-        
-        self.transport_manager.add_transport(Box::new(ble_transport));
+        let ble_transport = BleTransport::with_config(self.peer_id, ble_config);
+
+        self.transport_manager
+            .add_transport(Box::new(ble_transport));
         info!("BLE transport added successfully");
         Ok(())
     }
 
     /// Try to add Nostr transport with error handling
-    async fn try_add_nostr_transport(&mut self, local_relay: bool) -> Result<()> {
+    async fn try_add_nostr_transport(&mut self, _local_relay: bool) -> Result<()> {
         info!("Initializing Nostr transport...");
-        
+
         let nostr_config = self.config.nostr.clone();
-        let mut nostr_transport = NostrTransport::with_config(self.peer_id, nostr_config, local_relay);
-        
-        self.transport_manager.add_transport(Box::new(nostr_transport));
+        let nostr_transport = NostrTransport::with_config(self.peer_id, nostr_config)?;
+
+        self.transport_manager
+            .add_transport(Box::new(nostr_transport));
         info!("Nostr transport added successfully");
         Ok(())
     }
@@ -271,19 +277,17 @@ impl BitchatApp {
     /// Configure transport selection policy based on preferences
     fn configure_transport_policy(&mut self) {
         if self.config.transport_preferences.prefer_ble {
-            self.transport_manager.set_selection_policy(
-                TransportSelectionPolicy::PreferenceOrder(vec![
+            self.transport_manager
+                .set_selection_policy(TransportSelectionPolicy::PreferenceOrder(vec![
                     TransportType::Ble,
                     TransportType::Nostr,
-                ]),
-            );
+                ]));
         } else {
-            self.transport_manager.set_selection_policy(
-                TransportSelectionPolicy::PreferenceOrder(vec![
+            self.transport_manager
+                .set_selection_policy(TransportSelectionPolicy::PreferenceOrder(vec![
                     TransportType::Nostr,
                     TransportType::Ble,
-                ]),
-            );
+                ]));
         }
     }
 
@@ -311,30 +315,41 @@ impl BitchatApp {
                 message.content.clone(),
                 None,
             )
-        }.map_err(|e| CliError::MessageProcessing(format!("Failed to create message: {}", e)))?;
+        }
+        .map_err(|e| CliError::MessageProcessing(format!("Failed to create message: {}", e)))?;
 
         // Send via transport manager
         if let Some(recipient) = recipient_id {
             self.delivery_tracker
                 .track_message(message_id, recipient, packet.payload.clone());
-            self.transport_manager.send_to(recipient, packet).await
-                .map_err(|e| CliError::MessageProcessing(format!("Failed to send message: {}", e)))?;
+            self.transport_manager
+                .send_to(recipient, packet)
+                .await
+                .map_err(|e| {
+                    CliError::MessageProcessing(format!("Failed to send message: {}", e))
+                })?;
             self.delivery_tracker.mark_sent(&message_id);
         } else {
-            self.transport_manager.broadcast_all(packet).await
-                .map_err(|e| CliError::MessageProcessing(format!("Failed to broadcast message: {}", e)))?;
+            self.transport_manager
+                .broadcast_all(packet)
+                .await
+                .map_err(|e| {
+                    CliError::MessageProcessing(format!("Failed to broadcast message: {}", e))
+                })?;
         }
 
         // Update state
-        self.state_manager.state_mut().add_message(self.peer_id, &message, false);
-        
+        self.state_manager
+            .state_mut()
+            .add_message(self.peer_id, &message, false);
+
         info!("Message sent: {}", message_id);
         Ok(message_id)
     }
 
     /// Get list of discovered peers
     pub fn get_discovered_peers(&self) -> Vec<(PeerId, TransportType)> {
-        self.transport_manager.all_discovered_peers()
+        self.transport_manager.all_discovered_peers().to_vec()
     }
 
     /// Get peer ID
@@ -396,7 +411,7 @@ impl BitchatApp {
                         debug!("Cleaned up {} completed and {} expired deliveries",
                                completed.len(), expired.len());
                     }
-                    
+
                     {
                         let mut reassembler = self.reassembler.lock().await;
                         reassembler.cleanup_expired();
@@ -430,7 +445,9 @@ impl BitchatApp {
     /// Update peer discovery and send events
     async fn update_peer_discovery(&mut self) {
         let current_peers = self.get_discovered_peers();
-        let state_peers: std::collections::HashSet<_> = self.state_manager.state()
+        let state_peers: std::collections::HashSet<_> = self
+            .state_manager
+            .state()
             .discovered_peers
             .keys()
             .cloned()
@@ -438,11 +455,13 @@ impl BitchatApp {
 
         for (peer_id, transport_type) in current_peers {
             let peer_id_str = peer_id.to_string();
-            
+
             if !state_peers.contains(&peer_id_str) {
                 // New peer discovered
-                self.state_manager.state_mut().add_peer(peer_id, transport_type, None);
-                
+                self.state_manager
+                    .state_mut()
+                    .add_peer(peer_id, transport_type.clone(), None);
+
                 let _ = self.event_sender.send(AppEvent::PeerDiscovered {
                     peer_id,
                     transport_type,
@@ -454,7 +473,7 @@ impl BitchatApp {
     /// Stop the application
     pub async fn stop(&mut self) -> Result<()> {
         info!("Stopping BitChat application");
-        
+
         *self.running.write().await = false;
 
         // Update runtime statistics
@@ -484,10 +503,7 @@ impl BitchatApp {
     /// Get transport status
     pub fn get_transport_status(&self) -> Vec<(TransportType, bool)> {
         // This would need to be implemented in the transport manager
-        vec![
-            (TransportType::Ble, true),
-            (TransportType::Nostr, true),
-        ]
+        vec![(TransportType::Ble, true), (TransportType::Nostr, true)]
     }
 
     /// Get application statistics

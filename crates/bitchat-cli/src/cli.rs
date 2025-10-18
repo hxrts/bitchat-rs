@@ -63,4 +63,10 @@ pub enum Commands {
     },
     /// Show application status
     Status,
+    /// Start interactive command-line mode (for testing/automation)
+    Interactive {
+        /// Your display name
+        #[arg(short, long, default_value = "TestClient")]
+        name: String,
+    },
 }

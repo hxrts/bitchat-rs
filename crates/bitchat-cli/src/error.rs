@@ -37,6 +37,9 @@ pub enum CliError {
 
     #[error("Hex decoding error: {0}")]
     HexDecoding(#[from] hex::FromHexError),
+
+    #[error("Feature not available: {0}")]
+    FeatureNotAvailable(String),
 }
 
 /// Result type for CLI operations

@@ -1,12 +1,11 @@
 //! State persistence for the BitChat CLI
 
+use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 use std::path::PathBuf;
-use serde::{Deserialize, Serialize};
 
-use bitchat_core::{BitchatMessage, PeerId};
-use bitchat_core::transport::TransportType;
 use crate::error::{CliError, Result};
+use bitchat_core::{transport::TransportType, BitchatMessage, PeerId};
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct AppState {
@@ -86,7 +85,7 @@ impl AppState {
 
         let state_str = std::fs::read_to_string(path)
             .map_err(|e| CliError::StatePersistence(format!("Failed to read state file: {}", e)))?;
-        
+
         serde_json::from_str(&state_str)
             .map_err(|e| CliError::StatePersistence(format!("Failed to parse state file: {}", e)))
     }
@@ -95,32 +94,40 @@ impl AppState {
     pub fn save_to_file(&self, path: &PathBuf) -> Result<()> {
         let state_str = serde_json::to_string_pretty(self)
             .map_err(|e| CliError::StatePersistence(format!("Failed to serialize state: {}", e)))?;
-        
+
         std::fs::write(path, state_str)
             .map_err(|e| CliError::StatePersistence(format!("Failed to write state file: {}", e)))
     }
 
     /// Add a discovered peer
-    pub fn add_peer(&mut self, peer_id: PeerId, transport_type: TransportType, display_name: Option<String>) {
+    pub fn add_peer(
+        &mut self,
+        peer_id: PeerId,
+        transport_type: TransportType,
+        display_name: Option<String>,
+    ) {
         let peer_id_str = peer_id.to_string();
-        
-        let peer_info = self.discovered_peers.entry(peer_id_str.clone()).or_insert_with(|| {
-            self.stats.peers_discovered += 1;
-            PeerInfo {
-                peer_id: peer_id_str,
-                transport_types: Vec::new(),
-                last_seen: current_timestamp(),
-                display_name: display_name.clone(),
-                nostr_pubkey: None,
-            }
-        });
+
+        let peer_info = self
+            .discovered_peers
+            .entry(peer_id_str.clone())
+            .or_insert_with(|| {
+                self.stats.peers_discovered += 1;
+                PeerInfo {
+                    peer_id: peer_id_str,
+                    transport_types: Vec::new(),
+                    last_seen: current_timestamp(),
+                    display_name: display_name.clone(),
+                    nostr_pubkey: None,
+                }
+            });
 
         if !peer_info.transport_types.contains(&transport_type) {
             peer_info.transport_types.push(transport_type);
         }
 
         peer_info.last_seen = current_timestamp();
-        
+
         if let Some(name) = display_name {
             peer_info.display_name = Some(name);
         }
@@ -135,7 +142,10 @@ impl AppState {
             content: message.content.clone(),
             timestamp: message.timestamp.as_millis(),
             is_private: message.flags.is_private,
-            recipient_id: message.recipient_nickname.as_ref().map(|_| sender_id.to_string()),
+            recipient_id: message
+                .recipient_nickname
+                .as_ref()
+                .map(|_| sender_id.to_string()),
         };
 
         self.recent_messages.push(stored_message);
@@ -175,10 +185,12 @@ impl AppState {
         let cutoff_time = current_timestamp() - max_age_seconds * 1000;
 
         // Remove old peers
-        self.discovered_peers.retain(|_, peer| peer.last_seen > cutoff_time);
+        self.discovered_peers
+            .retain(|_, peer| peer.last_seen > cutoff_time);
 
         // Remove old messages
-        self.recent_messages.retain(|msg| msg.timestamp > cutoff_time);
+        self.recent_messages
+            .retain(|msg| msg.timestamp > cutoff_time);
     }
 }
 

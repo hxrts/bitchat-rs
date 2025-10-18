@@ -32,9 +32,9 @@ thiserror = { workspace = true }
 tracing = { workspace = true }
 tracing-subscriber = { workspace = true }
 
-# Terminal UI
-crossterm = "0.28"
-ratatui = "0.28"
+# Terminal UI (optional for TUI mode)
+crossterm = { version = "0.28", optional = true }
+ratatui = { version = "0.28", optional = true }
 
 # Error handling
 anyhow = "1.0"
@@ -44,3 +44,8 @@ hex = "0.4"
 
 # Directory utilities
 dirs = "5.0"
+
+[features]
+default = ["tui"]
+tui = ["crossterm", "ratatui"]
+non-interactive = []

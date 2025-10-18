@@ -5,11 +5,12 @@
 
 pub mod app;
 pub mod cli;
-pub mod config;
-pub mod tui;
-pub mod state;
 pub mod commands;
+pub mod config;
 pub mod error;
+pub mod state;
+#[cfg(feature = "tui")]
+pub mod tui;
 
 pub use app::BitchatApp;
 pub use cli::{Cli, Commands};
@@ -18,7 +19,7 @@ pub use error::{CliError, Result};
 
 // Re-export commonly used types
 pub use bitchat_core::{
-    BitchatMessage, MessageBuilder, MessageFragmenter, MessageReassembler,
-    PeerId, StdDeliveryTracker, StdNoiseSessionManager, StdTimeSource,
     transport::{TransportManager, TransportSelectionPolicy, TransportType},
+    BitchatMessage, MessageBuilder, MessageFragmenter, MessageReassembler, PeerId,
+    StdDeliveryTracker, StdNoiseSessionManager, StdTimeSource,
 };

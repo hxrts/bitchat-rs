@@ -4,11 +4,7 @@ use clap::Parser;
 use tracing::{error, info};
 
 use bitchat_cli::{
-    app::BitchatApp,
-    cli::Cli,
-    commands::CommandDispatcher,
-    config::AppConfig,
-    error::Result,
+    app::BitchatApp, cli::Cli, commands::CommandDispatcher, config::AppConfig, error::Result,
 };
 
 #[tokio::main]
@@ -41,7 +37,10 @@ async fn main() -> Result<()> {
     let use_ble = !cli.no_ble;
     let use_nostr = !cli.no_nostr;
 
-    if let Err(e) = app.start_transports(use_ble, use_nostr, cli.local_relay).await {
+    if let Err(e) = app
+        .start_transports(use_ble, use_nostr, cli.local_relay)
+        .await
+    {
         error!("Failed to start transports: {}", e);
         std::process::exit(1);
     }

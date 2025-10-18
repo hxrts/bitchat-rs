@@ -1,12 +1,12 @@
 //! Configuration management for the BitChat CLI
 
+use serde::{Deserialize, Serialize};
 use std::path::PathBuf;
 use std::time::Duration;
-use serde::{Deserialize, Serialize};
 
+use crate::error::{CliError, Result};
 use bitchat_ble::BleTransportConfig;
 use bitchat_nostr::NostrTransportConfig;
-use crate::error::{CliError, Result};
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct AppConfig {
@@ -112,9 +112,10 @@ impl Default for StateConfig {
 impl AppConfig {
     /// Load configuration from file
     pub fn load_from_file(path: &str) -> Result<Self> {
-        let config_str = std::fs::read_to_string(path)
-            .map_err(|e| CliError::Config(format!("Failed to read config file '{}': {}", path, e)))?;
-        
+        let config_str = std::fs::read_to_string(path).map_err(|e| {
+            CliError::Config(format!("Failed to read config file '{}': {}", path, e))
+        })?;
+
         toml::from_str(&config_str)
             .map_err(|e| CliError::Config(format!("Failed to parse config file '{}': {}", path, e)))
     }
@@ -123,7 +124,7 @@ impl AppConfig {
     pub fn save_to_file(&self, path: &str) -> Result<()> {
         let config_str = toml::to_string_pretty(self)
             .map_err(|e| CliError::Config(format!("Failed to serialize config: {}", e)))?;
-        
+
         std::fs::write(path, config_str)
             .map_err(|e| CliError::Config(format!("Failed to write config file '{}': {}", path, e)))
     }
@@ -141,8 +142,9 @@ impl AppConfig {
         };
 
         // Create directory if it doesn't exist
-        std::fs::create_dir_all(&state_dir)
-            .map_err(|e| CliError::StatePersistence(format!("Failed to create state directory: {}", e)))?;
+        std::fs::create_dir_all(&state_dir).map_err(|e| {
+            CliError::StatePersistence(format!("Failed to create state directory: {}", e))
+        })?;
 
         Ok(state_dir)
     }
