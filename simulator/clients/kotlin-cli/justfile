@@ -1,0 +1,30 @@
+# BitChat Kotlin CLI Development  
+# Use: nix develop
+
+# Default recipe
+default:
+    @just --list
+
+# Build the Kotlin CLI
+build:
+    gradle build
+
+# Run the Kotlin CLI
+run:
+    build/install/bitchat-kotlin-cli/bin/bitchat-kotlin-cli
+
+# Run with test configuration
+run-test:
+    build/install/bitchat-kotlin-cli/bin/bitchat-kotlin-cli --relay wss://relay.damus.io --name kotlin-client
+
+# Clean build artifacts
+clean:
+    gradle clean
+
+# Check if built
+status:
+    @if [ -f build/install/bitchat-kotlin-cli/bin/bitchat-kotlin-cli ]; then \
+        echo "Kotlin CLI: Built"; \
+    else \
+        echo "Kotlin CLI: Not built (run 'just build')"; \
+    fi

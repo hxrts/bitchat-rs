@@ -1,0 +1,189 @@
+# BitChat Integration Simulator
+# ============================
+# 
+# This Justfile provides commands for running the BitChat integration simulator
+# that tests cross-client compatibility between Rust, Swift, and Kotlin implementations.
+
+# Default recipe lists available commands
+default:
+    @just --list
+
+# Build all simulator components
+build:
+    @echo "Building simulator components..."
+    just build-test-runner
+    just build-swift-cli
+    just build-kotlin-cli
+    @echo "All simulator components built"
+
+# Build the test runner
+build-test-runner:
+    @echo "Building test runner..."
+    @cd test_runner && cargo build --release
+
+# Build Swift CLI wrapper
+build-swift-cli:
+    @echo "Building Swift CLI wrapper..."
+    @if command -v swift >/dev/null 2>&1; then \
+        cd clients/swift-cli && swift build -c release && echo "Swift CLI built"; \
+    else \
+        echo "WARNING: Swift not available, skipping Swift CLI build"; \
+        echo "Install Swift from https://swift.org/download/"; \
+    fi
+
+# Build Kotlin CLI wrapper  
+build-kotlin-cli:
+    @echo "Building Kotlin CLI wrapper..."
+    @if command -v gradle >/dev/null 2>&1; then \
+        cd clients/kotlin-cli && gradle build && echo "Kotlin CLI built"; \
+    else \
+        echo "WARNING: Gradle not available, skipping Kotlin CLI build"; \
+        echo "Install Gradle from https://gradle.org/install/"; \
+    fi
+
+# Clean all build artifacts
+clean:
+    @echo "Cleaning simulator build artifacts..."
+    @cd test_runner && cargo clean
+    @if [ -d clients/swift-cli/.build ]; then cd clients/swift-cli && swift package clean 2>/dev/null || rm -rf .build; fi
+    @if [ -d clients/kotlin-cli/build ]; then cd clients/kotlin-cli && gradle clean 2>/dev/null || rm -rf build; fi
+    @echo "Cleaned"
+
+# Run integration tests
+test:
+    @echo "Running BitChat integration tests..."
+    just run-basic-test
+
+# Run basic send/receive test scenario
+run-basic-test:
+    @echo "Running basic send/receive test..."
+    @cd test_runner && cargo run --release -- scenario basic-send-receive
+
+# Configure external relay for testing
+start-relay:
+    @echo "BitChat uses external Nostr relays:"
+    @echo "  - wss://relay.damus.io"
+    @echo "  - wss://nos.lol" 
+    @echo "  - wss://relay.nostr.band"
+    @echo "No local relay setup needed."
+
+# Stop relay command (no-op since we use external relays)
+stop-relay:
+    @echo "No local relay to stop."
+    @echo "BitChat uses external Nostr relays."
+
+# Run the Rust CLI client
+run-rust-client:
+    @echo "Starting Rust BitChat CLI..."
+    @cd .. && cargo run --bin bitchat-cli
+
+# Run the Rust CLI with specific configuration for testing
+run-rust-client-test:
+    @echo "Starting Rust BitChat CLI in test mode..."
+    @cd .. && cargo run --bin bitchat-cli -- --relay wss://relay.damus.io --name rust-client
+
+# Run Swift CLI wrapper
+run-swift-client:
+    @echo "Starting Swift BitChat CLI..."
+    @if [ -f clients/swift-cli/.build/release/bitchat-swift-cli ]; then \
+        clients/swift-cli/.build/release/bitchat-swift-cli; \
+    else \
+        echo "Swift CLI not built. Run 'just build-swift-cli' first."; \
+    fi
+
+# Run Swift CLI with specific configuration for testing
+run-swift-client-test:
+    @echo "Starting Swift BitChat CLI in test mode..."
+    @if [ -f clients/swift-cli/.build/release/bitchat-swift-cli ]; then \
+        clients/swift-cli/.build/release/bitchat-swift-cli --relay wss://relay.damus.io --name swift-client; \
+    else \
+        echo "Swift CLI not built. Run 'just build-swift-cli' first."; \
+    fi
+
+# Run Kotlin CLI wrapper
+run-kotlin-client:
+    @echo "Starting Kotlin BitChat CLI..."
+    @if [ -f clients/kotlin-cli/build/install/bitchat-kotlin-cli/bin/bitchat-kotlin-cli ]; then \
+        clients/kotlin-cli/build/install/bitchat-kotlin-cli/bin/bitchat-kotlin-cli; \
+    else \
+        echo "Kotlin CLI not built. Run 'just build-kotlin-cli' first."; \
+    fi
+
+# Run Kotlin CLI with specific configuration for testing  
+run-kotlin-client-test:
+    @echo "Starting Kotlin CLI in test mode..."
+    @if [ -f clients/kotlin-cli/build/install/bitchat-kotlin-cli/bin/bitchat-kotlin-cli ]; then \
+        clients/kotlin-cli/build/install/bitchat-kotlin-cli/bin/bitchat-kotlin-cli --relay wss://relay.damus.io --name kotlin-client; \
+    else \
+        echo "Kotlin CLI not built. Run 'just build-kotlin-cli' first."; \
+    fi
+
+# Run all tests with full setup
+test-full:
+    @echo "Running full integration test suite..."
+    just start-relay
+    @sleep 2
+    just test
+    just stop-relay
+
+# Development: rebuild and test
+dev:
+    just build
+    just test
+
+# Show logs from the test runner
+logs:
+    @echo "Showing test runner logs..."
+    @if [ -f test_runner/target/debug/bitchat-test-runner.log ]; then \
+        tail -f test_runner/target/debug/bitchat-test-runner.log; \
+    else \
+        echo "No logs found. Run 'just test' first."; \
+    fi
+
+# Check system dependencies
+check-deps:
+    @echo "Checking system dependencies..."
+    @echo -n "Rust environment: "; rustc --version
+    @echo -n "Swift: "; swift --version 2>/dev/null | head -1 || echo "Not installed"
+    @echo -n "Java: "; java --version 2>/dev/null | head -1 || echo "Not installed"
+    @echo -n "Gradle: "; gradle --version 2>/dev/null | head -1 || echo "Not installed"
+    @echo "Core Rust environment provided by Nix"
+
+# Display simulator status
+status:
+    @echo "BitChat Integration Simulator Status"
+    @echo "====================================="
+    @echo -n "Test runner build: "
+    @if [ -f ../target/release/bitchat-test-runner ]; then \
+        echo "Built"; \
+    else \
+        echo "Not built (run 'just build-test-runner')"; \
+    fi
+    @echo -n "Swift CLI build: "
+    @if [ -f clients/swift-cli/result/bin/bitchat-swift-cli ]; then \
+        echo "Built (Nix derivation)"; \
+    elif [ -f clients/swift-cli/.build/release/bitchat-swift-cli ]; then \
+        echo "Built (Swift Package Manager)"; \
+    else \
+        echo "Not built (run 'nix build ./clients/swift-cli' or 'just build-swift-cli')"; \
+    fi
+    @echo -n "Kotlin CLI build: "
+    @if [ -f clients/kotlin-cli/build/install/bitchat-kotlin-cli/bin/bitchat-kotlin-cli ]; then \
+        echo "Built"; \
+    else \
+        echo "Not built (run 'just build-kotlin-cli')"; \
+    fi
+    @echo -n "External relays: "
+    @echo "Available (wss://relay.damus.io, wss://nos.lol)"
+    @echo ""
+    @echo "Available test scenarios:"
+    @echo "  - basic-send-receive: Tests message sending between clients"
+    @echo "  - handshake-test: Tests Noise protocol handshake establishment"
+    @echo "  - cross-client-test: Tests cross-client compatibility"
+    @echo ""
+    @echo "Available clients:"
+    @echo "  - just run-rust-client-test    - Rust implementation"
+    @echo "  - just run-swift-client-test   - Swift implementation"
+    @echo "  - just run-kotlin-client-test  - Kotlin implementation"
+    @echo ""
+    @echo "To run tests: just test"

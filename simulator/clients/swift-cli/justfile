@@ -1,0 +1,33 @@
+# BitChat Swift CLI Development
+# Use: nix develop
+
+# Default recipe
+default:
+    @just --list
+
+# Build the Swift CLI
+build:
+    @echo "Swift package manager not available in Nix environment"
+    @echo "Please use system Swift for building:"
+    @echo "  swift build -c release"
+    @echo "Or build from main simulator with: just build-swift-cli"
+
+# Run the Swift CLI
+run:
+    .build/release/bitchat-swift-cli
+
+# Run with test configuration
+run-test:
+    .build/release/bitchat-swift-cli --relay wss://relay.damus.io --name swift-client
+
+# Clean build artifacts
+clean:
+    swift package clean
+
+# Check if built
+status:
+    @if [ -f .build/release/bitchat-swift-cli ]; then \
+        echo "Swift CLI: Built"; \
+    else \
+        echo "Swift CLI: Not built (run 'just build')"; \
+    fi
