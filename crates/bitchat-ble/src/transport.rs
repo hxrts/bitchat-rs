@@ -11,11 +11,11 @@ use bitchat_core::transport::{
     LatencyClass, ReliabilityClass, Transport, TransportCapabilities, TransportType,
 };
 use bitchat_core::{BitchatError, BitchatPacket, PeerId, Result as BitchatResult};
-use btleplug::api::CentralEvent;
+use btleplug::api::Central;
 use futures::stream::StreamExt;
 use tokio::sync::{mpsc, Mutex, RwLock};
-use tokio::time::interval;
 use tokio::task::JoinHandle;
+use tokio::time::interval;
 use tracing::{debug, error, info, warn};
 
 use crate::config::BleTransportConfig;
@@ -80,29 +80,29 @@ impl BleTransport {
         let peers = Arc::clone(&self.peers);
         let active = Arc::clone(&self.active);
         let config = self.config.clone();
-        let connection = BleConnection::new(config.clone(), 
-            mpsc::unbounded_channel().0); // Dummy sender for manager
-        
+        let connection = BleConnection::new(config.clone(), mpsc::unbounded_channel().0); // Dummy sender for manager
+
         let connection_manager_handle = tokio::spawn(async move {
             let mut reconnect_interval = interval(Duration::from_secs(10));
-            
+
             while *active.read().await {
                 reconnect_interval.tick().await;
-                
+
                 // Auto-reconnect to failed peers if enabled
                 if config.auto_reconnect {
                     let peer_ids: Vec<PeerId> = {
                         let peers_lock = peers.read().await;
-                        peers_lock.iter()
+                        peers_lock
+                            .iter()
                             .filter(|(_, peer)| {
-                                (peer.connection_state == ConnectionState::Disconnected ||
-                                 peer.connection_state == ConnectionState::Failed) &&
-                                peer.can_retry()
+                                (peer.connection_state == ConnectionState::Disconnected
+                                    || peer.connection_state == ConnectionState::Failed)
+                                    && peer.can_retry()
                             })
                             .map(|(id, _)| *id)
                             .collect()
                     };
-                    
+
                     for peer_id in peer_ids {
                         if let Err(e) = connection.connect_to_peer(&peer_id, &peers).await {
                             debug!("Auto-reconnect failed for peer {}: {}", peer_id, e);
@@ -112,7 +112,7 @@ impl BleTransport {
             }
             debug!("Connection manager ended");
         });
-        
+
         self.task_handles.push(connection_manager_handle);
         Ok(())
     }
@@ -120,30 +120,36 @@ impl BleTransport {
     /// Start discovery event processing
     async fn start_discovery_events(&mut self) -> BitchatResult<()> {
         if let Some(adapter) = self.discovery.adapter() {
-            let mut events = adapter.events().await.map_err(|e| {
-                BitchatError::InvalidPacket(format!("Failed to get BLE events: {}", e))
-            })?;
-            
+            let mut events = adapter
+                .events()
+                .await
+                .map_err(|e| BitchatError::Transport {
+                    message: format!("Failed to get BLE events: {}", e),
+                })?;
+
             // Clone necessary data for the discovery task
             let peers = Arc::clone(&self.peers);
             let cached_peers = Arc::clone(&self.cached_peers);
             let active = Arc::clone(&self.active);
             let discovery = BleDiscovery::new(self.config.clone());
-            
+
             // Discovery event handler
             let discovery_handle = tokio::spawn(async move {
                 while let Some(event) = events.next().await {
                     if !*active.read().await {
                         break;
                     }
-                    
-                    if let Err(e) = discovery.process_discovery_event(event, &peers, &cached_peers).await {
+
+                    if let Err(e) = discovery
+                        .process_discovery_event(event, &peers, &cached_peers)
+                        .await
+                    {
                         error!("Failed to process discovery event: {}", e);
                     }
                 }
                 debug!("Discovery event handler ended");
             });
-            
+
             self.task_handles.push(discovery_handle);
         }
 
@@ -157,48 +163,57 @@ impl Transport for BleTransport {
         // Check if peer exists and is connected
         {
             let peers = self.peers.read().await;
-            let peer = peers.get(&peer_id)
-                .ok_or_else(|| BitchatError::InvalidPacket("Peer not discovered".into()))?;
-            
+            let peer = peers.get(&peer_id).ok_or_else(|| BitchatError::Transport {
+                message: "Peer not discovered".to_string(),
+            })?;
+
             if !peer.is_connected() {
-                return Err(BitchatError::InvalidPacket("Peer not connected".into()));
+                return Err(BitchatError::Transport {
+                    message: "Peer not connected".to_string(),
+                });
             }
         }
 
         // Serialize packet
-        let data = bincode::serialize(&packet).map_err(|e| BitchatError::Serialization(e))?;
+        let data = bincode::serialize(&packet).map_err(BitchatError::Serialization)?;
 
         if data.len() > self.config.max_packet_size {
-            return Err(BitchatError::InvalidPacket(
-                "Packet too large for BLE".into(),
-            ));
+            return Err(BitchatError::Transport {
+                message: "Packet too large for BLE".to_string(),
+            });
         }
 
-        self.connection.send_to_peer(&peer_id, &data, &self.peers).await
+        self.connection
+            .send_to_peer(&peer_id, &data, &self.peers)
+            .await
     }
 
     async fn broadcast(&mut self, packet: BitchatPacket) -> BitchatResult<()> {
         // Get connected peers only
         let connected_peers = self.connection.get_connected_peers(&self.peers).await;
-        
+
         if connected_peers.is_empty() {
             warn!("No connected peers for broadcast");
             return Ok(());
         }
 
         // Serialize packet once
-        let data = bincode::serialize(&packet).map_err(|e| BitchatError::Serialization(e))?;
+        let data = bincode::serialize(&packet).map_err(BitchatError::Serialization)?;
 
         if data.len() > self.config.max_packet_size {
-            return Err(BitchatError::InvalidPacket(
-                "Packet too large for BLE broadcast".into(),
-            ));
+            return Err(BitchatError::Transport {
+                message: "Packet too large for BLE broadcast".to_string(),
+            });
         }
 
         // Send to all connected peers sequentially
         // Note: Due to BLE limitations, concurrent sends might not work reliably
         for peer_id in connected_peers {
-            if let Err(e) = self.connection.send_to_peer(&peer_id, &data, &self.peers).await {
+            if let Err(e) = self
+                .connection
+                .send_to_peer(&peer_id, &data, &self.peers)
+                .await
+            {
                 error!("Failed to broadcast to peer {}: {}", peer_id, e);
             }
         }
@@ -208,20 +223,22 @@ impl Transport for BleTransport {
 
     async fn receive(&mut self) -> BitchatResult<(PeerId, BitchatPacket)> {
         let mut rx = self.packet_rx.lock().await;
-        rx.recv()
-            .await
-            .ok_or_else(|| BitchatError::InvalidPacket("Receive channel closed".into()))
+        rx.recv().await.ok_or_else(|| BitchatError::Transport {
+            message: "Receive channel closed".to_string(),
+        })
     }
 
     fn discovered_peers(&self) -> SmallVec<[PeerId; 8]> {
-        // Use cached peers list for non-blocking access
-        let cached_peers = tokio::task::block_in_place(|| {
-            tokio::runtime::Handle::current()
-                .block_on(async { self.cached_peers.read().await.clone() })
-        });
-        
-        // Convert Vec to SmallVec
-        SmallVec::from_vec(cached_peers)
+        // Use try_read for non-blocking access to cached peers
+        match self.cached_peers.try_read() {
+            Ok(cached_peers) => SmallVec::from_vec(cached_peers.clone()),
+            Err(_) => {
+                // If we can't acquire the lock non-blockingly, return empty list
+                // This prevents blocking the caller and is safe since cached_peers
+                // is updated asynchronously in the background
+                SmallVec::new()
+            }
+        }
     }
 
     async fn start(&mut self) -> BitchatResult<()> {
@@ -252,7 +269,7 @@ impl Transport for BleTransport {
         // Stop scanning and advertising
         self.discovery.stop_scanning().await?;
         self.discovery.stop_advertising().await?;
-        
+
         // Cancel all background tasks
         for handle in self.task_handles.drain(..) {
             handle.abort();
@@ -260,7 +277,7 @@ impl Transport for BleTransport {
 
         // Disconnect from all peers
         self.connection.disconnect_all_peers(&self.peers).await?;
-        
+
         // Clear cached peers
         self.cached_peers.write().await.clear();
 
@@ -269,10 +286,15 @@ impl Transport for BleTransport {
     }
 
     fn is_active(&self) -> bool {
-        // Use a more efficient non-blocking approach when possible
-        tokio::task::block_in_place(|| {
-            tokio::runtime::Handle::current().block_on(async { *self.active.read().await })
-        })
+        // Use try_read for non-blocking access to active state
+        match self.active.try_read() {
+            Ok(active) => *active,
+            Err(_) => {
+                // If we can't acquire the lock non-blockingly, assume inactive
+                // This is a safe conservative default
+                false
+            }
+        }
     }
 
     fn capabilities(&self) -> TransportCapabilities {
