@@ -4,7 +4,15 @@
 //! using newtype patterns for semantic validation and type safety.
 
 use core::fmt;
+use core::ops::Deref;
+use core::str::FromStr;
 use serde::{Deserialize, Serialize};
+
+cfg_if::cfg_if! {
+    if #[cfg(not(feature = "std"))] {
+        use alloc::string::{String, ToString};
+    }
+}
 
 // ----------------------------------------------------------------------------
 // Peer Identifier
@@ -43,6 +51,46 @@ impl fmt::Display for PeerId {
     }
 }
 
+impl FromStr for PeerId {
+    type Err = crate::BitchatError;
+
+    fn from_str(s: &str) -> Result<Self, Self::Err> {
+        // Remove common prefixes that might be present
+        let clean_str = s.strip_prefix("0x").unwrap_or(s);
+        
+        // Decode hex string
+        let bytes = hex::decode(clean_str)
+            .map_err(|_| crate::BitchatError::invalid_packet("Invalid hex in PeerId"))?;
+        
+        // Must be exactly 8 bytes or we truncate/pad
+        if bytes.len() != 8 {
+            if bytes.len() > 8 {
+                // Truncate to first 8 bytes
+                let mut id = [0u8; 8];
+                id.copy_from_slice(&bytes[..8]);
+                Ok(Self(id))
+            } else {
+                // Pad with zeros
+                let mut id = [0u8; 8];
+                id[..bytes.len()].copy_from_slice(&bytes);
+                Ok(Self(id))
+            }
+        } else {
+            let mut id = [0u8; 8];
+            id.copy_from_slice(&bytes);
+            Ok(Self(id))
+        }
+    }
+}
+
+impl Deref for PeerId {
+    type Target = [u8; 8];
+
+    fn deref(&self) -> &Self::Target {
+        &self.0
+    }
+}
+
 // ----------------------------------------------------------------------------
 // Fingerprint
 // ----------------------------------------------------------------------------
@@ -74,6 +122,36 @@ impl fmt::Display for Fingerprint {
     }
 }
 
+impl FromStr for Fingerprint {
+    type Err = crate::BitchatError;
+
+    fn from_str(s: &str) -> Result<Self, Self::Err> {
+        // Remove common prefixes that might be present
+        let clean_str = s.strip_prefix("0x").unwrap_or(s);
+        
+        // Decode hex string
+        let bytes = hex::decode(clean_str)
+            .map_err(|_| crate::BitchatError::invalid_packet("Invalid hex in Fingerprint"))?;
+        
+        // Must be exactly 32 bytes
+        if bytes.len() != 32 {
+            return Err(crate::BitchatError::invalid_packet("Fingerprint must be exactly 32 bytes"));
+        }
+        
+        let mut fingerprint = [0u8; 32];
+        fingerprint.copy_from_slice(&bytes);
+        Ok(Self(fingerprint))
+    }
+}
+
+impl Deref for Fingerprint {
+    type Target = [u8; 32];
+
+    fn deref(&self) -> &Self::Target {
+        &self.0
+    }
+}
+
 // ----------------------------------------------------------------------------
 // Timestamp
 // ----------------------------------------------------------------------------
@@ -82,36 +160,59 @@ impl fmt::Display for Fingerprint {
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Serialize, Deserialize)]
 pub struct Timestamp(u64);
 
+use core::ops::{Add, Sub};
+
+impl Add<u64> for Timestamp {
+    type Output = Timestamp;
+    
+    fn add(self, other: u64) -> Timestamp {
+        Timestamp(self.0 + other)
+    }
+}
+
+impl Sub for Timestamp {
+    type Output = u64;
+    
+    fn sub(self, other: Timestamp) -> u64 {
+        self.0.saturating_sub(other.0)
+    }
+}
+
 impl Timestamp {
     /// Create a new timestamp
     pub fn new(millis: u64) -> Self {
         Self(millis)
     }
 
-    /// Get current timestamp (requires std feature or WASM target)
-    #[cfg(all(feature = "std", not(target_arch = "wasm32")))]
+    /// Get current timestamp (context-aware based on available features)
     pub fn now() -> Self {
-        use std::time::{SystemTime, UNIX_EPOCH};
-        let duration = SystemTime::now()
-            .duration_since(UNIX_EPOCH)
-            .unwrap_or_default();
-        Self(duration.as_millis() as u64)
-    }
-
-    /// Get current timestamp for WASM targets
-    #[cfg(target_arch = "wasm32")]
-    pub fn now() -> Self {
-        use instant::Instant;
-
-        // For WASM, we use instant::Instant which is epoch-based
-        // The instant crate provides WASM-compatible timing
-        let now = Instant::now();
-        let millis = now.elapsed().as_millis() as u64;
-
-        // Add a base timestamp to simulate Unix epoch (approximation for WASM)
-        // This is a compromise since WASM doesn't have direct access to system time
-        const WASM_BASE_TIMESTAMP: u64 = 1_640_995_200_000; // Jan 1, 2022 as base
-        Self(WASM_BASE_TIMESTAMP + millis)
+        cfg_if::cfg_if! {
+            if #[cfg(feature = "std")] {
+                use std::time::{SystemTime, UNIX_EPOCH};
+                let duration = SystemTime::now()
+                    .duration_since(UNIX_EPOCH)
+                    .unwrap_or_default();
+                Self(duration.as_millis() as u64)
+            } else if #[cfg(all(feature = "wasm", target_arch = "wasm32"))] {
+                // Use js-sys::Date::now() to get proper Unix timestamp in WASM
+                use js_sys::Date;
+                Self(Date::now() as u64)
+            } else if #[cfg(feature = "wasm")] {
+                // Fallback to instant crate if wasm feature but not WASM target
+                use instant::Instant;
+                
+                // Get time since page load/module instantiation
+                let millis = Instant::now().elapsed().as_millis() as u64;
+                
+                // This is a best-effort approximation - real applications should use std feature
+                // which provides proper Date.now() access
+                const WASM_FALLBACK_BASE: u64 = 1_700_000_000_000; // ~Nov 2023 as fallback base
+                Self(WASM_FALLBACK_BASE + millis)
+            } else {
+                // Fallback for alloc-only builds
+                Self(0)
+            }
+        }
     }
 
     /// Get the raw milliseconds
@@ -175,15 +276,27 @@ pub trait TimeSource {
     fn now(&self) -> Timestamp;
 }
 
-/// Standard library implementation of TimeSource
-#[cfg(any(feature = "std", target_arch = "wasm32"))]
-#[derive(Debug, Clone, Copy, Default)]
-pub struct StdTimeSource;
+cfg_if::cfg_if! {
+    if #[cfg(feature = "std")] {
+        /// Standard library implementation of TimeSource
+        #[derive(Debug, Clone, Copy, Default)]
+        pub struct SystemTimeSource;
 
-#[cfg(any(feature = "std", target_arch = "wasm32"))]
-impl TimeSource for StdTimeSource {
-    fn now(&self) -> Timestamp {
-        Timestamp::now()
+        impl TimeSource for SystemTimeSource {
+            fn now(&self) -> Timestamp {
+                Timestamp::now()
+            }
+        }
+    } else if #[cfg(feature = "wasm")] {
+        /// WASM implementation of TimeSource
+        #[derive(Debug, Clone, Copy, Default)]
+        pub struct WasmTimeSource;
+
+        impl TimeSource for WasmTimeSource {
+            fn now(&self) -> Timestamp {
+                Timestamp::now()
+            }
+        }
     }
 }
 

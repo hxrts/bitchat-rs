@@ -1,7 +1,7 @@
-//! Nostr transport implementation for BitChat
+//! Nostr transport implementation for BitChat Hybrid Architecture
 //!
-//! This crate provides a Nostr transport that implements the `Transport` trait from
-//! `bitchat-core`, enabling BitChat communication over Nostr relays.
+//! This crate provides a Nostr transport task that integrates with the BitChat
+//! hybrid CSP architecture through channel-based communication.
 //!
 //! ## Architecture
 //!
@@ -10,23 +10,37 @@
 //! - [`config`] - Transport configuration and settings
 //! - [`error`] - Error types specific to Nostr transport
 //! - [`message`] - BitChat message format for Nostr events
-//! - [`transport`] - Main transport implementation
+//! - [`transport`] - Transport task implementation using CSP channels
 //!
 //! ## Usage
 //!
 //! ```rust,no_run
-//! use bitchat_nostr::{NostrTransport, NostrTransportConfig};
-//! use bitchat_core::{PeerId, transport::Transport};
+//! use bitchat_nostr::{NostrTransportTask, NostrConfig};
+//! use bitchat_core::{
+//!     TransportTask,
+//!     internal::{
+//!         create_event_channel, create_effect_channel,
+//!         ChannelConfig,
+//!     },
+//! };
 //!
 //! # async fn example() -> Result<(), Box<dyn std::error::Error>> {
-//! let peer_id = PeerId::new([1, 2, 3, 4, 5, 6, 7, 8]);
-//! let mut transport = NostrTransport::new(peer_id)?;
-//! transport.start().await?;
+//! let config = ChannelConfig::default();
+//! let (event_sender, _event_receiver) = create_event_channel(&config);
+//! let (_effect_sender, effect_receiver) = create_effect_channel(&config);
 //!
-//! // The transport will:
+//! let mut nostr_task = NostrTransportTask::new(NostrConfig::default())?;
+//! nostr_task.attach_channels(event_sender, effect_receiver)?;
+//!
+//! // The transport task is ready to run via the TransportTask trait
+//! // In a real application, the BitchatRuntime would spawn:
+//! // tokio::spawn(async move { nostr_task.run().await });
+//!
+//! // The transport task will:
 //! // - Connect to configured Nostr relays
-//! // - Subscribe to BitChat events
-//! // - Enable sending/receiving messages over Nostr
+//! // - Process effects from Core Logic via channels
+//! // - Send events to Core Logic via channels
+//! // - Handle discovery, messaging, and relay management
 //! # Ok(())
 //! # }
 //! ```
@@ -39,6 +53,7 @@
 //! - Global connectivity when BLE is unavailable
 //! - Fallback communication path for distant peers
 //! - Integration with existing Nostr infrastructure
+//! - Channel-based coordination with Core Logic task
 
 pub mod config;
 pub mod error;
@@ -46,10 +61,10 @@ pub mod message;
 pub mod transport;
 
 // Re-export public API
-pub use config::{create_local_relay_config, NostrTransportConfig};
+pub use config::{NostrConfig, NostrRelayConfig};
 pub use error::NostrTransportError;
 pub use message::{BitchatNostrMessage, BITCHAT_KIND};
-pub use transport::NostrTransport;
+pub use transport::NostrTransportTask;
 
-// Re-export Transport trait for convenience
-pub use bitchat_core::transport::Transport;
+// Re-export TransportTask trait for convenience
+pub use bitchat_core::transport_task::TransportTask;

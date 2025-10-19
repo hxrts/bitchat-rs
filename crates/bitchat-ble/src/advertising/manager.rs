@@ -3,6 +3,7 @@
 use std::time::Duration;
 
 use bitchat_core::{PeerId, Result as BitchatResult};
+use bitchat_core::internal::IdentityKeyPair;
 use tracing::{debug, info};
 
 use crate::config::BleTransportConfig;
@@ -35,9 +36,10 @@ impl AdvertisingManager {
     pub async fn start(
         &mut self,
         peer_id: PeerId,
+        identity: &IdentityKeyPair,
         config: &BleTransportConfig,
     ) -> BitchatResult<()> {
-        self.advertiser.start_advertising(&peer_id, config).await?;
+        self.advertiser.start_advertising(&peer_id, identity, config).await?;
         self.current_peer_id = Some(peer_id);
         info!("BLE advertising started for peer {}", peer_id);
         Ok(())
@@ -63,10 +65,10 @@ impl AdvertisingManager {
     }
 
     /// Manually rotate advertising data
-    pub async fn rotate(&mut self, config: &BleTransportConfig) -> BitchatResult<()> {
+    pub async fn rotate(&mut self, identity: &IdentityKeyPair, config: &BleTransportConfig) -> BitchatResult<()> {
         if let Some(peer_id) = self.current_peer_id {
             self.advertiser
-                .update_advertising_data(&peer_id, config)
+                .update_advertising_data(&peer_id, identity, config)
                 .await?;
             debug!("Rotated BLE advertising data for peer {}", peer_id);
         }

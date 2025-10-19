@@ -1,11 +1,12 @@
 //! macOS BLE advertising implementation using Core Bluetooth
 
 use bitchat_core::{BitchatError, PeerId, Result as BitchatResult};
+use bitchat_core::internal::{IdentityKeyPair, TransportError};
 use tracing::info;
 
 use crate::config::BleTransportConfig;
 use crate::protocol::{
-    generate_device_name, BITCHAT_RX_CHARACTERISTIC_UUID, BITCHAT_SERVICE_UUID,
+    generate_advertising_data, generate_device_name, BITCHAT_RX_CHARACTERISTIC_UUID, BITCHAT_SERVICE_UUID,
     BITCHAT_TX_CHARACTERISTIC_UUID,
 };
 
@@ -19,6 +20,7 @@ use objc::runtime::Class;
 use objc::{msg_send, sel, sel_impl};
 #[cfg(target_os = "macos")]
 use objc_foundation::{INSString, NSString};
+
 #[cfg(target_os = "macos")]
 pub struct MacOSAdvertiser {
     peripheral_manager: Option<id>,
@@ -50,8 +52,10 @@ impl MacOSAdvertiser {
         unsafe {
             // Get CBPeripheralManager class
             let cb_peripheral_manager_class = Class::get("CBPeripheralManager")
-                .ok_or_else(|| BitchatError::InvalidPacket(
-                    "CBPeripheralManager class not available - Core Bluetooth framework missing".into()
+                .ok_or_else(|| BitchatError::Transport(
+                    TransportError::TransportUnavailable {
+                        transport_type: "Core Bluetooth framework missing".to_string(),
+                    }
                 ))?;
 
             // Create peripheral manager instance
@@ -63,8 +67,10 @@ impl MacOSAdvertiser {
             ];
 
             if peripheral_manager == nil {
-                return Err(BitchatError::InvalidPacket(
-                    "Failed to create CBPeripheralManager instance".into(),
+                return Err(BitchatError::Transport(
+                    TransportError::InvalidConfiguration {
+                        reason: "Failed to create CBPeripheralManager instance".to_string(),
+                    }
                 ));
             }
 
@@ -79,14 +85,22 @@ impl MacOSAdvertiser {
         unsafe {
             // Get CBUUID class and create service UUID
             let cbuuid_class = Class::get("CBUUID")
-                .ok_or_else(|| BitchatError::InvalidPacket("CBUUID class not available".into()))?;
+                .ok_or_else(|| BitchatError::Transport(
+                    TransportError::TransportUnavailable {
+                        transport_type: "CBUUID class not available".to_string(),
+                    }
+                ))?;
 
             let service_uuid_string = NSString::from_str(&BITCHAT_SERVICE_UUID.to_string());
             let service_uuid: id = msg_send![cbuuid_class, UUIDWithString: service_uuid_string];
 
             // Get CBMutableService class
             let cb_mutable_service_class = Class::get("CBMutableService").ok_or_else(|| {
-                BitchatError::InvalidPacket("CBMutableService class not available".into())
+                BitchatError::Transport(
+                    TransportError::TransportUnavailable {
+                        transport_type: "CBMutableService class not available".to_string(),
+                    }
+                )
             })?;
 
             // Create mutable service
@@ -94,8 +108,10 @@ impl MacOSAdvertiser {
             let service: id = msg_send![service, initWithType: service_uuid primary: true];
 
             if service == nil {
-                return Err(BitchatError::InvalidPacket(
-                    "Failed to create CBMutableService".into(),
+                return Err(BitchatError::Transport(
+                    TransportError::InvalidConfiguration {
+                        reason: "Failed to create CBMutableService".to_string(),
+                    }
                 ));
             }
 
@@ -105,8 +121,10 @@ impl MacOSAdvertiser {
 
             let cb_mutable_characteristic_class = Class::get("CBMutableCharacteristic")
                 .ok_or_else(|| {
-                    BitchatError::InvalidPacket(
-                        "CBMutableCharacteristic class not available".into(),
+                    BitchatError::Transport(
+                        TransportError::TransportUnavailable {
+                            transport_type: "CBMutableCharacteristic class not available".to_string(),
+                        }
                     )
                 })?;
 
@@ -132,7 +150,11 @@ impl MacOSAdvertiser {
 
             // Create NSArray with characteristics
             let nsarray_class = Class::get("NSArray")
-                .ok_or_else(|| BitchatError::InvalidPacket("NSArray class not available".into()))?;
+                .ok_or_else(|| BitchatError::Transport(
+                    TransportError::TransportUnavailable {
+                        transport_type: "NSArray class not available".to_string(),
+                    }
+                ))?;
 
             let characteristics_vec = [tx_characteristic, rx_characteristic];
             let characteristics_array: id = msg_send![nsarray_class,
@@ -156,36 +178,76 @@ impl BleAdvertiser for MacOSAdvertiser {
     async fn start_advertising(
         &mut self,
         peer_id: &PeerId,
+        identity: &IdentityKeyPair,
         config: &BleTransportConfig,
     ) -> BitchatResult<()> {
         self.initialize_peripheral_manager()?;
         self.create_bitchat_service()?;
 
         let device_name = generate_device_name(peer_id, &config.device_name_prefix);
+        
+        // Generate secure advertising data
+        let secure_advertising_data = generate_advertising_data(*peer_id, identity, &device_name)?;
 
         unsafe {
             let peripheral_manager = self.peripheral_manager.ok_or_else(|| {
-                BitchatError::InvalidPacket("Peripheral manager not initialized".into())
+                BitchatError::Transport(
+                    TransportError::InvalidConfiguration {
+                        reason: "Peripheral manager not initialized".to_string(),
+                    }
+                )
             })?;
 
             let service = self
                 .service
-                .ok_or_else(|| BitchatError::InvalidPacket("Service not created".into()))?;
+                .ok_or_else(|| BitchatError::Transport(
+                    TransportError::InvalidConfiguration {
+                        reason: "Service not created".to_string(),
+                    }
+                ))?;
 
             // Add service to peripheral manager
             let _: () = msg_send![peripheral_manager, addService: service];
 
             // Create advertising data dictionary
             let nsstring_class = Class::get("NSString").ok_or_else(|| {
-                BitchatError::InvalidPacket("NSString class not available".into())
+                BitchatError::Transport(
+                    TransportError::TransportUnavailable {
+                        transport_type: "NSString class not available".to_string(),
+                    }
+                )
             })?;
             let nsdictionary_class = Class::get("NSDictionary").ok_or_else(|| {
-                BitchatError::InvalidPacket("NSDictionary class not available".into())
+                BitchatError::Transport(
+                    TransportError::TransportUnavailable {
+                        transport_type: "NSDictionary class not available".to_string(),
+                    }
+                )
             })?;
             let nsarray_class = Class::get("NSArray")
-                .ok_or_else(|| BitchatError::InvalidPacket("NSArray class not available".into()))?;
+                .ok_or_else(|| BitchatError::Transport(
+                    TransportError::TransportUnavailable {
+                        transport_type: "NSArray class not available".to_string(),
+                    }
+                ))?;
             let cbuuid_class = Class::get("CBUUID")
-                .ok_or_else(|| BitchatError::InvalidPacket("CBUUID class not available".into()))?;
+                .ok_or_else(|| BitchatError::Transport(
+                    TransportError::TransportUnavailable {
+                        transport_type: "CBUUID class not available".to_string(),
+                    }
+                ))?;
+            let nsdata_class = Class::get("NSData")
+                .ok_or_else(|| BitchatError::Transport(
+                    TransportError::TransportUnavailable {
+                        transport_type: "NSData class not available".to_string(),
+                    }
+                ))?;
+            let nsnumber_class = Class::get("NSNumber")
+                .ok_or_else(|| BitchatError::Transport(
+                    TransportError::TransportUnavailable {
+                        transport_type: "NSNumber class not available".to_string(),
+                    }
+                ))?;
 
             // Local name key and value
             let local_name_key: id =
@@ -201,11 +263,21 @@ impl BleAdvertiser for MacOSAdvertiser {
                 arrayWithObjects: service_uuids_vec.as_ptr() count: 1
             ];
 
+            // Manufacturer data key and value
+            let manufacturer_data_key: id = msg_send![nsstring_class, stringWithUTF8String: c"kCBAdvDataManufacturerData".as_ptr()];
+            let company_id: id = msg_send![nsnumber_class, numberWithInt: 0xFFFFi32]; // Use 0xFFFF for test/development
+            let data_nsdata: id = msg_send![nsdata_class, dataWithBytes: secure_advertising_data.as_ptr() length: secure_advertising_data.len()];
+            let manufacturer_dict: id = msg_send![nsdictionary_class,
+                dictionaryWithObjects: &[data_nsdata] as *const id
+                forKeys: &[company_id] as *const id
+                count: 1u64
+            ];
+
             // Create advertising data dictionary
             let advertising_data: id = msg_send![nsdictionary_class,
-                dictionaryWithObjects: &[local_name_value, service_uuids_array] as *const id
-                forKeys: &[local_name_key, service_uuids_key] as *const id
-                count: 2u64
+                dictionaryWithObjects: &[local_name_value, service_uuids_array, manufacturer_dict] as *const id
+                forKeys: &[local_name_key, service_uuids_key, manufacturer_data_key] as *const id
+                count: 3u64
             ];
 
             // Start advertising
@@ -236,11 +308,12 @@ impl BleAdvertiser for MacOSAdvertiser {
     async fn update_advertising_data(
         &mut self,
         peer_id: &PeerId,
+        identity: &IdentityKeyPair,
         config: &BleTransportConfig,
     ) -> BitchatResult<()> {
         if self.is_advertising {
             self.stop_advertising().await?;
-            self.start_advertising(peer_id, config).await?;
+            self.start_advertising(peer_id, identity, config).await?;
         }
         Ok(())
     }

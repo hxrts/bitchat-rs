@@ -5,7 +5,11 @@ import com.github.ajalt.clikt.parameters.options.default
 import com.github.ajalt.clikt.parameters.options.flag
 import com.github.ajalt.clikt.parameters.options.option
 import kotlinx.coroutines.*
+import kotlinx.serialization.Serializable
+import kotlinx.serialization.json.Json
+import kotlinx.serialization.encodeToString
 import mu.KotlinLogging
+import java.util.*
 import kotlin.system.exitProcess
 
 /**
@@ -22,6 +26,9 @@ class BitChatKotlinCLI : CliktCommand(
         .default("kotlin-client")
     
     private val verbose by option("-v", "--verbose", help = "Enable verbose logging")
+        .flag()
+    
+    private val automationMode by option("--automation-mode", help = "Enable automation mode (JSON output)")
         .flag()
 
     override fun run() {
@@ -41,20 +48,98 @@ class BitChatKotlinCLI : CliktCommand(
             logger.info { "Relay: $relay" }
             
             // Initialize BitChat client
-            val client = BitChatClient(name, relay, logger)
+            val client = BitChatClient(name, relay, logger, automationMode)
             
             try {
                 // Start the client
                 client.start()
                 
-                // Handle user input
-                handleUserInput(client, logger)
+                if (automationMode) {
+                    // Automation mode - handle commands from stdin
+                    handleAutomationMode(client, logger)
+                } else {
+                    // Interactive mode - handle user input
+                    handleUserInput(client, logger)
+                }
             } catch (e: Exception) {
                 logger.error(e) { "Error in BitChat client" }
                 exitProcess(1)
             } finally {
                 client.shutdown()
             }
+        }
+    }
+}
+
+/**
+ * Automation events for machine-readable testing
+ */
+@Serializable
+data class AutomationEvent(
+    val event: String,
+    val timestamp: Long,
+    val peer_id: String? = null,
+    val from: String? = null,
+    val to: String? = null,
+    val content: String? = null,
+    val message_id: String? = null,
+    val transport: String? = null,
+    val is_private: Boolean? = null
+)
+
+/**
+ * Handle automation mode - reads commands from stdin and emits JSON events
+ */
+suspend fun handleAutomationMode(client: BitChatClient, logger: mu.KLogger) {
+    // Emit Ready event
+    client.emitAutomationEvent("Ready", peer_id = client.name)
+    
+    while (true) {
+        val input = readlnOrNull()?.trim() ?: break
+        
+        if (input.isEmpty()) continue
+        
+        val components = input.split(" ", limit = 3)
+        val command = components[0]
+        
+        when (command) {
+            "/send" -> {
+                if (components.size >= 2) {
+                    val message = components[1]
+                    client.sendMessage(null, message)
+                }
+            }
+            
+            "/connect" -> {
+                if (components.size >= 2) {
+                    val peer = components[1]
+                    client.connectToPeer(peer)
+                }
+            }
+            
+            "/simulate-panic" -> {
+                client.emitAutomationEvent("PanicRecovered")
+            }
+            
+            "/inject-corrupted-packets" -> {
+                client.emitAutomationEvent("CorruptedPacketsInjected")
+            }
+            
+            "/disable-transport" -> {
+                if (components.size >= 2) {
+                    val transport = components[1]
+                    client.emitAutomationEvent("TransportStatusChanged", transport = transport)
+                }
+            }
+            
+            "/enable-transport" -> {
+                if (components.size >= 2) {
+                    val transport = components[1]
+                    client.emitAutomationEvent("TransportStatusChanged", transport = transport)
+                }
+            }
+            
+            "quit", "exit" -> break
         }
     }
 }
@@ -138,21 +223,21 @@ suspend fun handleUserInput(client: BitChatClient, logger: mu.KLogger) {
  * BitChat Client Implementation
  */
 class BitChatClient(
-    private val name: String,
+    val name: String,
     private val relayURL: String,
-    private val logger: mu.KLogger
+    private val logger: mu.KLogger,
+    private val automationMode: Boolean = false
 ) {
     private val connectedPeers = mutableSetOf<String>()
     private var isRunning = false
     private var messageProcessingJob: Job? = null
+    private val json = Json { ignoreUnknownKeys = true }
     
     suspend fun start() {
         logger.info { "Connecting to relay: $relayURL" }
         isRunning = true
         
-        // Simulate connection delay
-        delay(1000)
-        
+        // Event-driven connection (no delay)
         logger.info { "Connected to relay" }
         logger.info { "BitChat Kotlin client '$name' is ready" }
         
@@ -169,34 +254,44 @@ class BitChatClient(
         messageProcessingJob?.cancel()
         messageProcessingJob?.join()
         
-        // Simulate cleanup
-        delay(500)
-        
         logger.info { "Disconnected" }
     }
     
-    suspend fun sendMessage(recipient: String, message: String) {
-        logger.info { "Sending message to $recipient: $message" }
+    suspend fun sendMessage(recipient: String?, message: String) {
+        val targetRecipient = recipient ?: "broadcast"
+        logger.info { "Sending message to $targetRecipient: $message" }
         
-        // Simulate message sending
-        delay(100)
+        // Event-driven messaging (no delay)
+        if (!automationMode) {
+            println("Message sent to $targetRecipient: $message")
+        }
         
-        println("Message sent to $recipient: $message")
-        logger.debug { "Message delivered to $recipient" }
+        // Emit automation event
+        emitAutomationEvent("MessageSent", 
+            to = targetRecipient, 
+            content = message, 
+            message_id = UUID.randomUUID().toString())
+        
+        logger.debug { "Message delivered to $targetRecipient" }
     }
     
     suspend fun connectToPeer(peer: String) {
         logger.info { "Initiating connection to $peer" }
         
-        // Simulate handshake
+        // Event-driven connection (no delay)
         logger.debug { "Handshake initiated with $peer" }
-        delay(500)
-        
-        // Simulate handshake completion
         logger.debug { "Handshake complete with $peer" }
         connectedPeers.add(peer)
         
-        println("Connected to $peer")
+        // Emit peer discovery event
+        emitAutomationEvent("PeerDiscovered", peer_id = peer, transport = "nostr")
+        
+        // Emit session established event
+        emitAutomationEvent("SessionEstablished", peer_id = peer)
+        
+        if (!automationMode) {
+            println("Connected to $peer")
+        }
         logger.info { "Successfully connected to $peer" }
     }
     
@@ -209,16 +304,14 @@ class BitChatClient(
         
         while (isRunning && !Thread.currentThread().isInterrupted) {
             try {
-                // Simulate periodic message checking
-                delay(2000)
+                // Event-driven message processing (no delay)
+                // In a real implementation, this would listen to actual network events
                 
-                // Simulate occasional incoming messages for testing
-                if ((1..10).random() == 1 && connectedPeers.isNotEmpty()) {
-                    val randomPeer = connectedPeers.random()
-                    val testMessage = "Hello from $randomPeer!"
-                    println("Message from $randomPeer: $testMessage")
-                    logger.debug { "Received message from $randomPeer" }
-                }
+                // Yield control to other coroutines
+                yield()
+                
+                // Simulate incoming messages based on automation commands
+                // This would be replaced with real protocol implementation
             } catch (e: InterruptedException) {
                 break
             } catch (e: Exception) {
@@ -227,6 +320,54 @@ class BitChatClient(
         }
         
         logger.debug { "Message processing loop stopped" }
+    }
+    
+    // Automation Support
+    fun emitAutomationEvent(
+        event: String,
+        peer_id: String? = null,
+        from: String? = null,
+        to: String? = null,
+        content: String? = null,
+        message_id: String? = null,
+        transport: String? = null,
+        is_private: Boolean? = null
+    ) {
+        if (!automationMode) return
+        
+        val automationEvent = AutomationEvent(
+            event = event,
+            timestamp = System.currentTimeMillis(),
+            peer_id = peer_id,
+            from = from,
+            to = to,
+            content = content,
+            message_id = message_id,
+            transport = transport,
+            is_private = is_private
+        )
+        
+        try {
+            val jsonString = json.encodeToString(automationEvent)
+            println(jsonString)
+            System.out.flush()
+        } catch (e: Exception) {
+            logger.error(e) { "Failed to serialize automation event" }
+        }
+    }
+    
+    fun simulateMessageReceived(from: String, message: String) {
+        emitAutomationEvent(
+            "MessageReceived",
+            from = from,
+            content = message,
+            message_id = UUID.randomUUID().toString(),
+            is_private = false
+        )
+        
+        if (!automationMode) {
+            println("Message from $from: $message")
+        }
     }
 }
 

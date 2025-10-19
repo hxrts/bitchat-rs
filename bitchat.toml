@@ -1,0 +1,130 @@
+# BitChat Configuration File
+# This is an example configuration file for the BitChat CLI application.
+# Place this file at ~/.bitchat/config.toml or specify with --config flag.
+
+[identity]
+# Fixed peer ID (16 hex characters). If not set, will be generated from name or randomly.
+peer_id = "0102030405060708"
+
+# Human-readable name for this peer (used to generate consistent peer ID if peer_id not set)
+name = "my-node"
+
+# Whether to save generated identity to file for reuse
+persist_identity = true
+
+# Path to identity file (defaults to ~/.bitchat/identity.toml if not specified)
+# identity_file = "/path/to/identity.toml"
+
+[cli]
+# Enable verbose logging output
+verbose = false
+
+# Prompt style for the interactive interface
+prompt = "bitchat> "
+
+# Maximum number of recent messages to display
+max_recent_messages = 5
+
+# Whether to auto-start discovery on startup
+auto_start_discovery = true
+
+# Whether to use colored output
+colored_output = true
+
+# Update interval for status display (in milliseconds)
+status_update_interval_ms = 1000
+
+# Command history size
+history_size = 100
+
+[runtime]
+# Which transports to enable by default
+enabled_transports = ["ble", "nostr"]
+
+# Startup timeout in seconds
+startup_timeout_secs = 30
+
+# Shutdown timeout in seconds
+shutdown_timeout_secs = 10
+
+# Whether to exit on first error or retry
+exit_on_error = false
+
+# Heartbeat interval for health checking (in seconds)
+heartbeat_interval_secs = 30
+
+# Core BitChat Configuration
+[core]
+# Number of worker threads for async runtime
+worker_threads = 4
+
+# Maximum number of concurrent connections
+max_connections = 50
+
+# Message buffer size
+message_buffer_size = 1000
+
+# Session timeout in seconds
+session_timeout_secs = 300
+
+# Rekey interval in seconds
+rekey_interval_secs = 3600
+
+# Maximum message size in bytes
+max_message_size = 65536
+
+# BLE Transport Configuration
+[ble]
+# Whether BLE transport is enabled
+enabled = true
+
+# BLE device name for advertising
+device_name = "BitChat"
+
+# Service UUID for BitChat BLE service
+service_uuid = "6E400001-B5A3-F393-E0A9-E50E24DCCA9E"
+
+# Characteristic UUID for data transfer
+data_uuid = "6E400002-B5A3-F393-E0A9-E50E24DCCA9E"
+
+# Maximum packet size for BLE transmission
+max_packet_size = 244
+
+# Connection timeout in seconds
+connection_timeout_secs = 10
+
+# Discovery timeout in seconds
+discovery_timeout_secs = 30
+
+# Scan interval in milliseconds
+scan_interval_ms = 100
+
+# Scan window in milliseconds
+scan_window_ms = 50
+
+# Nostr Transport Configuration
+[nostr]
+# Whether Nostr transport is enabled
+enabled = true
+
+# List of Nostr relays to connect to
+relays = [
+    "wss://relay.damus.io",
+    "wss://nos.lol",
+    "wss://relay.snort.social"
+]
+
+# Connection timeout in seconds
+connection_timeout_secs = 15
+
+# Maximum message size for Nostr events
+max_message_size = 32768
+
+# Whether to verify relay certificates
+verify_tls = true
+
+# Custom user agent string
+user_agent = "BitChat-CLI/0.1.0"
+
+# Subscription timeout in seconds
+subscription_timeout_secs = 60

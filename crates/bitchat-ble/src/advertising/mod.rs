@@ -11,6 +11,7 @@ pub mod manager;
 pub use manager::AdvertisingManager;
 
 use bitchat_core::{PeerId, Result as BitchatResult};
+use bitchat_core::internal::IdentityKeyPair;
 
 use crate::config::BleTransportConfig;
 
@@ -25,6 +26,7 @@ pub trait BleAdvertiser: Send + Sync {
     async fn start_advertising(
         &mut self,
         peer_id: &PeerId,
+        identity: &IdentityKeyPair,
         config: &BleTransportConfig,
     ) -> BitchatResult<()>;
 
@@ -38,6 +40,7 @@ pub trait BleAdvertiser: Send + Sync {
     async fn update_advertising_data(
         &mut self,
         peer_id: &PeerId,
+        identity: &IdentityKeyPair,
         config: &BleTransportConfig,
     ) -> BitchatResult<()>;
 }
@@ -85,15 +88,16 @@ impl BleAdvertiser for PlatformAdvertiser {
     async fn start_advertising(
         &mut self,
         peer_id: &PeerId,
+        identity: &IdentityKeyPair,
         config: &BleTransportConfig,
     ) -> BitchatResult<()> {
         match self {
             #[cfg(target_os = "linux")]
-            Self::Linux(ref mut advertiser) => advertiser.start_advertising(peer_id, config).await,
+            Self::Linux(ref mut advertiser) => advertiser.start_advertising(peer_id, identity, config).await,
             #[cfg(target_os = "macos")]
-            Self::MacOS(ref mut advertiser) => advertiser.start_advertising(peer_id, config).await,
+            Self::MacOS(ref mut advertiser) => advertiser.start_advertising(peer_id, identity, config).await,
             Self::Fallback(ref mut advertiser) => {
-                advertiser.start_advertising(peer_id, config).await
+                advertiser.start_advertising(peer_id, identity, config).await
             }
         }
     }
@@ -121,19 +125,20 @@ impl BleAdvertiser for PlatformAdvertiser {
     async fn update_advertising_data(
         &mut self,
         peer_id: &PeerId,
+        identity: &IdentityKeyPair,
         config: &BleTransportConfig,
     ) -> BitchatResult<()> {
         match self {
             #[cfg(target_os = "linux")]
             Self::Linux(ref mut advertiser) => {
-                advertiser.update_advertising_data(peer_id, config).await
+                advertiser.update_advertising_data(peer_id, identity, config).await
             }
             #[cfg(target_os = "macos")]
             Self::MacOS(ref mut advertiser) => {
-                advertiser.update_advertising_data(peer_id, config).await
+                advertiser.update_advertising_data(peer_id, identity, config).await
             }
             Self::Fallback(ref mut advertiser) => {
-                advertiser.update_advertising_data(peer_id, config).await
+                advertiser.update_advertising_data(peer_id, identity, config).await
             }
         }
     }

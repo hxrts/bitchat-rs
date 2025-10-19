@@ -2,50 +2,22 @@
 name = "bitchat-cli"
 version = "0.1.0"
 edition = "2021"
-description = "CLI demonstration application for BitChat protocol with dual transport support"
-license = "MIT OR Apache-2.0"
+description = "BitChat command-line client with automation mode"
 
 [[bin]]
-name = "bitchat"
+name = "bitchat-cli"
 path = "src/main.rs"
 
 [dependencies]
-# BitChat protocol and transports
 bitchat-core = { path = "../bitchat-core" }
+bitchat-runtime = { path = "../bitchat-runtime" }
 bitchat-ble = { path = "../bitchat-ble" }
 bitchat-nostr = { path = "../bitchat-nostr" }
-
-# CLI and configuration
-clap = { workspace = true }
-serde = { workspace = true }
-serde_json = "1.0"
-toml = "0.8"
-
-# Async runtime
-tokio = { workspace = true }
-
-# Utilities
-uuid = { workspace = true }
-thiserror = { workspace = true }
-
-# Logging
-tracing = { workspace = true }
-tracing-subscriber = { workspace = true }
-
-# Terminal UI (optional for TUI mode)
-crossterm = { version = "0.28", optional = true }
-ratatui = { version = "0.28", optional = true }
-
-# Error handling
-anyhow = "1.0"
-
-# Hex encoding/decoding
+tokio = { version = "1.0", features = ["full"] }
+clap = { version = "4.0", features = ["derive"] }
 hex = "0.4"
-
-# Directory utilities
-dirs = "5.0"
-
-[features]
-default = ["tui"]
-tui = ["crossterm", "ratatui"]
-non-interactive = []
+figment = { version = "0.10", features = ["toml", "env"] }
+serde = { workspace = true }
+toml = "0.8"
+thiserror = { workspace = true }
+tracing = "0.1"

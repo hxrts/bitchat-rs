@@ -5,16 +5,28 @@ edition = "2021"
 description = "Nostr transport implementation for BitChat protocol"
 license = "MIT OR Apache-2.0"
 
+[features]
+default = ["std"]
+std = ["tokio", "tokio-tungstenite"]
+wasm = ["ws_stream_wasm", "wasm-bindgen-futures"]
+
 [dependencies]
 # Core BitChat protocol
 bitchat-core = { path = "../bitchat-core" }
 
-# Nostr dependencies
-nostr-sdk = { workspace = true }
-tokio-tungstenite = { workspace = true }
+# Nostr dependencies (only for native targets, not WASM)
+[target.'cfg(not(target_arch = "wasm32"))'.dependencies]
+nostr-sdk = { workspace = true, default-features = false, features = ["nip04", "nip59"] }
+
+# Native WebSocket support
+tokio-tungstenite = { workspace = true, optional = true }
+
+# WASM WebSocket support
+ws_stream_wasm = { version = "0.7", optional = true }
+wasm-bindgen-futures = { version = "0.4", optional = true }
 
 # Async runtime
-tokio = { workspace = true }
+tokio = { workspace = true, optional = true }
 
 # Utilities
 uuid = { workspace = true }
@@ -30,6 +42,12 @@ tracing = { workspace = true }
 
 # URL parsing
 url = "2.0"
+
+# WASM-specific dependencies
+[target.'cfg(target_arch = "wasm32")'.dependencies]
+web-sys = { version = "0.3", features = ["WebSocket", "MessageEvent", "ErrorEvent", "CloseEvent"] }
+js-sys = "0.3"
+wasm-bindgen = "0.2"
 
 [dev-dependencies]
 tokio-test = "0.4"

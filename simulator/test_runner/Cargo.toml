@@ -15,7 +15,6 @@ tokio = { version = "1.0", features = ["full"] }
 
 # Error handling and utilities
 anyhow = "1.0"
-thiserror = "1.0"
 
 # Logging
 tracing = "0.1"
@@ -25,14 +24,10 @@ tracing-subscriber = { version = "0.3", features = ["env-filter"] }
 clap = { version = "4.0", features = ["derive"] }
 
 # JSON handling for parsing client outputs
-serde = { version = "1.0", features = ["derive"] }
 serde_json = "1.0"
 
-# Process management
-futures = "0.3"
-
-# Time utilities
-chrono = { version = "0.4", features = ["serde"] }
-
-# File system and path utilities
-tempfile = "3.0"
+# BitChat crates for in-memory runtime testing
+bitchat-core = { path = "../../crates/bitchat-core" }
+bitchat-runtime = { path = "../../crates/bitchat-runtime" }
+bitchat-ble = { path = "../../crates/bitchat-ble" }
+bitchat-nostr = { path = "../../crates/bitchat-nostr" }

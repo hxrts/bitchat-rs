@@ -1,0 +1,39 @@
+[package]
+name = "bitchat-runtime"
+version = "0.1.0"
+edition = "2021"
+license = "MIT OR Apache-2.0"
+description = "BitChat runtime engine and orchestration"
+keywords = ["p2p", "messaging", "encryption", "mesh", "runtime"]
+categories = ["network-programming", "cryptography"]
+
+[dependencies]
+bitchat-core = { path = "../bitchat-core" }
+
+# Async runtime
+tokio = { version = "1.0", features = ["full"] }
+async-trait = "0.1"
+
+# Error handling
+thiserror = "1.0"
+anyhow = "1.0"
+
+# Serialization
+serde = { version = "1.0", features = ["derive"] }
+uuid = { version = "1.0", features = ["v4", "serde"] }
+
+# Logging
+log = "0.4"
+tracing = "0.1"
+
+# Collections and utilities
+dashmap = "5.5"
+instant = "0.1"
+
+[dev-dependencies]
+tokio-test = "0.4"
+futures = "0.3"
+
+[features]
+default = ["std"]
+std = []

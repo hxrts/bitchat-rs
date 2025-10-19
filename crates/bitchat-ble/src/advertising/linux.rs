@@ -1,11 +1,12 @@
 //! Linux BLE advertising implementation using bluer (BlueZ)
 
 use bitchat_core::{BitchatError, PeerId, Result as BitchatResult};
+use bitchat_core::internal::{IdentityKeyPair, TransportError};
 use tracing::{debug, info};
 
 use crate::config::BleTransportConfig;
 use crate::protocol::{
-    generate_device_name, BITCHAT_RX_CHARACTERISTIC_UUID, BITCHAT_SERVICE_UUID,
+    generate_advertising_data, generate_device_name, BITCHAT_RX_CHARACTERISTIC_UUID, BITCHAT_SERVICE_UUID,
     BITCHAT_TX_CHARACTERISTIC_UUID,
 };
 
@@ -38,17 +39,29 @@ impl LinuxAdvertiser {
         }
 
         let session = bluer::Session::new().await.map_err(|e| {
-            BitchatError::InvalidPacket(format!("Failed to create BlueZ session: {}", e))
+            BitchatError::Transport(
+                TransportError::TransportUnavailable {
+                    transport_type: format!("BlueZ session: {}", e),
+                }
+            )
         })?;
 
         let adapter = session.default_adapter().await.map_err(|e| {
-            BitchatError::InvalidPacket(format!("Failed to get default adapter: {}", e))
+            BitchatError::Transport(
+                TransportError::TransportUnavailable {
+                    transport_type: format!("BLE adapter: {}", e),
+                }
+            )
         })?;
 
         // Enable adapter if needed
         if !adapter.is_powered().await.unwrap_or(false) {
             adapter.set_powered(true).await.map_err(|e| {
-                BitchatError::InvalidPacket(format!("Failed to power on adapter: {}", e))
+                BitchatError::Transport(
+                    TransportError::InvalidConfiguration {
+                        reason: format!("Failed to power on adapter: {}", e),
+                    }
+                )
             })?;
         }
 
@@ -64,6 +77,7 @@ impl BleAdvertiser for LinuxAdvertiser {
     async fn start_advertising(
         &mut self,
         peer_id: &PeerId,
+        identity: &IdentityKeyPair,
         config: &BleTransportConfig,
     ) -> BitchatResult<()> {
         self.initialize().await?;
@@ -93,21 +107,37 @@ impl BleAdvertiser for LinuxAdvertiser {
 
         // Register GATT application
         let app_handle = adapter.serve_gatt_application(app).await.map_err(|e| {
-            BitchatError::InvalidPacket(format!("Failed to register GATT service: {}", e))
+            BitchatError::Transport(
+                TransportError::InvalidConfiguration {
+                    reason: format!("Failed to register GATT service: {}", e),
+                }
+            )
         })?;
+
+        // Generate secure advertising data
+        let secure_advertising_data = generate_advertising_data(*peer_id, identity, &device_name)?;
+        
+        // Create manufacturer data map
+        let mut manufacturer_data = std::collections::HashMap::new();
+        manufacturer_data.insert(0xFFFF, secure_advertising_data); // Use 0xFFFF for test/development
 
         // Create advertisement
         let advertisement = bluer::adv::Advertisement {
             advertisement_type: bluer::adv::Type::Peripheral,
             local_name: Some(device_name.clone()),
             services: vec![BITCHAT_SERVICE_UUID].into_iter().collect(),
+            manufacturer_data,
             discoverable: Some(true),
             connectable: Some(true),
             ..Default::default()
         };
 
         let advertisement_handle = adapter.advertise(advertisement).await.map_err(|e| {
-            BitchatError::InvalidPacket(format!("Failed to start advertising: {}", e))
+            BitchatError::Transport(
+                TransportError::InvalidConfiguration {
+                    reason: format!("Failed to start advertising: {}", e),
+                }
+            )
         })?;
 
         self.advertisement_handle = Some(advertisement_handle);
@@ -133,11 +163,12 @@ impl BleAdvertiser for LinuxAdvertiser {
     async fn update_advertising_data(
         &mut self,
         peer_id: &PeerId,
+        identity: &IdentityKeyPair,
         config: &BleTransportConfig,
     ) -> BitchatResult<()> {
         if self.is_advertising {
             self.stop_advertising().await?;
-            self.start_advertising(peer_id, config).await?;
+            self.start_advertising(peer_id, identity, config).await?;
         }
         Ok(())
     }

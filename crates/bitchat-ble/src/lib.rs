@@ -18,19 +18,19 @@
 //! ## Usage
 //!
 //! ```rust,no_run
-//! use bitchat_ble::{BleTransport, BleTransportConfig};
-//! use bitchat_core::{PeerId, transport::Transport};
+//! use bitchat_ble::BleTransportTask;
+//! use bitchat_core::TransportTask;
 //!
 //! # async fn example() -> Result<(), Box<dyn std::error::Error>> {
-//! let peer_id = PeerId::new([1, 2, 3, 4, 5, 6, 7, 8]);
-//! let config = BleTransportConfig::new()
-//!     .with_device_name_prefix("MyApp".to_string())
-//!     .with_auto_reconnect(true);
+//! // Create channels for communication with Core Logic
+//! let (event_sender, _event_receiver) = tokio::sync::mpsc::channel(100);
+//! let (_effect_sender, effect_receiver) = tokio::sync::broadcast::channel(100);
 //!
-//! let mut transport = BleTransport::with_config(peer_id, config);
+//! let mut transport = BleTransportTask::new();
+//! transport.attach_channels(event_sender, effect_receiver)?;
 //!
-//! // Start the transport - now includes production-ready advertising
-//! transport.start().await?;
+//! // Start the transport task - includes production-ready advertising
+//! transport.run().await?;
 //!
 //! // The transport will automatically:
 //! // - Start advertising on all supported platforms (Linux, macOS)
@@ -69,7 +69,7 @@ pub use protocol::{
     generate_device_name, BITCHAT_RX_CHARACTERISTIC_UUID, BITCHAT_SERVICE_UUID,
     BITCHAT_TX_CHARACTERISTIC_UUID,
 };
-pub use transport::BleTransport;
+pub use transport::BleTransportTask;
 
-// Re-export Transport trait for convenience
-pub use bitchat_core::transport::Transport;
+// Re-export TransportTask trait for convenience
+pub use bitchat_core::TransportTask;

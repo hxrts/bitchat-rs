@@ -1,25 +1,17 @@
-//! BitChat CLI library
+//! BitChat CLI Library
 //!
-//! This library provides the core components for the BitChat command-line interface,
-//! including the TUI, message handling, and state management.
+//! Provides terminal user interface components and application orchestration for BitChat CLI.
 
-pub mod app;
-pub mod cli;
-pub mod commands;
 pub mod config;
-pub mod error;
-pub mod state;
-#[cfg(feature = "tui")]
-pub mod tui;
+pub mod terminal_interface;
+pub mod app_orchestrator;
 
-pub use app::BitchatApp;
-pub use cli::{Cli, Commands};
-pub use config::AppConfig;
-pub use error::{CliError, Result};
-
-// Re-export commonly used types
-pub use bitchat_core::{
-    transport::{TransportManager, TransportSelectionPolicy, TransportType},
-    BitchatMessage, MessageBuilder, MessageFragmenter, MessageReassembler, PeerId,
-    StdDeliveryTracker, StdNoiseSessionManager, StdTimeSource,
+pub use config::{CliAppConfig, CliConfig, IdentityConfig, RuntimeConfig, ConfigError};
+pub use terminal_interface::{
+    TerminalInterfaceTask, UIState, PeerUIState, UIMessage, 
+    MessageDirection, SystemStatus
+};
+pub use app_orchestrator::{
+    CliAppOrchestrator, TransportConfig,
+    start_cli_application, start_cli_application_with_config, start_cli_application_with_transports
 };

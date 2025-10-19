@@ -1,6 +1,6 @@
 //! Error types for Nostr transport
 
-use bitchat_core::{BitchatError, PeerId};
+use bitchat_core::{BitchatError, PeerId, internal::TransportError};
 use thiserror::Error;
 
 // ----------------------------------------------------------------------------
@@ -47,6 +47,8 @@ pub enum NostrTransportError {
 
 impl From<NostrTransportError> for BitchatError {
     fn from(err: NostrTransportError) -> Self {
-        BitchatError::InvalidPacket(err.to_string().into())
+        BitchatError::Transport(TransportError::ReceiveFailed { 
+            reason: err.to_string() 
+        })
     }
 }

@@ -9,57 +9,32 @@ license = "MIT OR Apache-2.0"
 crate-type = ["cdylib"]
 
 [dependencies]
-# Core BitChat protocol  
+# Core BitChat protocol - headless and platform-agnostic
 bitchat-core = { path = "../bitchat-core" }
+
+# Nostr transport for WebAssembly (temporarily disabled for WASM compilation)
+# bitchat-nostr = { path = "../bitchat-nostr", default-features = false, features = ["wasm"] }
 
 # WASM and JS bindings
 wasm-bindgen = "0.2"
 wasm-bindgen-futures = "0.4"
 js-sys = "0.3"
 
-# Web APIs
+# Web APIs (minimal set needed)
 web-sys = { version = "0.3", features = [
   "console",
-  "WebSocket",
-  "MessageEvent",
-  "ErrorEvent",
-  "CloseEvent",
-  "BinaryType",
-  "Blob",
-  "FileReader",
-  "Event",
-  "EventTarget",
-  "Document",
-  "Element",
-  "HtmlElement",
   "Window",
 ] }
 
-# Nostr for WASM
-nostr-sdk = { workspace = true, default-features = false, features = ["nip04", "nip44"] }
-
-# Async runtime for WASM
-tokio = { workspace = true, features = ["macros", "sync", "time"] }
-tokio-util = { version = "0.7", features = ["time"] }
-async-trait = { workspace = true }
-smallvec = { workspace = true }
-
 # Utilities
 serde = { workspace = true, features = ["derive"] }
+serde_json = { workspace = true }
 serde-wasm-bindgen = "0.6"
-bincode = { workspace = true }
-uuid = { workspace = true, features = ["v4", "js"] }
-thiserror = { workspace = true }
+hex = { workspace = true }
 
 # Logging for WASM
 tracing = { workspace = true }
 tracing-wasm = "0.2"
-
-# URL parsing
-url = "2.5"
-
-# Base64 encoding
-base64 = "0.22"
 
 # Debug helpers
 console_error_panic_hook = { version = "0.1", optional = true }

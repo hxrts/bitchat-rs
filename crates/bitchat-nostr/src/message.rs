@@ -1,6 +1,6 @@
 //! BitChat message format for Nostr events
 
-use bitchat_core::{BitchatPacket, PeerId};
+use bitchat_core::PeerId;
 use nostr_sdk::base64::{engine::general_purpose, Engine as _};
 use nostr_sdk::prelude::*;
 use serde::{Deserialize, Serialize};
@@ -21,38 +21,63 @@ pub struct BitchatNostrMessage {
     pub sender_peer_id: PeerId,
     /// BitChat peer ID of recipient (None for broadcast)
     pub recipient_peer_id: Option<PeerId>,
-    /// Serialized BitChat packet (base64 encoded)
-    pub packet_data: String,
+    /// Raw message data (base64 encoded)
+    pub data: String,
     /// Message timestamp
     pub timestamp: u64,
 }
 
 impl BitchatNostrMessage {
-    /// Create a new BitChat Nostr message
+    /// Create a new BitChat Nostr message from raw data
     pub fn new(
         sender_peer_id: PeerId,
         recipient_peer_id: Option<PeerId>,
-        packet: &BitchatPacket,
-    ) -> Result<Self, NostrTransportError> {
-        let packet_bytes = bincode::serialize(packet)?;
-        let packet_data = general_purpose::STANDARD.encode(packet_bytes);
+        data: Vec<u8>,
+    ) -> Self {
+        let data_base64 = general_purpose::STANDARD.encode(data);
 
-        Ok(Self {
+        Self {
             sender_peer_id,
             recipient_peer_id,
-            packet_data,
+            data: data_base64,
             timestamp: std::time::SystemTime::now()
                 .duration_since(std::time::UNIX_EPOCH)
                 .unwrap_or_default()
                 .as_secs(),
-        })
+        }
     }
 
-    /// Extract BitChat packet from Nostr message
-    pub fn to_packet(&self) -> Result<BitchatPacket, NostrTransportError> {
-        let packet_bytes = general_purpose::STANDARD
-            .decode(&self.packet_data)
+    /// Extract raw data from Nostr message
+    pub fn to_data(&self) -> Result<Vec<u8>, NostrTransportError> {
+        general_purpose::STANDARD
+            .decode(&self.data)
+            .map_err(|e| NostrTransportError::DeserializationFailed(e.to_string()))
+    }
+
+    /// Serialize message to bincode + base64 for Nostr event content
+    pub fn to_nostr_content(&self) -> Result<String, NostrTransportError> {
+        let message_bytes = bincode::serialize(self)?;
+        Ok(general_purpose::STANDARD.encode(message_bytes))
+    }
+
+    /// Deserialize message from bincode + base64 Nostr event content
+    pub fn from_nostr_content(content: &str) -> Result<Self, NostrTransportError> {
+        let message_bytes = general_purpose::STANDARD
+            .decode(content)
             .map_err(|e| NostrTransportError::DeserializationFailed(e.to_string()))?;
-        Ok(bincode::deserialize(&packet_bytes)?)
+        Ok(bincode::deserialize(&message_bytes)?)
+    }
+
+    /// Check if this message is intended for a specific peer
+    pub fn is_for_peer(&self, peer_id: &PeerId) -> bool {
+        match &self.recipient_peer_id {
+            Some(recipient) => recipient == peer_id,
+            None => true, // Broadcast message
+        }
+    }
+
+    /// Check if this is a broadcast message
+    pub fn is_broadcast(&self) -> bool {
+        self.recipient_peer_id.is_none()
     }
 }

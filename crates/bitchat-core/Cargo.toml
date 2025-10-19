@@ -6,13 +6,37 @@ description = "Core protocol implementation for the BitChat P2P messaging protoc
 license = "MIT OR Apache-2.0"
 
 [features]
+# Default feature set for std environments (CLI, server)
 default = ["std"]
+
+# Core features for lean environments (alloc only, no channels)
+alloc = []
+
+# Standard library support with tokio channels
 std = [
     "serde/std",
-    "ed25519-dalek/std",
+    "ed25519-dalek/std", 
     "sha2/std",
     "uuid/std",
+    "tokio",
+    "monitoring",
+    "task-logging",
 ]
+
+# WASM target bundle (no_std + wasm channels + wasm time)
+wasm = [
+    "futures-channel", 
+    "wasm-bindgen-futures", 
+    "async-broadcast",
+    "instant", 
+    "js-sys"
+]
+
+# Monitoring and metrics (requires std currently)
+monitoring = ["tracing"]
+
+# Task logging infrastructure  
+task-logging = ["tracing"]
 
 [dependencies]
 # Core serialization
@@ -33,15 +57,31 @@ thiserror = { workspace = true }
 rand_core = { workspace = true }
 crc32fast = { workspace = true }
 async-trait = { version = "0.1", default-features = false }
+async-broadcast = { version = "0.5", optional = true }
+cfg-if = "1.0"
+
+# Async runtime and channels (feature-gated)
+tokio = { version = "1.0", features = ["sync", "time", "rt", "macros"], optional = true }
+futures-channel = { version = "0.3", features = ["std"], optional = true }
+
+# Logging (always available, but tracing is feature-gated)
+log = { version = "0.4", default-features = false }
+tracing = { version = "0.1", default-features = false, optional = true }
+
+# Core futures support (always available)
+futures = { version = "0.3", default-features = false, features = ["alloc"] }
 
 # Performance optimizations
 hex = { workspace = true }
 hashbrown = { workspace = true }
 smallvec = { workspace = true }
+instant = { workspace = true, optional = true }
 
 [target.'cfg(target_arch = "wasm32")'.dependencies]
 getrandom = { workspace = true }
-instant = { workspace = true }
+wasm-bindgen-futures = { version = "0.4", optional = true }
+futures-channel = { version = "0.3", optional = true }
+js-sys = { version = "0.3", optional = true }
 
 [dev-dependencies]
 tokio = { version = "1.0", features = ["full"] }

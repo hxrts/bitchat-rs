@@ -1,6 +1,7 @@
 //! Fallback advertising implementation for unsupported platforms
 
 use bitchat_core::{PeerId, Result as BitchatResult};
+use bitchat_core::internal::IdentityKeyPair;
 use tracing::warn;
 
 use crate::config::BleTransportConfig;
@@ -37,6 +38,7 @@ impl BleAdvertiser for FallbackAdvertiser {
     async fn start_advertising(
         &mut self,
         peer_id: &PeerId,
+        _identity: &IdentityKeyPair,
         config: &BleTransportConfig,
     ) -> BitchatResult<()> {
         let device_name = generate_device_name(peer_id, &config.device_name_prefix);
@@ -59,6 +61,7 @@ impl BleAdvertiser for FallbackAdvertiser {
     async fn update_advertising_data(
         &mut self,
         _peer_id: &PeerId,
+        _identity: &IdentityKeyPair,
         _config: &BleTransportConfig,
     ) -> BitchatResult<()> {
         Ok(())
