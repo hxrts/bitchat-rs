@@ -1,6 +1,6 @@
-//! BitChat Integration Test Runner
+//! BitChat Scenario Runner
 //!
-//! Event-driven integration testing for cross-client compatibility
+//! Event-driven scenario execution for cross-client compatibility testing
 
 use anyhow::Result;
 use clap::{Parser, Subcommand};
@@ -10,10 +10,10 @@ mod event_orchestrator;
 
 use event_orchestrator::{EventOrchestrator, ClientType};
 
-/// BitChat Integration Test Runner
+/// BitChat Scenario Runner
 #[derive(Parser)]
-#[command(name = "bitchat-test-runner")]
-#[command(about = "Event-driven integration test runner for BitChat")]
+#[command(name = "bitchat-scenario-runner")]
+#[command(about = "Event-driven scenario runner for BitChat compatibility testing")]
 #[command(version)]
 struct Cli {
     /// Test command to run
@@ -61,10 +61,10 @@ async fn main() -> Result<()> {
     // Initialize logging
     let log_level = if cli.verbose { "debug" } else { "info" };
     tracing_subscriber::fmt()
-        .with_env_filter(format!("bitchat_test_runner={}", log_level))
+        .with_env_filter(format!("bitchat_scenario_runner={}", log_level))
         .init();
 
-    info!("Starting BitChat Integration Test Runner");
+    info!("Starting BitChat Scenario Runner");
     info!("Relay: {}", cli.relay);
 
     // Create event orchestrator
@@ -221,7 +221,7 @@ async fn run_all_scenarios_deterministic(relay_url: String) -> Result<()> {
 
 async fn run_deterministic_messaging_standalone(relay_url: String) -> Result<()> {
     let mut orchestrator = EventOrchestrator::new(relay_url);
-    run_deterministic_messaging(&mut orchestrator).await?;
+    run_deterministic_messaging(&mut orchestrator, ClientType::RustCli).await?;
     orchestrator.stop_all_clients().await?;
     Ok(())
 }

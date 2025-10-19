@@ -127,7 +127,7 @@ impl EventOrchestrator {
         self.start_client(
             name, 
             ClientType::Swift,
-            "clients/swift-cli/bitchat-swift-cli", 
+            "../clients/swift-cli/.build/debug/bitchat-swift-cli", 
             &["--automation-mode", "--name", &client_name, "--relay", &relay_url]
         ).await
     }
@@ -140,7 +140,7 @@ impl EventOrchestrator {
         self.start_client(
             name, 
             ClientType::Kotlin,
-            "clients/kotlin-cli/build/install/bitchat-kotlin-cli/bin/bitchat-kotlin-cli", 
+            "simulator/clients/kotlin-cli/build/install/bitchat-kotlin-cli/bin/bitchat-kotlin-cli", 
             &["--automation-mode", "--name", &client_name, "--relay", &relay_url]
         ).await
     }

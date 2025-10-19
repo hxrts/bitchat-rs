@@ -18,7 +18,7 @@ The BitChat simulator validates protocol interoperability between **all client i
 
 ```bash
 # Enter simulator development environment
-cd simulator/test_runner
+cd simulator/scenario-runner
 nix develop
 
 # List available scenarios

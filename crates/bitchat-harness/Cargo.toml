@@ -7,16 +7,11 @@ license = "MIT OR Apache-2.0"
 
 [features]
 default = ["std"]
-std = ["bitchat-core/std", "tokio"]
-wasm = ["bitchat-core/wasm", "futures-channel", "async-broadcast"]
+std = ["bitchat-core/std"]
+wasm = ["bitchat-core/wasm"]
 
 [dependencies]
 bitchat-core = { path = "../bitchat-core" }
-thiserror = { workspace = true }
-cfg-if = "1.0"
-async-broadcast = { version = "0.5", optional = true }
-futures-channel = { version = "0.3", optional = true, features = ["std"] }
-tokio = { version = "1.0", features = ["sync", "time"], optional = true }
 
 [dev-dependencies]
 serde = { workspace = true, features = ["derive"] }

@@ -8,6 +8,7 @@ license = "MIT OR Apache-2.0"
 [dependencies]
 # Core BitChat protocol
 bitchat-core = { path = "../bitchat-core" }
+bitchat-harness = { path = "../bitchat-harness" }
 
 # BLE dependencies
 btleplug = { workspace = true }

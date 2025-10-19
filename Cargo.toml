@@ -2,6 +2,7 @@
 resolver = "2"
 members = [
     "crates/bitchat-core",
+    "crates/bitchat-harness",
     "crates/bitchat-runtime",
     "crates/bitchat-ble",
     "crates/bitchat-nostr",

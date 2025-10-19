@@ -4,7 +4,5 @@
 extern crate alloc;
 
 pub mod messages;
-pub mod channels;
 
 pub use messages::*;
-pub use channels::*;

@@ -143,7 +143,7 @@ Tests that involve three or more clients for mesh networking scenarios.
 
 ### Test Runner Environment
 ```bash
-cd simulator/test_runner
+cd simulator/scenario-runner
 nix develop  # Enter test runner environment
 ```
 
@@ -226,7 +226,7 @@ cargo run -- list
 **Architecture**: Pure Event Orchestrator design - all clients tested through external automation interface
 
 ### Test Execution Order:
-1. 🧪 **deterministic-messaging** - Basic message exchange validation
+1. ✅ **deterministic-messaging** - Basic message exchange validation (MANUAL FOUNDATION VERIFIED)
 2. ⏳ **transport-failover** - Transport switching robustness  
 3. ⏳ **session-rekey** - Cryptographic session management
 4. ⏳ **byzantine-fault** - Malicious peer behavior resistance
@@ -240,7 +240,9 @@ cargo run -- list
 | Test | Status | JSON Events | Notes |
 |------|--------|-------------|-------|
 | Kotlin Client Build | ✅ **Pass** | ✅ Verified | Build and automation mode working |
-| JSON Event Emission | ✅ **Pass** | ✅ Verified | `client_started`, `Ready` events confirmed |
+| JSON Event Emission | ✅ **Pass** | ✅ Verified | `client_started`, `Ready`, `DiscoveryStateChanged` events confirmed |
+| Two-Client Manual Test | ✅ **Pass** | ✅ Verified | Both Alice and Bob clients start successfully with automation |
+| Discovery Command | ✅ **Pass** | ✅ Verified | `discover` command triggers `DiscoveryStateChanged` event |
 | Test Runner Architecture | ✅ **Pass** | ✅ Complete | Runtime Orchestrator removed, pure Event Orchestrator |
 | Workspace Independence | ⚠️ **Partial** | - | Test runner builds independently but needs workspace fix |
 
@@ -251,7 +253,7 @@ cargo run -- list
 
 ### Command Template:
 ```bash
-cd simulator/test_runner
+cd simulator/scenario-runner
 nix develop
 cargo run -- --client-type kotlin scenario <scenario-name>
 ```

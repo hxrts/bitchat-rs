@@ -3,56 +3,55 @@
 
 # Build all simulator components
 build:
-    cargo build --workspace
-    cd test_runner && cargo build --release
+    cd scenario-runner && cargo build --release
 
 # Run all critical test scenarios with event-driven orchestrator
 test-critical: build
-    ./test_runner/target/release/bitchat-test-runner run-suite critical
+    ./scenario-runner/target/release/bitchat-scenario-runner run-suite critical
 
 # Run security-critical scenarios only
 test-security: build
-    ./test_runner/target/release/test_runner run-suite security
+    ./scenario-runner/target/release/test_runner run-suite security
 
 # Run robustness scenarios only  
 test-robustness: build
-    ./test_runner/target/release/test_runner run-suite robustness
+    ./scenario-runner/target/release/test_runner run-suite robustness
 
 # Run all test scenarios (existing + critical)
 test-all: build
-    ./test_runner/target/release/test_runner run-suite all
+    ./scenario-runner/target/release/test_runner run-suite all
 
 # Individual critical scenario tests
 test-transport-failover: build
-    ./test_runner/target/release/test_runner run transport-failover-recovery
+    ./scenario-runner/target/release/test_runner run transport-failover-recovery
 
 test-session-rekey: build
-    ./test_runner/target/release/test_runner run session-rekey-under-load
+    ./scenario-runner/target/release/test_runner run session-rekey-under-load
 
 test-byzantine-fault: build
-    ./test_runner/target/release/test_runner run byzantine-fault-tolerance
+    ./scenario-runner/target/release/test_runner run byzantine-fault-tolerance
 
 test-panic-recovery: build
-    ./test_runner/target/release/test_runner run panic-action-recovery
+    ./scenario-runner/target/release/test_runner run panic-action-recovery
 
 test-mesh-partition: build
-    ./test_runner/target/release/test_runner run mesh-partition-healing
+    ./scenario-runner/target/release/test_runner run mesh-partition-healing
 
 test-file-transfer-resume: build
-    ./test_runner/target/release/test_runner run file-transfer-interruption-resume
+    ./scenario-runner/target/release/test_runner run file-transfer-interruption-resume
 
 test-version-compatibility: build
-    ./test_runner/target/release/test_runner run protocol-version-compatibility
+    ./scenario-runner/target/release/test_runner run protocol-version-compatibility
 
 test-peer-scaling: build
-    ./test_runner/target/release/test_runner run massive-peer-discovery-scaling
+    ./scenario-runner/target/release/test_runner run massive-peer-discovery-scaling
 
 # Legacy test commands (existing)
 test: build
-    ./test_runner/target/release/test_runner run-basic-test
+    ./scenario-runner/target/release/test_runner run-basic-test
 
 run-basic-test: build
-    ./test_runner/target/release/test_runner basic-send-receive
+    ./scenario-runner/target/release/test_runner basic-send-receive
 
 run-rust-client-test: build
     cd ../crates/bitchat-cli && cargo run -- --test-mode
@@ -72,41 +71,41 @@ watch-test-security:
 
 # Generate test reports
 test-report: test-all
-    ./test_runner/target/release/test_runner generate-report --output test_results.html
+    ./scenario-runner/target/release/test_runner generate-report --output test_results.html
 
 # Clean simulator artifacts
 clean:
     cargo clean
-    cd test_runner && cargo clean
+    cd scenario-runner && cargo clean
     rm -rf test_results.html logs/
 
 # Development helpers
 status:
-    ./test_runner/target/release/test_runner status
+    ./scenario-runner/target/release/test_runner status
 
 logs:
     tail -f logs/test_runner.log
 
 # Benchmark critical scenarios
 bench-critical: build
-    ./test_runner/target/release/test_runner benchmark critical
+    ./scenario-runner/target/release/test_runner benchmark critical
 
 # Stress test specific scenarios
 stress-transport-failover: build
-    ./test_runner/target/release/test_runner stress transport-failover-recovery --iterations 100
+    ./scenario-runner/target/release/test_runner stress transport-failover-recovery --iterations 100
 
 stress-session-rekey: build  
-    ./test_runner/target/release/test_runner stress session-rekey-under-load --load-factor 10
+    ./scenario-runner/target/release/test_runner stress session-rekey-under-load --load-factor 10
 
 stress-mesh-partition: build
-    ./test_runner/target/release/test_runner stress mesh-partition-healing --nodes 20
+    ./scenario-runner/target/release/test_runner stress mesh-partition-healing --nodes 20
 
 # Network simulation modes
 test-lossy-network: build
-    ./test_runner/target/release/test_runner run-suite critical --network-loss 0.1
+    ./scenario-runner/target/release/test_runner run-suite critical --network-loss 0.1
 
 test-high-latency: build
-    ./test_runner/target/release/test_runner run-suite critical --network-latency 500ms
+    ./scenario-runner/target/release/test_runner run-suite critical --network-latency 500ms
 
 test-bandwidth-limited: build
-    ./test_runner/target/release/test_runner run-suite critical --bandwidth-limit 56kbps
+    ./scenario-runner/target/release/test_runner run-suite critical --bandwidth-limit 56kbps

@@ -7,11 +7,10 @@ use std::time::Duration;
 use async_trait::async_trait;
 use smallvec::SmallVec;
 
-use bitchat_core::{ChannelTransportType, Event, Effect};
-use bitchat_core::TransportTask;
-use bitchat_core::{EventSender, EffectReceiver};
 use bitchat_core::internal::{IdentityKeyPair, TransportError};
-use bitchat_core::{BitchatError, PeerId, Result as BitchatResult};
+use bitchat_core::{BitchatError, BitchatResult, PeerId, TransportTask};
+use bitchat_harness::messages::{ChannelTransportType, Effect, Event};
+use bitchat_core::{EffectReceiver, EventSender};
 use tokio::sync::{mpsc, RwLock};
 use tokio::task::JoinHandle;
 

@@ -1,12 +1,15 @@
 [package]
-name = "bitchat-test-runner"
+name = "bitchat-scenario-runner"
 version = "0.1.0"
 edition = "2021"
-description = "Integration test runner for BitChat cross-client compatibility"
+description = "Event-driven scenario runner for BitChat cross-client compatibility testing"
 license = "MIT OR Apache-2.0"
 
+# Empty workspace table to prevent being part of parent workspace
+[workspace]
+
 [[bin]]
-name = "bitchat-test-runner"
+name = "bitchat-scenario-runner"
 path = "src/main.rs"
 
 [dependencies]
