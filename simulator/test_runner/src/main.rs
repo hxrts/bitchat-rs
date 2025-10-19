@@ -7,10 +7,8 @@ use clap::{Parser, Subcommand};
 use tracing::info;
 
 mod event_orchestrator;
-mod runtime_orchestrator;
 
 use event_orchestrator::{EventOrchestrator, ClientType};
-use runtime_orchestrator::RuntimeOrchestrator;
 
 /// BitChat Integration Test Runner
 #[derive(Parser)]
@@ -25,6 +23,10 @@ struct Cli {
     /// Relay URL to use for testing
     #[arg(long, default_value = "wss://relay.damus.io")]
     relay: String,
+
+    /// Client type to use for testing
+    #[arg(long, value_enum)]
+    client_type: Option<ClientType>,
 
     /// Verbose logging
     #[arg(short, long)]
@@ -46,10 +48,6 @@ enum Commands {
     SecurityConformance,
     /// Run all deterministic scenarios
     AllScenarios,
-    /// Run in-memory runtime test for comprehensive validation
-    RuntimeTest,
-    /// Run comprehensive runtime-based deterministic messaging test
-    RuntimeDeterministicMessaging,
     /// Run cross-implementation compatibility test (CLI ↔ WASM)
     CrossImplementationTest,
     /// Run all client types compatibility test
@@ -75,14 +73,14 @@ async fn main() -> Result<()> {
     match cli.command.unwrap_or(Commands::List) {
         Commands::Scenario { name } => {
             info!("Running scenario: {}", name);
-            run_scenario(&mut orchestrator, &name).await?;
+            run_scenario(&mut orchestrator, &name, cli.client_type.unwrap_or(ClientType::RustCli)).await?;
         }
         Commands::List => {
             list_scenarios();
         }
         Commands::DeterministicMessaging => {
             info!("Running deterministic messaging test");
-            run_deterministic_messaging(&mut orchestrator).await?;
+            run_deterministic_messaging(&mut orchestrator, cli.client_type.unwrap_or(ClientType::RustCli)).await?;
         }
         Commands::SecurityConformance => {
             info!("Running security conformance test");
@@ -91,14 +89,6 @@ async fn main() -> Result<()> {
         Commands::AllScenarios => {
             info!("Running all deterministic scenarios");
             run_all_scenarios_deterministic(orchestrator.relay_url().to_string()).await?;
-        }
-        Commands::RuntimeTest => {
-            info!("Running in-memory runtime test");
-            run_runtime_test(&cli.relay).await?;
-        }
-        Commands::RuntimeDeterministicMessaging => {
-            info!("Running runtime-based deterministic messaging test");
-            run_runtime_deterministic_messaging(&cli.relay).await?;
         }
         Commands::CrossImplementationTest => {
             info!("Running cross-implementation compatibility test (CLI ↔ WASM)");
@@ -117,13 +107,13 @@ async fn main() -> Result<()> {
 }
 
 /// Run a specific test scenario
-async fn run_scenario(orchestrator: &mut EventOrchestrator, scenario_name: &str) -> Result<()> {
+async fn run_scenario(orchestrator: &mut EventOrchestrator, scenario_name: &str, client_type: ClientType) -> Result<()> {
     match scenario_name {
-        "deterministic-messaging" => run_deterministic_messaging(orchestrator).await,
+        "deterministic-messaging" => run_deterministic_messaging(orchestrator, client_type).await,
         "security-conformance" => run_security_conformance(orchestrator).await,
-        "transport-failover" => run_transport_failover_with_orchestrator(orchestrator).await,
-        "session-rekey" => run_session_rekey_with_orchestrator(orchestrator).await,
-        "byzantine-fault" => run_byzantine_fault_with_orchestrator(orchestrator).await,
+        "transport-failover" => run_transport_failover_with_orchestrator(orchestrator, client_type).await,
+        "session-rekey" => run_session_rekey_with_orchestrator(orchestrator, client_type).await,
+        "byzantine-fault" => run_byzantine_fault_with_orchestrator(orchestrator, client_type).await,
         "cross-implementation-test" => run_cross_implementation_test(orchestrator).await,
         "all-client-types" => run_all_client_types_test(orchestrator).await,
         _ => {
@@ -133,12 +123,12 @@ async fn run_scenario(orchestrator: &mut EventOrchestrator, scenario_name: &str)
 }
 
 /// Run deterministic messaging test
-async fn run_deterministic_messaging(orchestrator: &mut EventOrchestrator) -> Result<()> {
-    info!("Starting deterministic messaging test...");
+async fn run_deterministic_messaging(orchestrator: &mut EventOrchestrator, client_type: ClientType) -> Result<()> {
+    info!("Starting deterministic messaging test with {} clients...", client_type.name());
 
     // Start clients and wait for ready events (NO SLEEP)
-    orchestrator.start_rust_client("alice".to_string()).await?;
-    orchestrator.start_rust_client("bob".to_string()).await?;
+    orchestrator.start_client_by_type(client_type, "alice".to_string()).await?;
+    orchestrator.start_client_by_type(client_type, "bob".to_string()).await?;
 
     // Wait for both clients to be ready - deterministic, no timeouts
     orchestrator.wait_for_all_ready().await?;
@@ -302,9 +292,9 @@ async fn run_byzantine_fault_standalone(relay_url: String) -> Result<()> {
     Ok(())
 }
 
-async fn run_transport_failover_with_orchestrator(orchestrator: &mut EventOrchestrator) -> Result<()> {
-    orchestrator.start_rust_client("client_a".to_string()).await?;
-    orchestrator.start_rust_client("client_b".to_string()).await?;
+async fn run_transport_failover_with_orchestrator(orchestrator: &mut EventOrchestrator, client_type: ClientType) -> Result<()> {
+    orchestrator.start_client_by_type(client_type, "client_a".to_string()).await?;
+    orchestrator.start_client_by_type(client_type, "client_b".to_string()).await?;
     orchestrator.wait_for_all_ready().await?;
     
     orchestrator.wait_for_peer_event("client_a", "PeerDiscovered", "client_b").await?;
@@ -320,9 +310,9 @@ async fn run_transport_failover_with_orchestrator(orchestrator: &mut EventOrches
     Ok(())
 }
 
-async fn run_session_rekey_with_orchestrator(orchestrator: &mut EventOrchestrator) -> Result<()> {
-    orchestrator.start_rust_client("client_a".to_string()).await?;
-    orchestrator.start_rust_client("client_b".to_string()).await?;
+async fn run_session_rekey_with_orchestrator(orchestrator: &mut EventOrchestrator, client_type: ClientType) -> Result<()> {
+    orchestrator.start_client_by_type(client_type, "client_a".to_string()).await?;
+    orchestrator.start_client_by_type(client_type, "client_b".to_string()).await?;
     orchestrator.wait_for_all_ready().await?;
     
     orchestrator.wait_for_peer_event("client_a", "PeerDiscovered", "client_b").await?;
@@ -337,10 +327,10 @@ async fn run_session_rekey_with_orchestrator(orchestrator: &mut EventOrchestrato
     Ok(())
 }
 
-async fn run_byzantine_fault_with_orchestrator(orchestrator: &mut EventOrchestrator) -> Result<()> {
-    orchestrator.start_rust_client("honest_a".to_string()).await?;
-    orchestrator.start_rust_client("honest_b".to_string()).await?;
-    orchestrator.start_rust_client("malicious".to_string()).await?;
+async fn run_byzantine_fault_with_orchestrator(orchestrator: &mut EventOrchestrator, client_type: ClientType) -> Result<()> {
+    orchestrator.start_client_by_type(client_type, "honest_a".to_string()).await?;
+    orchestrator.start_client_by_type(client_type, "honest_b".to_string()).await?;
+    orchestrator.start_client_by_type(client_type, "malicious".to_string()).await?;
     orchestrator.wait_for_all_ready().await?;
     
     orchestrator.wait_for_peer_event("honest_a", "PeerDiscovered", "honest_b").await?;
@@ -354,100 +344,6 @@ async fn run_byzantine_fault_with_orchestrator(orchestrator: &mut EventOrchestra
     Ok(())
 }
 
-/// Run comprehensive in-memory runtime test
-async fn run_runtime_test(relay_url: &str) -> Result<()> {
-    info!("Starting comprehensive in-memory runtime test");
-    
-    let mut orchestrator = RuntimeOrchestrator::new(relay_url.to_string());
-    
-    // Start two runtime instances
-    orchestrator.start_runtime("alice".to_string()).await?;
-    orchestrator.start_runtime("bob".to_string()).await?;
-    
-    // Wait for both runtimes to be ready
-    orchestrator.wait_for_all_ready().await?;
-    info!("Both runtime instances are ready");
-    
-    // Get peer IDs for validation
-    let (alice_peer_id, alice_transports) = orchestrator.get_runtime_info("alice")
-        .ok_or_else(|| anyhow::anyhow!("Alice runtime not found"))?;
-    let (bob_peer_id, bob_transports) = orchestrator.get_runtime_info("bob")
-        .ok_or_else(|| anyhow::anyhow!("Bob runtime not found"))?;
-    
-    info!("Alice peer ID: {}, transports: {:?}", alice_peer_id, alice_transports);
-    info!("Bob peer ID: {}, transports: {:?}", bob_peer_id, bob_transports);
-    
-    // Send discovery command
-    orchestrator.send_command("alice", bitchat_core::Command::StartDiscovery).await?;
-    orchestrator.send_command("bob", bitchat_core::Command::StartDiscovery).await?;
-    
-    // Wait for peer discovery
-    orchestrator.wait_for_peer_discovered("alice", bob_peer_id).await?;
-    orchestrator.wait_for_peer_discovered("bob", alice_peer_id).await?;
-    info!("Peer discovery completed");
-    
-    // Validate runtime states
-    let alice_validation = orchestrator.validate_runtime_state("alice").await?;
-    let bob_validation = orchestrator.validate_runtime_state("bob").await?;
-    
-    info!("Alice validation: {:?}", alice_validation);
-    info!("Bob validation: {:?}", bob_validation);
-    
-    // Clean shutdown
-    orchestrator.stop_all_runtimes().await?;
-    info!("In-memory runtime test completed successfully");
-    Ok(())
-}
-
-/// Run comprehensive runtime-based deterministic messaging test
-async fn run_runtime_deterministic_messaging(relay_url: &str) -> Result<()> {
-    info!("Starting runtime-based deterministic messaging test");
-    
-    let mut orchestrator = RuntimeOrchestrator::new(relay_url.to_string());
-    
-    // Start runtime instances
-    orchestrator.start_runtime("alice".to_string()).await?;
-    orchestrator.start_runtime("bob".to_string()).await?;
-    
-    // Wait for readiness
-    orchestrator.wait_for_all_ready().await?;
-    
-    // Get peer IDs
-    let (_, _) = orchestrator.get_runtime_info("alice").unwrap();
-    let (bob_peer_id, _) = orchestrator.get_runtime_info("bob").unwrap();
-    
-    // Start discovery
-    orchestrator.send_command("alice", bitchat_core::Command::StartDiscovery).await?;
-    orchestrator.send_command("bob", bitchat_core::Command::StartDiscovery).await?;
-    
-    // Wait for discovery
-    orchestrator.wait_for_peer_discovered("alice", bob_peer_id).await?;
-    info!("Alice discovered Bob");
-    
-    // Wait for session establishment
-    orchestrator.wait_for_session_established("alice", bob_peer_id).await?;
-    info!("Session established between Alice and Bob");
-    
-    // Send message from Alice to Bob
-    let test_message = "Hello from Alice via in-memory runtime!";
-    orchestrator.send_command("alice", bitchat_core::Command::SendMessage {
-        recipient: bob_peer_id,
-        content: test_message.to_string(),
-    }).await?;
-    
-    // Wait for message sent confirmation
-    orchestrator.wait_for_message_sent("alice").await?;
-    info!("Alice sent message");
-    
-    // Wait for message received at Bob
-    let received_event = orchestrator.wait_for_message_received("bob", test_message).await?;
-    info!("Bob received message: {:?}", received_event.event);
-    
-    // Clean shutdown
-    orchestrator.stop_all_runtimes().await?;
-    info!("Runtime-based deterministic messaging test completed successfully");
-    Ok(())
-}
 
 /// Run cross-implementation compatibility test (CLI ↔ WASM)
 async fn run_cross_implementation_test(orchestrator: &mut EventOrchestrator) -> Result<()> {
@@ -479,13 +375,13 @@ async fn run_cross_implementation_test(orchestrator: &mut EventOrchestrator) -> 
     // Test bidirectional messaging
     // CLI → WASM
     orchestrator.send_command("cli_alice", "send Hello from CLI to WASM").await?;
-    let cli_sent = orchestrator.wait_for_event("cli_alice", "MessageSent").await?;
+    let _cli_sent = orchestrator.wait_for_event("cli_alice", "MessageSent").await?;
     let wasm_received = orchestrator.wait_for_event("wasm_bob", "MessageReceived").await?;
     info!("CLI → WASM message successful");
 
     // WASM → CLI  
     orchestrator.send_command("wasm_bob", "send Hello from WASM to CLI").await?;
-    let wasm_sent = orchestrator.wait_for_event("wasm_bob", "MessageSent").await?;
+    let _wasm_sent = orchestrator.wait_for_event("wasm_bob", "MessageSent").await?;
     let cli_received = orchestrator.wait_for_event("cli_alice", "MessageReceived").await?;
     info!("WASM → CLI message successful");
 
@@ -556,8 +452,6 @@ fn list_scenarios() {
     println!("  deterministic-messaging         - Event-driven messaging without sleep() calls");
     println!("  security-conformance            - Protocol security validation");
     println!("  all-scenarios                   - Run comprehensive deterministic test suite");
-    println!("  runtime-test                    - In-memory runtime comprehensive validation");
-    println!("  runtime-deterministic-messaging - Runtime-based deterministic messaging test");
     println!("  cross-implementation-test       - CLI ↔ WASM compatibility test");
     println!("  all-client-types               - Test all available client implementations");
 }

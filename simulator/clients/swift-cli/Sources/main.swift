@@ -1,5 +1,3 @@
-#!/usr/bin/env swift
-
 import ArgumentParser
 import Foundation
 import Logging
@@ -63,7 +61,7 @@ struct BitChatSwiftCLI: AsyncParsableCommand {
 // MARK: - Automation Mode Handler
 func handleAutomationMode(client: BitChatClient, logger: Logger) async {
     // Emit Ready event
-    await client.emitAutomationEvent(type: "Ready", data: ["peer_id": client.name])
+    await client.emitAutomationEvent(type: "Ready", data: [:])
     
     while true {
         guard let input = readLine()?.trimmingCharacters(in: .whitespacesAndNewlines),
@@ -75,17 +73,30 @@ func handleAutomationMode(client: BitChatClient, logger: Logger) async {
         let command = components[0]
         
         switch command {
-        case "/send":
+        case "send":
             if components.count >= 2 {
-                let message = components[1]
+                let message = components[1..<components.count].joined(separator: " ")
                 await client.sendMessage(to: nil, message: message)
             }
             
-        case "/connect":
+        case "private":
+            if components.count >= 3 {
+                let peer = components[1]
+                let message = components[2..<components.count].joined(separator: " ")
+                await client.sendPrivateMessage(to: peer, message: message)
+            }
+            
+        case "connect":
             if components.count >= 2 {
                 let peer = components[1]
                 await client.connectToPeer(peer)
             }
+            
+        case "discover":
+            await client.startDiscovery()
+            
+        case "stop-discovery":
+            await client.stopDiscovery()
             
         case "/simulate-panic":
             await client.emitAutomationEvent(type: "PanicRecovered", data: [:])
@@ -207,6 +218,11 @@ class BitChatClient {
         logger.info("Connecting to relay: \(relayURL)")
         isRunning = true
         
+        // Emit client_started event
+        if automationMode {
+            await emitAutomationEvent(type: "client_started", data: [:])
+        }
+        
         // Event-driven connection (no sleep)
         logger.info("Connected to relay")
         logger.info("BitChat Swift client '\(name)' is ready")
@@ -240,6 +256,41 @@ class BitChatClient {
         ])
         
         logger.debug("Message delivered to \(targetRecipient)")
+    }
+    
+    func sendPrivateMessage(to recipient: String, message: String) async {
+        logger.info("Sending private message to \(recipient): \(message)")
+        
+        // Event-driven messaging (no sleep)
+        if !automationMode {
+            print("Private message sent to \(recipient): \(message)")
+        }
+        
+        // Emit automation event
+        await emitAutomationEvent(type: "MessageSent", data: [
+            "to": recipient,
+            "content": message,
+            "message_id": UUID().uuidString,
+            "is_private": true
+        ])
+        
+        logger.debug("Private message delivered to \(recipient)")
+    }
+    
+    func startDiscovery() async {
+        logger.info("Starting peer discovery")
+        await emitAutomationEvent(type: "DiscoveryStateChanged", data: [
+            "active": true,
+            "transport": "nostr"
+        ])
+    }
+    
+    func stopDiscovery() async {
+        logger.info("Stopping peer discovery")
+        await emitAutomationEvent(type: "DiscoveryStateChanged", data: [
+            "active": false,
+            "transport": "nostr"
+        ])
     }
     
     func connectToPeer(_ peer: String) async {
@@ -293,11 +344,16 @@ class BitChatClient {
         guard automationMode else { return }
         
         var eventData = data
-        eventData["event"] = type
         eventData["timestamp"] = UInt64(Date().timeIntervalSince1970 * 1000)
+        eventData["peer_id"] = self.name
+        
+        let event: [String: Any] = [
+            "type": type,
+            "data": eventData
+        ]
         
         do {
-            let jsonData = try JSONSerialization.data(withJSONObject: eventData)
+            let jsonData = try JSONSerialization.data(withJSONObject: event)
             if let jsonString = String(data: jsonData, encoding: .utf8) {
                 print(jsonString)
                 fflush(stdout)

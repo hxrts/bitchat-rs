@@ -7,7 +7,7 @@
 //! 4. Managing the AppEvent stream and forwarding events to JavaScript UI
 
 use bitchat_core::{
-    PeerId, Command, AppEvent,
+    PeerId, Command, AppEvent, BytesExt,
     internal::{
         ChannelConfig, CommandSender, 
         create_command_channel, create_app_event_channel
@@ -89,6 +89,9 @@ impl From<AppEvent> for JsAppEvent {
                 }
             }
             AppEvent::MessageReceived { from, content, timestamp } => {
+                let content = content
+                    .to_string_utf8()
+                    .unwrap_or_else(|_| "<invalid utf-8>".to_string());
                 Self {
                     event_type: "message_received".to_string(),
                     data: serde_wasm_bindgen::to_value(&JsMessage {
@@ -100,6 +103,9 @@ impl From<AppEvent> for JsAppEvent {
                 }
             }
             AppEvent::MessageSent { to, content, timestamp } => {
+                let content = content
+                    .to_string_utf8()
+                    .unwrap_or_else(|_| "<invalid utf-8>".to_string());
                 Self {
                     event_type: "message_sent".to_string(),
                     data: serde_wasm_bindgen::to_value(&JsMessage {
@@ -286,10 +292,7 @@ impl BitchatWebApp {
             })?;
             
         if let Some(sender) = &self.command_sender {
-            sender.send(Command::SendMessage { 
-                recipient, 
-                content: content.to_string() 
-            }).await
+            sender.send(Command::send_message_string(recipient, content.to_string())).await
                 .map_err(|_| JsValue::from_str("Failed to send command"))?;
             Ok(())
         } else {

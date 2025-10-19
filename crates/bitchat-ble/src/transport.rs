@@ -47,9 +47,16 @@ pub struct BleTransportTask {
     /// Identity keypair for advertising
     identity: IdentityKeyPair,
     /// Background task handles
+    #[allow(dead_code)]
     task_handles: Vec<JoinHandle<()>>,
     /// Cached discovered peers (non-blocking access)
     cached_peers: Arc<RwLock<Vec<PeerId>>>,
+}
+
+impl Default for BleTransportTask {
+    fn default() -> Self {
+        Self::new()
+    }
 }
 
 impl BleTransportTask {
@@ -132,7 +139,7 @@ impl BleTransportTask {
     async fn process_effect(&mut self, effect: Effect) -> BitchatResult<()> {
         match effect {
             Effect::SendPacket { peer_id, data, transport } if transport == self.transport_type => {
-                self.send_packet_to_peer(peer_id, data).await?;
+                self.send_packet_to_peer(peer_id, data.to_vec()).await?;
             }
             Effect::InitiateConnection { peer_id, transport } if transport == self.transport_type => {
                 self.initiate_connection(peer_id).await?;
@@ -251,7 +258,6 @@ impl BleTransportTask {
             let _mock_peer = PeerId::new([1, 2, 3, 4, 5, 6, 7, 8]);
             // We would need a real peripheral for a proper implementation
             // For now, this is just demonstrating the structure
-            return;
         }
     }
 
@@ -264,34 +270,12 @@ impl BleTransportTask {
             })
         })?;
 
-        #[cfg(feature = "std")]
-        {
-            sender.send(event).await.map_err(|_| {
-                BitchatError::Transport(TransportError::InvalidConfiguration {
-                    reason: "Failed to send event - channel closed".to_string(),
-                })
-            })?;
-            return Ok(());
-        }
-
-        #[cfg(feature = "wasm")]
-        {
-            let mut sender_clone = sender.clone();
-            sender_clone.send(event).await.map_err(|_| {
-                BitchatError::Transport(TransportError::InvalidConfiguration {
-                    reason: "Failed to send event - channel closed".to_string(),
-                })
-            })?;
-            return Ok(());
-        }
-
-        #[cfg(not(any(feature = "std", feature = "wasm")))]
-        {
-            let _ = event;
-            return Err(BitchatError::Transport(TransportError::InvalidConfiguration {
-                reason: "No channel implementation available for BLE transport".to_string(),
-            }));
-        }
+        sender.send(event).await.map_err(|_| {
+            BitchatError::Transport(TransportError::InvalidConfiguration {
+                reason: "Failed to send event - channel closed".to_string(),
+            })
+        })?;
+        Ok(())
     }
 
     /// Perform periodic maintenance

@@ -1,5 +1,7 @@
 # BitChat Hybrid Architecture Proposal
 
+> **Deprecated**: This proposal described the legacy single-task core architecture. The current design is captured in `runtime-architecture-rfc.md` and supersedes the plan below. Sections referencing a monolithic `CoreLogicTask` are retained only for historical context.
+
 **Document Version**: 1.0  
 **Date**: October 2024  
 **Status**: Proposal for Review  

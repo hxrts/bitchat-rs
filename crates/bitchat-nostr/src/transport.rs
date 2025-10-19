@@ -52,8 +52,9 @@ async fn forward_event(sender: &EventSender, event: Event) -> Result<(), String>
 
 #[cfg(all(feature = "wasm", not(feature = "std")))]
 async fn forward_event(sender: &EventSender, event: Event) -> Result<(), String> {
+    let mut sender = sender.clone();
     sender
-        .try_broadcast(event)
+        .try_send(event)
         .map_err(|e| format!("{:?}", e))
 }
 
@@ -87,7 +88,7 @@ pub struct NostrTransportTask {
 impl NostrTransportTask {
     /// Create new Nostr transport task
     pub fn new(config: NostrConfig) -> BitchatResult<Self> {
-        let keys = config.private_key.clone().unwrap_or_else(|| Keys::generate());
+        let keys = config.private_key.clone().unwrap_or_else(Keys::generate);
         
         Ok(Self {
             transport_type: ChannelTransportType::Nostr,
@@ -354,7 +355,7 @@ impl NostrTransportTask {
         #[allow(unused_variables)] // Used in feature-gated code below
         let message_event = bitchat_core::Event::MessageReceived {
             from: bitchat_msg.sender_peer_id,
-            content: String::from_utf8_lossy(&data).to_string(),
+            content: data.clone().into(),
             transport: ChannelTransportType::Nostr,
             message_id: None,
             recipient: bitchat_msg.recipient_peer_id,
@@ -375,7 +376,7 @@ impl NostrTransportTask {
         match effect {
             Effect::SendPacket { peer_id, data, transport } => {
                 if transport == self.transport_type {
-                    self.send_data_to_peer(peer_id, data).await?;
+                    self.send_data_to_peer(peer_id, data.to_vec()).await?;
                 }
             }
             Effect::StartTransportDiscovery { transport } => {
@@ -427,7 +428,7 @@ impl NostrTransportTask {
             .map_err(|e| NostrTransportError::DeserializationFailed(e.to_string()))?;
 
         client.send_event(event).await
-            .map_err(|e| NostrTransportError::EventSendFailed(e))?;
+            .map_err(NostrTransportError::EventSendFailed)?;
 
         debug!("Sent data to peer {} via Nostr", peer_id);
         Ok(())

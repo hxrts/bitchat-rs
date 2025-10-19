@@ -42,6 +42,7 @@ impl BleDiscovery {
     }
 
     /// Initialize BLE adapter
+    #[allow(dead_code)]
     pub async fn initialize_adapter(&mut self) -> BitchatResult<()> {
         let manager = Manager::new().await.map_err(|e| BitchatError::Transport(
             TransportError::InvalidConfiguration {
@@ -72,6 +73,7 @@ impl BleDiscovery {
     }
 
     /// Get adapter reference
+    #[allow(dead_code)]
     pub fn adapter(&self) -> Option<&Adapter> {
         self.adapter.as_ref()
     }
@@ -123,6 +125,7 @@ impl BleDiscovery {
     ///
     /// Uses cryptographic verification to prevent peer impersonation attacks.
     /// Only devices with valid signed PeerAnnouncements will be accepted.
+    #[allow(dead_code)]
     pub async fn process_discovery_event(
         &self,
         event: CentralEvent,

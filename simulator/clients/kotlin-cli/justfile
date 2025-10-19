@@ -7,7 +7,7 @@ default:
 
 # Build the Kotlin CLI
 build:
-    gradle build
+    gradle build installDist
 
 # Run the Kotlin CLI
 run:
@@ -28,3 +28,8 @@ status:
     else \
         echo "Kotlin CLI: Not built (run 'just build')"; \
     fi
+
+# Test automation mode
+test-automation:
+    @echo "Testing automation mode (JSON output)..."
+    @echo -e "quit\n" | build/install/bitchat-kotlin-cli/bin/bitchat-kotlin-cli --automation-mode 2>/dev/null | head -3

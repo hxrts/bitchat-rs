@@ -13,14 +13,18 @@ extern crate alloc;
 
 pub mod logic;
 pub mod managers;
-mod runtime;
+mod coordinator;
 pub mod rate_limiter;
 
-pub use runtime::*;
+pub use coordinator::{
+    BitchatRuntime, 
+    TypeSafeBitchatRuntime, Configured, Running, Stopped
+};
 pub use managers::*;
 
-// Re-export core types for convenience
-pub use bitchat_core::{
-    BitchatError, BitchatResult, Command, AppEvent, Event, Effect,
-    PeerId, TransportTask, EventSender, EffectReceiver
+// Re-export core/harness types for convenience
+pub use bitchat_core::{BitchatError, BitchatResult, PeerId, TransportTask};
+pub use bitchat_harness::{
+    channels::{AppEventReceiver, AppEventSender, CommandReceiver, CommandSender, EffectReceiver, EffectSender, EventReceiver, EventSender},
+    messages::{AppEvent, Command, Effect, Event, MessageEnvelope, TransportStatus},
 };

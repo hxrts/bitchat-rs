@@ -67,32 +67,7 @@
           '';
         };
 
-        # Kotlin CLI package
-        packages.default = pkgs.stdenv.mkDerivation {
-          pname = "bitchat-kotlin-cli";
-          version = "0.1.0";
-          
-          src = ./.;
-          
-          nativeBuildInputs = with pkgs; [ jdk17 gradle ];
-          
-          buildPhase = ''
-            export JAVA_HOME=${if pkgs.stdenv.isDarwin 
-              then "${pkgs.jdk17}/Library/Java/JavaVirtualMachines/zulu-17.jdk/Contents/Home"
-              else "${pkgs.jdk17}/lib/openjdk"}
-            gradle build installDist
-          '';
-          
-          installPhase = ''
-            mkdir -p $out/bin
-            cp build/install/bitchat-kotlin-cli/bin/bitchat-kotlin-cli $out/bin/
-            cp -r build/install/bitchat-kotlin-cli/lib $out/
-          '';
-          
-          meta = with pkgs.lib; {
-            description = "BitChat Kotlin CLI";
-            license = with licenses; [ mit asl20 ];
-          };
-        };
+        # Note: Package build disabled due to Gradle plugin resolution in isolated environments
+        # Use 'nix develop' and 'just build' for development workflow
       });
 }

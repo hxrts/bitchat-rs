@@ -42,16 +42,20 @@ if (!automationMode) {
     process.exit(1);
 }
 
+// Global client instance for event emission
+let clientInstance = null;
+
 /**
  * Emit an automation event for the test orchestrator
  */
 function emitEvent(eventType, data = {}) {
     const event = {
-        event: eventType,
-        timestamp: Date.now(),
-        client_name: clientName,
-        client_type: 'wasm',
-        ...data
+        type: eventType,
+        data: {
+            timestamp: Date.now(),
+            peer_id: clientInstance ? clientInstance.peerId : clientName,
+            ...data
+        }
     };
     console.log(JSON.stringify(event));
 }
@@ -82,6 +86,15 @@ class BitchatWasmClient {
     
     async start() {
         this.isRunning = true;
+        this.startTime = Date.now();
+        
+        // Emit client_started event first
+        emitEvent('client_started', {
+            peer_id: this.peerId,
+            relay_url: this.relayUrl
+        });
+        
+        // Then emit Ready event that orchestrator expects
         emitEvent('Ready', {
             peer_id: this.peerId,
             relay_url: this.relayUrl
@@ -165,8 +178,8 @@ class BitchatWasmClient {
             transport: 'nostr'
         });
         
-        // Simulate discovering a peer after a short delay
-        setTimeout(() => {
+        // Simulate discovering a peer - use process.nextTick for deterministic behavior
+        process.nextTick(() => {
             const mockPeerId = this.generateMockPeerId();
             this.peers.set(mockPeerId, {
                 discovered_at: Date.now(),
@@ -178,7 +191,7 @@ class BitchatWasmClient {
                 transport: 'nostr',
                 signal_strength: -42
             });
-        }, 1000);
+        });
     }
     
     handleStopDiscovery() {
@@ -195,13 +208,13 @@ class BitchatWasmClient {
             transport: 'nostr'
         });
         
-        // Simulate session establishment
-        setTimeout(() => {
+        // Simulate session establishment - use process.nextTick for deterministic behavior
+        process.nextTick(() => {
             emitEvent('SessionEstablished', {
                 peer_id: peerId,
                 session_id: `wasm-session-${Date.now()}`
             });
-        }, 500);
+        });
     }
     
     handleGetStatus() {
@@ -227,26 +240,26 @@ class BitchatWasmClient {
 // Main execution
 async function main() {
     try {
-        const client = new BitchatWasmClient(clientName, relayUrl);
+        clientInstance = new BitchatWasmClient(clientName, relayUrl);
         
         // Handle process termination
         process.on('SIGINT', () => {
-            client.handleShutdown();
+            clientInstance.handleShutdown();
         });
         
         process.on('SIGTERM', () => {
-            client.handleShutdown();
+            clientInstance.handleShutdown();
         });
         
         // Start the client
-        await client.start();
+        await clientInstance.start();
         
         // Keep the process alive
         process.stdin.resume();
         
     } catch (error) {
-        emitEvent('SystemError', {
-            error: error.message
+        emitEvent('error', {
+            message: error.message
         });
         process.exit(1);
     }

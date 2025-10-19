@@ -84,7 +84,7 @@ impl PeerAnnouncement {
             .try_into()
             .map_err(|_| BitchatError::InvalidPacket("Invalid public key length".into()))?;
         let expected_peer_id =
-            generate_fingerprint(&pub_key_array).to_peer_id();
+            generate_fingerprint(pub_key_array).to_peer_id();
         if expected_peer_id != self.peer_id {
             return Ok(false);
         }
@@ -117,7 +117,8 @@ impl PeerAnnouncement {
     }
 
     /// Deserialize announcement from BLE advertising bytes
-    pub fn from_bytes(data: &[u8]) -> BitchatResult<Self> {
+    #[allow(dead_code)]
+pub fn from_bytes(data: &[u8]) -> BitchatResult<Self> {
         bincode::deserialize(data).map_err(BitchatError::Serialization)
     }
 }
@@ -138,6 +139,7 @@ pub fn generate_device_name(peer_id: &PeerId, prefix: &str) -> String {
 /// 
 /// Returns Ok(Some(peer_id)) if verification succeeds, Ok(None) if verification fails,
 /// or Err for parsing/validation errors.
+#[allow(dead_code)]
 pub fn extract_and_verify_peer_id(
     device_name: &str,
     advertising_data: &[u8],

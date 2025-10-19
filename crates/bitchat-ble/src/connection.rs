@@ -22,7 +22,9 @@ use crate::protocol::{BITCHAT_RX_CHARACTERISTIC_UUID, BITCHAT_TX_CHARACTERISTIC_
 
 /// Handles BLE connections and data transmission
 pub struct BleConnection {
+    #[allow(dead_code)]
     config: BleTransportConfig,
+    #[allow(dead_code)]
     packet_tx: mpsc::UnboundedSender<(PeerId, Vec<u8>)>,
 }
 
@@ -36,6 +38,7 @@ impl BleConnection {
     }
 
     /// Connect to a specific peer with proper state management
+    #[allow(dead_code)]
     pub async fn connect_to_peer(
         &self,
         peer_id: &PeerId,
@@ -123,6 +126,7 @@ impl BleConnection {
     }
 
     /// Start receiving data from a connected peer
+    #[allow(dead_code)]
     pub async fn start_receiving_from_peer(
         &self,
         peer_id: &PeerId,
@@ -256,6 +260,7 @@ impl BleConnection {
     }
 
     /// Disconnect from all peers
+    #[allow(dead_code)]
     pub async fn disconnect_all_peers(
         &self,
         peers: &Arc<RwLock<HashMap<PeerId, BlePeer>>>,
@@ -274,6 +279,7 @@ impl BleConnection {
     }
 
     /// Get list of connected peer IDs
+    #[allow(dead_code)]
     pub async fn get_connected_peers(
         &self,
         peers: &Arc<RwLock<HashMap<PeerId, BlePeer>>>,

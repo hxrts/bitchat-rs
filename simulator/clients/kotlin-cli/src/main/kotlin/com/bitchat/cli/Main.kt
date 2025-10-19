@@ -76,7 +76,12 @@ class BitChatKotlinCLI : CliktCommand(
  */
 @Serializable
 data class AutomationEvent(
-    val event: String,
+    val type: String,
+    val data: AutomationEventData
+)
+
+@Serializable
+data class AutomationEventData(
     val timestamp: Long,
     val peer_id: String? = null,
     val from: String? = null,
@@ -92,7 +97,7 @@ data class AutomationEvent(
  */
 suspend fun handleAutomationMode(client: BitChatClient, logger: mu.KLogger) {
     // Emit Ready event
-    client.emitAutomationEvent("Ready", peer_id = client.name)
+    client.emitAutomationEvent("Ready")
     
     while (true) {
         val input = readlnOrNull()?.trim() ?: break
@@ -103,18 +108,34 @@ suspend fun handleAutomationMode(client: BitChatClient, logger: mu.KLogger) {
         val command = components[0]
         
         when (command) {
-            "/send" -> {
+            "send" -> {
                 if (components.size >= 2) {
-                    val message = components[1]
+                    val message = components.drop(1).joinToString(" ")
                     client.sendMessage(null, message)
                 }
             }
             
-            "/connect" -> {
+            "private" -> {
+                if (components.size >= 3) {
+                    val peer = components[1]
+                    val message = components.drop(2).joinToString(" ")
+                    client.sendPrivateMessage(peer, message)
+                }
+            }
+            
+            "connect" -> {
                 if (components.size >= 2) {
                     val peer = components[1]
                     client.connectToPeer(peer)
                 }
+            }
+            
+            "discover" -> {
+                client.startDiscovery()
+            }
+            
+            "stop-discovery" -> {
+                client.stopDiscovery()
             }
             
             "/simulate-panic" -> {
@@ -237,6 +258,11 @@ class BitChatClient(
         logger.info { "Connecting to relay: $relayURL" }
         isRunning = true
         
+        // Emit client_started event
+        if (automationMode) {
+            emitAutomationEvent("client_started")
+        }
+        
         // Event-driven connection (no delay)
         logger.info { "Connected to relay" }
         logger.info { "BitChat Kotlin client '$name' is ready" }
@@ -336,15 +362,17 @@ class BitChatClient(
         if (!automationMode) return
         
         val automationEvent = AutomationEvent(
-            event = event,
-            timestamp = System.currentTimeMillis(),
-            peer_id = peer_id,
-            from = from,
-            to = to,
-            content = content,
-            message_id = message_id,
-            transport = transport,
-            is_private = is_private
+            type = event,
+            data = AutomationEventData(
+                timestamp = System.currentTimeMillis(),
+                peer_id = peer_id ?: name,
+                from = from,
+                to = to,
+                content = content,
+                message_id = message_id,
+                transport = transport,
+                is_private = is_private
+            )
         )
         
         try {
@@ -354,6 +382,34 @@ class BitChatClient(
         } catch (e: Exception) {
             logger.error(e) { "Failed to serialize automation event" }
         }
+    }
+    
+    suspend fun sendPrivateMessage(recipient: String, message: String) {
+        logger.info { "Sending private message to $recipient: $message" }
+        
+        // Event-driven messaging (no delay)
+        if (!automationMode) {
+            println("Private message sent to $recipient: $message")
+        }
+        
+        // Emit automation event
+        emitAutomationEvent("MessageSent", 
+            to = recipient, 
+            content = message, 
+            message_id = UUID.randomUUID().toString(),
+            is_private = true)
+        
+        logger.debug { "Private message delivered to $recipient" }
+    }
+    
+    fun startDiscovery() {
+        logger.info { "Starting peer discovery" }
+        emitAutomationEvent("DiscoveryStateChanged", transport = "nostr")
+    }
+    
+    fun stopDiscovery() {
+        logger.info { "Stopping peer discovery" }
+        emitAutomationEvent("DiscoveryStateChanged", transport = "nostr")
     }
     
     fun simulateMessageReceived(from: String, message: String) {

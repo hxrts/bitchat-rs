@@ -17,7 +17,7 @@ use anyhow::{Context, Result};
 // ----------------------------------------------------------------------------
 
 /// Different types of BitChat client implementations
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, clap::ValueEnum)]
 pub enum ClientType {
     /// Native Rust CLI implementation
     RustCli,
@@ -93,15 +93,15 @@ impl EventOrchestrator {
 
     /// Start a Rust CLI client in automation mode (explicit method)
     pub async fn start_rust_cli_client(&mut self, name: String) -> Result<()> {
-        let args = vec![
-            "interactive",
-            "--automation-mode",
-            "--name", &name,
-            "--relay", &self.relay_url,
-        ];
+        let relay_url = self.relay_url.clone();
+        let client_name = name.clone();
         
-        self.start_client(name, ClientType::RustCli, "cargo", &["run", "--bin", "bitchat-cli", "--"]).await?;
-        Ok(())
+        self.start_client(
+            name, 
+            ClientType::RustCli, 
+            "cargo", 
+            &["run", "-p", "bitchat-cli", "--", "interactive", "--automation-mode", "--name", &client_name, "--relay", &relay_url]
+        ).await
     }
 
     /// Start a WASM client in automation mode (Node.js runner)
@@ -140,7 +140,7 @@ impl EventOrchestrator {
         self.start_client(
             name, 
             ClientType::Kotlin,
-            "clients/kotlin-cli/bitchat-kotlin-cli", 
+            "clients/kotlin-cli/build/install/bitchat-kotlin-cli/bin/bitchat-kotlin-cli", 
             &["--automation-mode", "--name", &client_name, "--relay", &relay_url]
         ).await
     }
@@ -195,8 +195,9 @@ impl EventOrchestrator {
             while let Ok(Some(line)) = lines.next_line().await {
                 // Try to parse as JSON automation event
                 if let Ok(json) = serde_json::from_str::<Value>(&line) {
-                    if let Some(event_type) = json.get("event").and_then(|v| v.as_str()) {
-                        let timestamp = json.get("timestamp")
+                    if let Some(event_type) = json.get("type").and_then(|v| v.as_str()) {
+                        let timestamp = json.get("data")
+                            .and_then(|data| data.get("timestamp"))
                             .and_then(|v| v.as_u64())
                             .unwrap_or_else(|| {
                                 std::time::SystemTime::now()

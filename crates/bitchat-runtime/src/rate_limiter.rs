@@ -97,11 +97,6 @@ impl RateLimiter {
         }
     }
 
-    /// Create a rate limiter with default configuration
-    pub fn default() -> Self {
-        Self::new(RateLimitConfig::default())
-    }
-
     /// Check if a message from the given peer should be allowed
     pub fn check_message_allowed(&mut self, peer_id: PeerId) -> BitchatResult<()> {
         // Check global message rate limit first
@@ -223,6 +218,12 @@ impl RateLimiter {
         self.peer_limits.clear();
         self.global_message_window = EventWindow::new(self.config.window_duration_secs);
         self.global_connection_window = EventWindow::new(self.config.window_duration_secs);
+    }
+}
+
+impl Default for RateLimiter {
+    fn default() -> Self {
+        Self::new(RateLimitConfig::default())
     }
 }
 

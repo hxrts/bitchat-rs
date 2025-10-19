@@ -25,8 +25,10 @@
         # Development shell for Swift
         devShells.default = pkgs.mkShell {
           buildInputs = with pkgs; [
-            # Swift toolchain
+            # Swift toolchain with Package Manager
             swift
+            swiftPackages.swiftpm
+            swiftPackages.swift-driver
             
             # Build tools
             just
@@ -37,20 +39,26 @@
             # System libraries
             openssl
             sqlite
+            
+            # Additional tools for networking
+            curl
+            pkg-config
           ] ++ darwinDeps ++ linuxDeps;
 
           shellHook = ''
             echo "BitChat Swift Development Environment"
-            echo "===================================="
+            echo "====================================="
             echo ""
             echo "Available tools:"
             echo "  - swift $(swift --version | head -1 | cut -d' ' -f2-3)"
+            echo "  - swift package manager (swiftpm)"
             echo "  - just (task runner)"
             echo ""
             echo "Commands:"
-            echo "  just build        - Build Swift CLI"
-            echo "  just run          - Run Swift CLI"
-            echo "  just clean        - Clean build artifacts"
+            echo "  swift build           - Build Swift CLI with Package Manager"
+            echo "  swift run             - Run Swift CLI"
+            echo "  swift build -c release - Build release version"
+            echo "  just --list           - Show all available tasks"
             echo ""
             echo "Environment ready for Swift development."
             echo ""

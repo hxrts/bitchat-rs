@@ -596,6 +596,11 @@ impl BitchatConfig {
         Self::default()
     }
 
+    /// Create a new builder for BitchatConfig
+    pub fn builder() -> BitchatConfigBuilder {
+        BitchatConfigBuilder::new()
+    }
+
     /// Create configuration optimized for browser/WASM environments
     pub fn browser_optimized() -> Self {
         Self {
@@ -858,6 +863,196 @@ impl BitchatConfig {
     }
 }
 
+// ----------------------------------------------------------------------------
+// Configuration Builder Pattern
+// ----------------------------------------------------------------------------
+
+/// Builder for BitchatConfig that provides compile-time safety and validation
+#[derive(Debug, Clone)]
+pub struct BitchatConfigBuilder {
+    channels: Option<ChannelConfig>,
+    delivery: Option<DeliveryConfig>,
+    message_store: Option<MessageStoreConfig>,
+    session: Option<SessionConfig>,
+    monitoring: Option<MonitoringConfig>,
+    rate_limiting: Option<RateLimitConfig>,
+    test: Option<TestConfig>,
+}
+
+/// Error type for configuration building
+#[derive(Debug, Clone)]
+pub struct ConfigBuilderError {
+    pub message: alloc::string::String,
+}
+
+impl core::fmt::Display for ConfigBuilderError {
+    fn fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
+        write!(f, "Configuration builder error: {}", self.message)
+    }
+}
+
+#[cfg(feature = "std")]
+impl std::error::Error for ConfigBuilderError {}
+
+impl BitchatConfigBuilder {
+    /// Create a new builder with default values
+    pub fn new() -> Self {
+        Self {
+            channels: None,
+            delivery: None,
+            message_store: None,
+            session: None,
+            monitoring: None,
+            rate_limiting: None,
+            test: None,
+        }
+    }
+
+    /// Set channel configuration
+    pub fn channels(mut self, config: ChannelConfig) -> Self {
+        self.channels = Some(config);
+        self
+    }
+
+    /// Set delivery configuration
+    pub fn delivery(mut self, config: DeliveryConfig) -> Self {
+        self.delivery = Some(config);
+        self
+    }
+
+    /// Set message store configuration
+    pub fn message_store(mut self, config: MessageStoreConfig) -> Self {
+        self.message_store = Some(config);
+        self
+    }
+
+    /// Set session configuration
+    pub fn session(mut self, config: SessionConfig) -> Self {
+        self.session = Some(config);
+        self
+    }
+
+    /// Set monitoring configuration
+    pub fn monitoring(mut self, config: MonitoringConfig) -> Self {
+        self.monitoring = Some(config);
+        self
+    }
+
+    /// Set rate limiting configuration
+    pub fn rate_limiting(mut self, config: RateLimitConfig) -> Self {
+        self.rate_limiting = Some(config);
+        self
+    }
+
+    /// Set test configuration
+    pub fn test(mut self, config: TestConfig) -> Self {
+        self.test = Some(config);
+        self
+    }
+
+    /// Use browser-optimized preset as base (can be further customized)
+    pub fn browser_optimized(self) -> Self {
+        Self {
+            channels: Some(ChannelConfig::browser_optimized()),
+            delivery: Some(DeliveryConfig::conservative()),
+            message_store: Some(MessageStoreConfig::low_memory()),
+            session: Some(SessionConfig::low_latency()),
+            monitoring: Some(MonitoringConfig::minimal()),
+            rate_limiting: Some(RateLimitConfig::default()),
+            test: None,
+        }
+    }
+
+    /// Use server-optimized preset as base (can be further customized)
+    pub fn server_optimized(self) -> Self {
+        Self {
+            channels: Some(ChannelConfig::high_memory()),
+            delivery: Some(DeliveryConfig::aggressive()),
+            message_store: Some(MessageStoreConfig::high_capacity()),
+            session: Some(SessionConfig::default()),
+            monitoring: Some(MonitoringConfig::detailed()),
+            rate_limiting: Some(RateLimitConfig::permissive()),
+            test: None,
+        }
+    }
+
+    /// Use mobile-optimized preset as base (can be further customized)
+    pub fn mobile_optimized(self) -> Self {
+        Self {
+            channels: Some(ChannelConfig::low_memory()),
+            delivery: Some(DeliveryConfig::conservative()),
+            message_store: Some(MessageStoreConfig::low_memory()),
+            session: Some(SessionConfig::low_latency()),
+            monitoring: Some(MonitoringConfig::minimal()),
+            rate_limiting: Some(RateLimitConfig::strict()),
+            test: None,
+        }
+    }
+
+    /// Use high-security preset as base (can be further customized)
+    pub fn high_security(self) -> Self {
+        Self {
+            channels: Some(ChannelConfig::default()),
+            delivery: Some(DeliveryConfig::conservative()),
+            message_store: Some(MessageStoreConfig::default()),
+            session: Some(SessionConfig::high_security()),
+            monitoring: Some(MonitoringConfig::detailed()),
+            rate_limiting: Some(RateLimitConfig::strict()),
+            test: None,
+        }
+    }
+
+    /// Use testing preset as base (can be further customized)
+    pub fn testing(self) -> Self {
+        Self {
+            channels: Some(ChannelConfig::testing()),
+            delivery: Some(DeliveryConfig::testing()),
+            message_store: Some(MessageStoreConfig::testing()),
+            session: Some(SessionConfig::testing()),
+            monitoring: Some(MonitoringConfig::testing()),
+            rate_limiting: Some(RateLimitConfig::permissive()),
+            test: Some(TestConfig::new()),
+        }
+    }
+
+    /// Build the configuration with validation
+    pub fn build(self) -> Result<BitchatConfig, ConfigBuilderError> {
+        let config = BitchatConfig {
+            channels: self.channels.unwrap_or_default(),
+            delivery: self.delivery.unwrap_or_default(),
+            message_store: self.message_store.unwrap_or_default(),
+            session: self.session.unwrap_or_default(),
+            monitoring: self.monitoring.unwrap_or_default(),
+            rate_limiting: self.rate_limiting.unwrap_or_default(),
+            test: self.test,
+        };
+
+        // Validate the built configuration
+        config.validate().map_err(|msg| ConfigBuilderError { message: msg })?;
+
+        Ok(config)
+    }
+
+    /// Build the configuration without validation (use with caution)
+    pub fn build_unchecked(self) -> BitchatConfig {
+        BitchatConfig {
+            channels: self.channels.unwrap_or_default(),
+            delivery: self.delivery.unwrap_or_default(),
+            message_store: self.message_store.unwrap_or_default(),
+            session: self.session.unwrap_or_default(),
+            monitoring: self.monitoring.unwrap_or_default(),
+            rate_limiting: self.rate_limiting.unwrap_or_default(),
+            test: self.test,
+        }
+    }
+}
+
+impl Default for BitchatConfigBuilder {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -911,5 +1106,92 @@ mod tests {
         assert!(ConfigPresets::development().validate().is_ok());
         assert!(ConfigPresets::production().validate().is_ok());
         assert!(ConfigPresets::embedded().validate().is_ok());
+    }
+
+    #[test]
+    fn test_builder_pattern() {
+        let config = BitchatConfig::builder()
+            .channels(ChannelConfig::high_memory())
+            .delivery(DeliveryConfig::aggressive())
+            .monitoring(MonitoringConfig::detailed())
+            .build()
+            .expect("Builder should create valid config");
+        
+        assert!(config.validate().is_ok());
+        assert_eq!(config.channels.command_buffer_size, 100);
+    }
+
+    #[test]
+    fn test_builder_presets() {
+        let browser_config = BitchatConfig::builder()
+            .browser_optimized()
+            .build()
+            .expect("Browser config should be valid");
+        
+        let server_config = BitchatConfig::builder()
+            .server_optimized()
+            .build()
+            .expect("Server config should be valid");
+        
+        let mobile_config = BitchatConfig::builder()
+            .mobile_optimized()
+            .build()
+            .expect("Mobile config should be valid");
+        
+        let security_config = BitchatConfig::builder()
+            .high_security()
+            .build()
+            .expect("Security config should be valid");
+        
+        let test_config = BitchatConfig::builder()
+            .testing()
+            .build()
+            .expect("Test config should be valid");
+        
+        assert!(browser_config.validate().is_ok());
+        assert!(server_config.validate().is_ok());
+        assert!(mobile_config.validate().is_ok());
+        assert!(security_config.validate().is_ok());
+        assert!(test_config.validate().is_ok());
+    }
+
+    #[test]
+    fn test_builder_customization() {
+        let config = BitchatConfig::builder()
+            .browser_optimized()
+            .delivery(DeliveryConfig::aggressive()) // Override the preset's conservative delivery
+            .session(SessionConfig::high_security()) // Add high security session
+            .build()
+            .expect("Customized config should be valid");
+        
+        assert!(config.validate().is_ok());
+        // Should retain browser-optimized channels but use aggressive delivery
+        assert_eq!(config.channels.command_buffer_size, 20); // browser-optimized
+    }
+
+    #[test]
+    fn test_builder_validation_error() {
+        let result = BitchatConfigBuilder::new()
+            .channels(ChannelConfig {
+                command_buffer_size: 0, // Invalid
+                ..ChannelConfig::default()
+            })
+            .build();
+        
+        assert!(result.is_err());
+        assert!(result.unwrap_err().message.contains("Command buffer size cannot be zero"));
+    }
+
+    #[test]
+    fn test_builder_unchecked() {
+        let config = BitchatConfigBuilder::new()
+            .channels(ChannelConfig {
+                command_buffer_size: 0, // Invalid but unchecked build will allow it
+                ..ChannelConfig::default()
+            })
+            .build_unchecked();
+        
+        // Config was created but validation would fail
+        assert!(config.validate().is_err());
     }
 }

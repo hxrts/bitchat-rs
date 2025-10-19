@@ -120,7 +120,19 @@ impl ContentAddressedMessage {
         timestamp: u64,
         message_id: Option<MessageId>,
     ) -> BitchatResult<Self> {
-        let computed_id = Self::compute_id(&sender, &recipient, &content, timestamp, sequence);
+        let normalized_timestamp = if timestamp < 1_000_000_000_000 {
+            timestamp.saturating_mul(1_000)
+        } else {
+            timestamp
+        };
+
+        let computed_id = Self::compute_id(
+            &sender,
+            &recipient,
+            &content,
+            normalized_timestamp,
+            sequence,
+        );
 
         if let Some(provided_id) = message_id {
             if provided_id != computed_id {
@@ -134,7 +146,7 @@ impl ContentAddressedMessage {
                 sender,
                 recipient,
                 content,
-                timestamp,
+                timestamp: normalized_timestamp,
                 sequence,
             })
         } else {
@@ -143,7 +155,7 @@ impl ContentAddressedMessage {
                 sender,
                 recipient,
                 content,
-                timestamp,
+                timestamp: normalized_timestamp,
                 sequence,
             })
         }
