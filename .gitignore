@@ -33,7 +33,6 @@ work/
 .claude/
 .env
 .env.local
-ext/
 CLAUDE.md
 
 # Simulation and testing artifacts

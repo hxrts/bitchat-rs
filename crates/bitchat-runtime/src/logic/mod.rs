@@ -10,7 +10,7 @@
 //! ### The CoreLogicTask Bottleneck
 //!
 //! **Current Design**: All core logic is serialized through a single `CoreLogicTask` that owns
-//! all critical application state. This task processes commands from the UI and events from 
+//! all critical application state. This task processes commands from the UI and events from
 //! transport tasks sequentially in a single async event loop.
 //!
 //! **Benefits of This Approach:**
@@ -54,10 +54,10 @@
 //! Keep the current single-task design until measurements prove it's a bottleneck.
 //! The correctness benefits far outweigh hypothetical performance concerns for most use cases.
 
-pub mod state;
 pub mod handlers;
+pub mod state;
 pub mod task;
 
-pub use state::{CoreState, CoreStats, SystemTimeSource, LoggerWrapper};
 pub use handlers::CommandHandlers;
+pub use state::{CoreState, CoreStats, LoggerWrapper, SystemTimeSource};
 pub use task::CoreLogicTask;

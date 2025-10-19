@@ -15,7 +15,7 @@ cfg_if::cfg_if! {
 
 use crate::protocol::crypto::{NoiseHandshake, NoiseKeyPair, NoiseTransport};
 use crate::types::{Fingerprint, PeerId, TimeSource, Timestamp};
-use crate::{BitchatError, internal::SessionError, Result};
+use crate::{internal::SessionError, BitchatError, Result};
 
 // ----------------------------------------------------------------------------
 // Session State
@@ -138,14 +138,13 @@ impl NoiseSession {
             ));
         }
 
-        let handshake = self
-            .handshake
-            .as_mut()
-            .ok_or_else(|| BitchatError::Session(SessionError::InvalidState {
+        let handshake = self.handshake.as_mut().ok_or_else(|| {
+            BitchatError::Session(SessionError::InvalidState {
                 peer_id: self.peer_id.to_string(),
                 expected: "Handshaking".to_string(),
                 actual: "No handshake state".to_string(),
-            }))?;
+            })
+        })?;
 
         let output = handshake.read_message(input)?;
 
@@ -165,11 +164,13 @@ impl NoiseSession {
             }
 
             // Convert to transport mode
-            let handshake = self.handshake.take().ok_or_else(|| BitchatError::Session(SessionError::InvalidState {
-                peer_id: self.peer_id.to_string(),
-                expected: "Handshaking with available handshake".to_string(),
-                actual: "No handshake available for transport conversion".to_string(),
-            }))?;
+            let handshake = self.handshake.take().ok_or_else(|| {
+                BitchatError::Session(SessionError::InvalidState {
+                    peer_id: self.peer_id.to_string(),
+                    expected: "Handshaking with available handshake".to_string(),
+                    actual: "No handshake available for transport conversion".to_string(),
+                })
+            })?;
             self.transport = Some(handshake.into_transport_mode()?);
             self.state = SessionState::Established;
         }
@@ -195,14 +196,13 @@ impl NoiseSession {
             ));
         }
 
-        let handshake = self
-            .handshake
-            .as_mut()
-            .ok_or_else(|| BitchatError::Session(SessionError::InvalidState {
+        let handshake = self.handshake.as_mut().ok_or_else(|| {
+            BitchatError::Session(SessionError::InvalidState {
                 peer_id: self.peer_id.to_string(),
                 expected: "Handshaking".to_string(),
                 actual: "No handshake state".to_string(),
-            }))?;
+            })
+        })?;
 
         let output = handshake.write_message(payload)?;
 
@@ -222,11 +222,13 @@ impl NoiseSession {
             }
 
             // Convert to transport mode
-            let handshake = self.handshake.take().ok_or_else(|| BitchatError::Session(SessionError::InvalidState {
-                peer_id: self.peer_id.to_string(),
-                expected: "Handshaking with available handshake".to_string(),
-                actual: "No handshake available for transport conversion".to_string(),
-            }))?;
+            let handshake = self.handshake.take().ok_or_else(|| {
+                BitchatError::Session(SessionError::InvalidState {
+                    peer_id: self.peer_id.to_string(),
+                    expected: "Handshaking with available handshake".to_string(),
+                    actual: "No handshake available for transport conversion".to_string(),
+                })
+            })?;
             self.transport = Some(handshake.into_transport_mode()?);
             self.state = SessionState::Established;
         }
@@ -245,14 +247,13 @@ impl NoiseSession {
         }
 
         let result = {
-            let transport = self
-                .transport
-                .as_mut()
-                .ok_or_else(|| BitchatError::Session(SessionError::InvalidState {
+            let transport = self.transport.as_mut().ok_or_else(|| {
+                BitchatError::Session(SessionError::InvalidState {
                     peer_id: self.peer_id.to_string(),
                     expected: "Established".to_string(),
                     actual: "No transport state".to_string(),
-                }))?;
+                })
+            })?;
             transport.encrypt(plaintext)
         };
 
@@ -273,14 +274,13 @@ impl NoiseSession {
         }
 
         let result = {
-            let transport = self
-                .transport
-                .as_mut()
-                .ok_or_else(|| BitchatError::Session(SessionError::InvalidState {
+            let transport = self.transport.as_mut().ok_or_else(|| {
+                BitchatError::Session(SessionError::InvalidState {
                     peer_id: self.peer_id.to_string(),
                     expected: "Established".to_string(),
                     actual: "No transport state".to_string(),
-                }))?;
+                })
+            })?;
             transport.decrypt(ciphertext)
         };
 

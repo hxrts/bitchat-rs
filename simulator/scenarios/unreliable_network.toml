@@ -1,0 +1,112 @@
+# Unreliable Network Scenario
+# Tests message delivery and reliability under poor network conditions
+
+[metadata]
+name = "Unreliable Network Test"
+description = "Tests protocol resilience under unreliable network conditions with packet loss and high latency"
+version = "1.0"
+tags = ["reliability", "packet-loss", "stress-test"]
+duration_seconds = 60
+author = "Sam"
+
+[network]
+[network.profile]
+type = "Unreliable3G"
+packet_loss = 0.1  # 10% packet loss
+reordering_chance = 0.05  # 5% reordering
+latency_ms = 200
+jitter_ms = 100
+
+[network.topology]
+type = "FullyConnected"
+
+# Make network worse halfway through
+[[network.changes]]
+at_time_seconds = 30.0
+action = "ChangeProfile"
+[network.changes.profile]
+type = "Custom"
+latency_range_ms = [300, 800]
+packet_loss = 0.2
+reordering_chance = 0.1
+duplication_chance = 0.02
+corruption_chance = 0.01
+
+[network.logging]
+enable_packet_logging = false  # Too noisy for unreliable networks
+enable_stats_logging = true
+stats_interval_seconds = 10
+
+[[peers]]
+name = "sender"
+[peers.behavior]
+auto_discovery = true
+auto_connect = true
+
+[[peers.behavior.auto_messaging]]
+target = "receiver"
+content = "Message {sequence}"
+interval_seconds = 2.0
+count = 20
+start_at_seconds = 5.0
+
+[[peers]]
+name = "receiver"
+[peers.behavior]
+auto_discovery = true
+auto_connect = true
+
+[[peers.behavior.responses]]
+[peers.behavior.responses.trigger]
+type = "MessageReceived"
+from = "sender"
+[peers.behavior.responses.action]
+type = "SendMessage"
+target = "sender"
+content = "ACK"
+delay_seconds = 0.5
+
+[[sequence]]
+name = "start_messaging"
+at_time_seconds = 5.0
+action = "LogCheckpoint"
+message = "Starting unreliable network messaging test"
+
+[[sequence]]
+name = "network_degradation"
+at_time_seconds = 30.0
+action = "LogCheckpoint"
+message = "Network conditions degraded - higher loss and latency"
+
+[[sequence]]
+name = "final_validation"
+at_time_seconds = 55.0
+action = "ValidateState"
+[sequence.validation]
+type = "MessageCount"
+peer = "receiver"
+expected_min = 10  # Expect at least 50% delivery despite losses
+
+[validation]
+[[validation.continuous_checks]]
+interval_seconds = 10.0
+start_at_seconds = 10.0
+[validation.continuous_checks.check]
+type = "NetworkStats"
+max_packet_loss = 0.25  # Allow up to 25% loss
+min_delivery_rate = 0.6  # Require at least 60% delivery
+
+[[validation.final_checks]]
+type = "PeerConnected"
+peer1 = "sender"
+peer2 = "receiver"
+
+[[validation.final_checks]]
+type = "SessionEstablished"
+peer1 = "sender"
+peer2 = "receiver"
+
+[performance]
+max_latency_ms = 1000
+max_packet_loss = 0.25
+expected_throughput = 0.3  # Lower expectation due to retries

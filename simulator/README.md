@@ -1,158 +1,139 @@
 # BitChat Integration Simulator
 
-Event-driven cross-client compatibility testing framework for the BitChat protocol.
+Cross-platform testing framework for the BitChat protocol with real mobile app testing capabilities.
 
 ## Overview
 
-The BitChat simulator validates protocol interoperability between **all client implementations** through deterministic, event-driven testing. It treats all implementations equally - testing real client executables through their JSON automation interfaces.
+The BitChat simulator provides three testing approaches:
 
-## Architecture Principles
-
-**Pure Event Orchestrator Design**: All clients tested through the same external process interface
-- **No special treatment** for any implementation (including Rust)
-- **No internal API access** - tests real user-facing executables  
-- **Build independence** - simulator works even when core crates have issues
-- **True compatibility validation** - tests actual client implementations
+1. **Real Mobile App Testing** - Android and iOS apps in emulators with network analysis
+2. **Data-Driven Scenario Testing** - TOML-configured scenarios with mock simulation  
+3. **Cross-Implementation Testing** - CLI client compatibility validation
 
 ## Quick Start
 
+### Real Mobile App Testing
 ```bash
-# Enter simulator development environment
-cd simulator/scenario-runner
-nix develop
+# Set ANDROID_HOME if you have Android Studio installed
+export ANDROID_HOME="/Users/username/Library/Android/sdk"  # macOS location
 
-# List available scenarios
-cargo run -- list
+# Enter hybrid environment with automatic tool detection
+cd emulator-rig && nix develop
 
-# Run control test (Kotlin ↔ Kotlin)
-cargo run -- --client-type kotlin scenario deterministic-messaging
-
-# Run cross-client test (Rust ↔ Kotlin)  
-cargo run -- --client-type rust-cli scenario deterministic-messaging
+# All tools automatically available - iOS, Android, and Nix tools integrated
+cargo run -- ios-to-ios
+cargo run -- android-to-android
+cargo run -- test --client1 ios --client2 android
 ```
 
-## Event Orchestrator Architecture
-
-### Unified Client Interface
-All clients implement the same automation interface:
+### Data-Driven Scenario Testing
 ```bash
-client --automation-mode --name alice --relay wss://relay.damus.io
+cd scenario-runner && nix develop
+
+# Run TOML scenario with Android emulator integration
+cargo run -- run-android ../scenarios/android_to_android.toml
+
+# Run TOML scenario with mock simulation
+cargo run -- run-file ../scenarios/android_to_android.toml
+
+# Validate scenario configuration
+cargo run -- validate ../scenarios/android_to_android.toml
 ```
 
-### Test Flow Example
-```rust
-// Start any client type
-orchestrator.start_client_by_type(ClientType::Kotlin, "alice").await?;
-orchestrator.start_client_by_type(ClientType::Swift, "bob").await?;
+## Architecture
 
-// Same event-driven logic for all clients
-orchestrator.wait_for_event("alice", "Ready").await?;
-orchestrator.wait_for_peer_event("alice", "PeerDiscovered", "bob").await?;
-let event = orchestrator.wait_for_event("bob", "MessageReceived").await?;
+```
+simulator/
+├── scenario-runner/           # Data-driven TOML scenario execution engine
+├── emulator-rig/              # Android/iOS emulator automation framework  
+├── scenarios/                 # Pre-configured test scenarios (TOML)
+└── Justfile                   # Build and test automation commands
 ```
 
-## Client Support
+## Available Test Scenarios
 
-| Client | Status | Automation Mode | Build Status |
-|--------|---------|-----------------|--------------|
-| **Rust CLI** | **Tested & Working** | Full JSON events | Built |
-| **Kotlin CLI** | **Built & Verified** | Full JSON events | Built |
-| **Swift CLI** | **Built & Verified** | Full JSON events | Built |
-| **WASM Client** | **Tested & Working** | Full JSON events | Built |
+### Real Mobile App Scenarios
+- **Android ↔ Android** - Cross-device messaging with real Android emulators
+- **iOS ↔ iOS** - iOS Simulator communication testing
+- **Android ↔ iOS** - Cross-platform interoperability
 
-## Test Scenarios
+### Data-Driven TOML Scenarios
+- `android_to_android.toml` - Comprehensive Android testing configuration
+- `basic_messaging.toml` - Simple peer-to-peer communication
+- `mesh_network.toml` - Multi-peer mesh networking scenarios
+- `unreliable_network.toml` - Network condition simulation
 
-### Control Testing (Same Implementation)
+### Protocol Testing Scenarios
 - `deterministic-messaging` - Basic message exchange validation
 - `transport-failover` - BLE ↔ Nostr switching robustness
 - `session-rekey` - Cryptographic session management
 - `byzantine-fault` - Malicious peer behavior resistance
 
-### Cross-Implementation Testing
-- `cross-implementation-test` - Different client types communicating
-- `all-client-types` - Multi-implementation mesh networking
+## Commands Reference
 
-### Advanced Protocol Scenarios
-- `file-transfer-resume` - Large message handling
-- `mesh-partition` - Network partitioning and healing
-- `version-compatibility` - Protocol version mismatch handling
-- `peer-scaling` - Multiple peer discovery and management
+### Environment Setup
+```bash
+# Check environments
+just check-android-env
+just check-ios-env
 
-## JSON Automation Events
-
-All clients emit standardized JSON events:
-
-```json
-{"type":"client_started","data":{"timestamp":1760864510999,"peer_id":"alice"}}
-{"type":"Ready","data":{"timestamp":1760864511007,"peer_id":"alice"}}
-{"type":"PeerDiscovered","data":{"peer_id":"bob","transport":"Nostr","timestamp":1760864512000}}
-{"type":"MessageReceived","data":{"from":"bob","content":"hello","timestamp":1760864513000}}
-{"type":"SessionEstablished","data":{"peer_id":"bob","timestamp":1760864514000}}
+# Build apps
+just build-android
+just build-ios
 ```
 
-## Commands
-
-### Single Client Type Testing
+### Real Mobile App Testing
 ```bash
-# Test specific implementations
-cargo run -- --client-type kotlin scenario deterministic-messaging
-cargo run -- --client-type swift scenario transport-failover  
-cargo run -- --client-type rust-cli scenario session-rekey
+# Flexible client combinations
+just test-android-android
+just test-ios-ios  
+just test-cross-platform
+just test-emulator-matrix
+```
 
-# List all available scenarios
+### Data-Driven Scenario Testing
+```bash
+cd scenario-runner && nix develop
+
+# Run scenarios
+cargo run -- run-android ../scenarios/android_to_android.toml
+cargo run -- run-file ../scenarios/basic_messaging.toml
+cargo run -- validate ../scenarios/mesh_network.toml
 cargo run -- list
 ```
 
-### Cross-Client Testing
+### CLI Client Testing
 ```bash
-# Run comprehensive cross-client tests (future)
-cargo run -- cross-implementation-test
-cargo run -- all-client-types
+# Test specific client implementations
+cargo run -- --client-type rust-cli scenario deterministic-messaging
+cargo run -- --client-type native scenario deterministic-messaging
+cargo run -- --client-type wasm scenario transport-failover
+cargo run -- --client-type web scenario transport-failover
+
+# Cross-implementation testing with new client types
+cargo run -- cross-implementation-test --client1 native --client2 web
+cargo run -- cross-implementation-test --client1 rust-cli --client2 wasm
 ```
 
-## Development Workflow
+## Platform Support
 
-### Adding New Scenarios
-1. Add scenario function in `src/main.rs`
-2. Implement event-driven logic using `EventOrchestrator`
-3. Update `run_scenario()` match block
-4. Test with control implementation first
+| Platform | Implementation | Automation | Status |
+|----------|---------------|------------|--------|
+| **Android** | BitChat Android APK | Appium + UiAutomator2 | [OK] Ready |
+| **iOS** | BitChat iOS App | Appium + XCUITest | [OK] Ready |
+| **Rust CLI** | Native binary | JSON events | [OK] Working |
+| **Native** | Rust native (alias) | JSON events | [OK] Working |
+| **WASM Client** | Browser runtime | JSON events | [OK] Working |
+| **Web** | WASM web (alias) | JSON events | [OK] Working |
+| **Kotlin CLI** | JVM binary | JSON events | [OK] Working |
+| **Swift CLI** | Native binary | JSON events | [OK] Working |
 
-### Adding New Client Types
-1. Implement automation mode in client (`--automation-mode` flag)
-2. Emit standardized JSON events to stdout
-3. Add client startup method in `event_orchestrator.rs`
-4. Update `ClientType` enum and `start_client_by_type()`
+## Key Features
 
-## Architecture Benefits
-
-### **True Compatibility Testing**
-- All clients tested through the same interface
-- No implementation gets special treatment
-- Tests real user-facing executables
-
-### **Build Independence**
-- Simulator builds independently of core crates
-- Can test clients even when internals have issues
-- Faster development iteration
-
-### **Deterministic Testing**
-- Event-driven synchronization (no sleep() calls)
-- Immune to log format changes
-- Structured, parseable output
-
-### **Maintainable & Extensible**
-- Single testing paradigm for all clients
-- Easy to add new client implementations
-- Clear separation of concerns
-
-## Control Testing Status
-
-Current focus: **Kotlin ↔ Kotlin** control tests to validate simulator infrastructure
-
-| Scenario | Status | Notes |
-|----------|--------|-------|
-| `deterministic-messaging` | **Testing** | Basic message exchange |
-| `transport-failover` | **Pending** | Transport switching |
-| `session-rekey` | **Pending** | Session management |
-| `byzantine-fault` | **Pending** | Attack resistance |
+- **Real Device Testing** - Tests actual BitChat mobile applications with UI automation
+- **Data-Driven Testing** - TOML configuration for complex scenarios with validation rules
+- **Multi-Level Testing** - Mock simulation → CLI clients → Real mobile apps → Network analysis
+- **Hybrid Nix Environment** - Automatic detection and integration of system development tools
+- **Cross-Platform Validation** - Android ↔ Android, iOS ↔ iOS, Android ↔ iOS testing
+- **Event-Driven Architecture** - JSON automation protocol across all implementations
+- **Fallback Mechanisms** - Automatic mock simulation when real environment unavailable

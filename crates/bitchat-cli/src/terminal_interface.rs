@@ -4,15 +4,12 @@
 //! Moved from bitchat-core to bitchat-cli crate for better architectural separation.
 
 use bitchat_core::{
-    PeerId, Command, AppEvent, ChannelTransportType, ConnectionStatus,
-    BitchatError, BitchatResult,
-    internal::{
-        CommandSender, AppEventReceiver, TaskId, LogLevel, TransportError
-    }
+    internal::{AppEventReceiver, CommandSender, LogLevel, TaskId, TransportError},
+    AppEvent, BitchatError, BitchatResult, ChannelTransportType, Command, ConnectionStatus, PeerId,
 };
 use bitchat_runtime::logic::LoggerWrapper;
-use std::sync::{Arc, Mutex};
 use std::collections::HashMap;
+use std::sync::{Arc, Mutex};
 use tokio::sync::mpsc;
 
 // ----------------------------------------------------------------------------
@@ -136,11 +133,11 @@ impl TerminalInterfaceTask {
         self.logger.log_task_event(
             TaskId::UI,
             LogLevel::Info,
-            "Terminal interface task starting"
+            "Terminal interface task starting",
         );
 
         self.running = true;
-        
+
         // Update system status to ready
         {
             let mut state = self.state.lock().unwrap();
@@ -188,7 +185,7 @@ impl TerminalInterfaceTask {
         self.logger.log_task_event(
             TaskId::UI,
             LogLevel::Info,
-            "Terminal interface task stopped"
+            "Terminal interface task stopped",
         );
 
         Ok(())
@@ -201,12 +198,18 @@ impl TerminalInterfaceTask {
 
     /// Process app event from Core Logic with graceful degradation
     async fn process_app_event(&mut self, app_event: AppEvent) -> BitchatResult<()> {
-        let mut state = self.state.lock().map_err(|_| BitchatError::Transport(TransportError::InvalidConfiguration { 
-            reason: "UI state lock poisoned".to_string() 
-        }))?;
+        let mut state = self.state.lock().map_err(|_| {
+            BitchatError::Transport(TransportError::InvalidConfiguration {
+                reason: "UI state lock poisoned".to_string(),
+            })
+        })?;
 
         match app_event {
-            AppEvent::MessageReceived { from, content, timestamp } => {
+            AppEvent::MessageReceived {
+                from,
+                content,
+                timestamp,
+            } => {
                 // Add to recent messages
                 let ui_message = UIMessage {
                     from,
@@ -216,7 +219,7 @@ impl TerminalInterfaceTask {
                     direction: MessageDirection::Incoming,
                 };
                 state.recent_messages.push(ui_message);
-                
+
                 // Update peer message count
                 if let Some(peer_state) = state.peers.get_mut(&from) {
                     peer_state.message_count += 1;
@@ -229,7 +232,11 @@ impl TerminalInterfaceTask {
                 }
             }
 
-            AppEvent::MessageSent { to, content, timestamp } => {
+            AppEvent::MessageSent {
+                to,
+                content,
+                timestamp,
+            } => {
                 // Add to recent messages
                 let ui_message = UIMessage {
                     from: self.our_peer_id,
@@ -251,7 +258,11 @@ impl TerminalInterfaceTask {
                 }
             }
 
-            AppEvent::PeerStatusChanged { peer_id, status, transport } => {
+            AppEvent::PeerStatusChanged {
+                peer_id,
+                status,
+                transport,
+            } => {
                 // Update or create peer state
                 let peer_state = state.peers.entry(peer_id).or_insert_with(|| PeerUIState {
                     peer_id,
@@ -260,18 +271,23 @@ impl TerminalInterfaceTask {
                     last_seen: None,
                     message_count: 0,
                 });
-                
+
                 peer_state.status = status;
                 peer_state.transport = transport;
-                peer_state.last_seen = Some(std::time::SystemTime::now()
-                    .duration_since(std::time::UNIX_EPOCH)
-                    .unwrap_or_default()
-                    .as_millis() as u64);
+                peer_state.last_seen = Some(
+                    std::time::SystemTime::now()
+                        .duration_since(std::time::UNIX_EPOCH)
+                        .unwrap_or_default()
+                        .as_millis() as u64,
+                );
             }
 
-            AppEvent::DiscoveryStateChanged { active, transport: _ } => {
+            AppEvent::DiscoveryStateChanged {
+                active,
+                transport: _,
+            } => {
                 state.discovery_active = active;
-                
+
                 if active {
                     state.busy_operations.push("Discovery active".to_string());
                 } else {
@@ -279,7 +295,11 @@ impl TerminalInterfaceTask {
                 }
             }
 
-            AppEvent::ConversationUpdated { peer_id, message_count, last_message_time: _ } => {
+            AppEvent::ConversationUpdated {
+                peer_id,
+                message_count,
+                last_message_time: _,
+            } => {
                 if let Some(peer_state) = state.peers.get_mut(&peer_id) {
                     peer_state.message_count = message_count as u32;
                 }
@@ -295,10 +315,74 @@ impl TerminalInterfaceTask {
             AppEvent::SystemError { error } => {
                 state.system_status = SystemStatus::Error(error);
             }
-            AppEvent::SystemStatusReport { peer_count, active_connections, message_count, uptime_seconds, transport_status, memory_usage_bytes } => {
+            AppEvent::SystemStatusReport {
+                peer_count,
+                active_connections,
+                message_count,
+                uptime_seconds,
+                transport_status,
+                memory_usage_bytes,
+            } => {
                 // Log detailed system status (could be displayed in UI later)
                 tracing::info!("System status: {} peers, {} active connections, {} messages, {}s uptime, {} transports, {:?} MB memory", 
                     peer_count, active_connections, message_count, uptime_seconds, transport_status.len(), memory_usage_bytes.map(|b| b / (1024 * 1024)));
+            }
+            AppEvent::MessageStatusReport {
+                message_id,
+                status,
+                sent_at,
+                delivered_at,
+                retry_count,
+                last_error,
+            } => {
+                tracing::info!("Message status: {:?} -> {:?} (retries: {}, sent: {:?}, delivered: {:?}, error: {:?})", 
+                    message_id, status, retry_count, sent_at, delivered_at, last_error);
+            }
+            AppEvent::PeerSessionReport {
+                peer_id,
+                session_state,
+                established_at: _,
+                last_activity: _,
+                messages_sent,
+                messages_received,
+                encryption_status,
+            } => {
+                tracing::info!(
+                    "Peer session: {} -> {:?} (encryption: {:?}, sent: {}, received: {})",
+                    peer_id,
+                    session_state,
+                    encryption_status,
+                    messages_sent,
+                    messages_received
+                );
+            }
+            AppEvent::DeliveryStatusReport {
+                peer_id,
+                pending_messages,
+                delivered_messages,
+                failed_messages,
+                avg_delivery_time_ms,
+            } => {
+                tracing::info!(
+                    "Delivery status for {}: {} pending, {} delivered, {} failed, avg: {:?}ms",
+                    peer_id,
+                    pending_messages.len(),
+                    delivered_messages,
+                    failed_messages,
+                    avg_delivery_time_ms
+                );
+            }
+            AppEvent::InternalStateReport {
+                peer_id: _,
+                active_sessions,
+                message_store_size,
+                pending_deliveries,
+                connection_states: _,
+                memory_usage_estimate: _,
+                uptime_ms,
+            } => {
+                tracing::info!("Internal state: {} sessions, {} stored messages, {} pending deliveries, uptime: {}ms", 
+                    active_sessions, message_store_size, pending_deliveries, uptime_ms);
             }
         }
 
@@ -313,28 +397,35 @@ impl TerminalInterfaceTask {
             Err(mpsc::error::TrySendError::Full(_)) => {
                 // Channel is full - indicate system busy
                 {
-                    let mut state = self.state.lock().map_err(|_| BitchatError::Transport(TransportError::InvalidConfiguration { 
-                        reason: "UI state lock poisoned".to_string() 
-                    }))?;
+                    let mut state = self.state.lock().map_err(|_| {
+                        BitchatError::Transport(TransportError::InvalidConfiguration {
+                            reason: "UI state lock poisoned".to_string(),
+                        })
+                    })?;
                     state.system_status = SystemStatus::Busy("Core Logic overloaded".to_string());
-                    if !state.busy_operations.contains(&"Core Logic overloaded".to_string()) {
-                        state.busy_operations.push("Core Logic overloaded".to_string());
+                    if !state
+                        .busy_operations
+                        .contains(&"Core Logic overloaded".to_string())
+                    {
+                        state
+                            .busy_operations
+                            .push("Core Logic overloaded".to_string());
                     }
                 }
-                
+
                 self.logger.log_task_event(
                     TaskId::UI,
                     LogLevel::Warn,
-                    "Command channel full - Core Logic overloaded"
+                    "Command channel full - Core Logic overloaded",
                 );
-                
-                Err(BitchatError::Transport(TransportError::SendBufferFull { 
-                    capacity: 0 // Channel full
+
+                Err(BitchatError::Transport(TransportError::SendBufferFull {
+                    capacity: 0, // Channel full
                 }))
             }
             Err(mpsc::error::TrySendError::Closed(_)) => {
-                Err(BitchatError::Transport(TransportError::Shutdown { 
-                    reason: "Command channel closed".to_string() 
+                Err(BitchatError::Transport(TransportError::Shutdown {
+                    reason: "Command channel closed".to_string(),
                 }))
             }
         }
@@ -359,22 +450,21 @@ impl TerminalInterfaceTask {
         });
 
         // Update system status based on busy operations
-        if state.busy_operations.is_empty() {
-            if matches!(state.system_status, SystemStatus::Busy(_)) {
-                state.system_status = SystemStatus::Ready;
-            }
+        if state.busy_operations.is_empty() && matches!(state.system_status, SystemStatus::Busy(_))
+        {
+            state.system_status = SystemStatus::Ready;
         }
 
         // Clean up old peers that haven't been seen recently
         let timeout_threshold = 300 * 1000; // 5 minutes in milliseconds
         let mut stale_peers = Vec::new();
-        
+
         for (peer_id, peer_state) in &state.peers {
             if let Some(last_seen) = peer_state.last_seen {
-                if current_time - last_seen > timeout_threshold {
-                    if matches!(peer_state.status, ConnectionStatus::Disconnected) {
-                        stale_peers.push(*peer_id);
-                    }
+                if current_time - last_seen > timeout_threshold
+                    && matches!(peer_state.status, ConnectionStatus::Disconnected)
+                {
+                    stale_peers.push(*peer_id);
                 }
             }
         }
@@ -401,7 +491,11 @@ impl TerminalInterfaceTask {
 
 impl TerminalInterfaceTask {
     /// Handle user action to send message
-    pub async fn handle_send_message(&self, recipient: PeerId, content: String) -> BitchatResult<()> {
+    pub async fn handle_send_message(
+        &self,
+        recipient: PeerId,
+        content: String,
+    ) -> BitchatResult<()> {
         let command = Command::SendMessage { recipient, content };
         self.send_command(command).await
     }
@@ -440,7 +534,7 @@ impl TerminalInterfaceTask {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use bitchat_core::internal::{create_command_channel, create_app_event_channel, ChannelConfig};
+    use bitchat_core::internal::{create_app_event_channel, create_command_channel, ChannelConfig};
     use bitchat_core::internal::{ConsoleLogger, LogLevel};
     use bitchat_runtime::logic::LoggerWrapper;
 
@@ -460,9 +554,10 @@ mod tests {
         let (command_sender, _command_receiver) = create_command_channel(&config);
         let (_app_event_sender, app_event_receiver) = create_app_event_channel(&config);
         let logger = LoggerWrapper::Console(ConsoleLogger::new(LogLevel::Debug));
-        
+
         let our_peer_id = create_test_peer_id(1);
-        let mut terminal_interface = TerminalInterfaceTask::new(our_peer_id, command_sender, app_event_receiver, logger);
+        let mut terminal_interface =
+            TerminalInterfaceTask::new(our_peer_id, command_sender, app_event_receiver, logger);
 
         // Test message received processing
         let from_peer = create_test_peer_id(2);
@@ -472,12 +567,18 @@ mod tests {
             timestamp: 12345,
         };
 
-        terminal_interface.process_app_event(app_event).await.unwrap();
+        terminal_interface
+            .process_app_event(app_event)
+            .await
+            .unwrap();
 
         let state = terminal_interface.get_state_snapshot().unwrap();
         assert_eq!(state.recent_messages.len(), 1);
         assert_eq!(state.recent_messages[0].content, "Hello");
-        assert_eq!(state.recent_messages[0].direction, MessageDirection::Incoming);
+        assert_eq!(
+            state.recent_messages[0].direction,
+            MessageDirection::Incoming
+        );
     }
 
     #[test]

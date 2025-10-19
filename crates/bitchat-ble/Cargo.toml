@@ -36,6 +36,7 @@ bincode = { workspace = true }
 async-trait = "0.1"
 smallvec = { workspace = true }
 hashbrown = { workspace = true }
+cfg-if = "1.0"
 
 # Logging
 tracing = "0.1"

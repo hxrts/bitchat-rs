@@ -10,16 +10,15 @@
 //! with proper priority ordering: CLI args > env vars > config file > defaults.
 
 use std::path::PathBuf;
-use std::time::Duration;
 
-use figment::{Figment, providers::{Format, Toml, Env, Serialized}};
+use figment::{
+    providers::{Env, Format, Serialized, Toml},
+    Figment,
+};
 use serde::{Deserialize, Serialize};
 
-use bitchat_core::{
-    PeerId, ChannelTransportType,
-    internal::BitchatConfig,
-};
 use bitchat_ble::BleTransportConfig;
+use bitchat_core::{internal::BitchatConfig, ChannelTransportType, PeerId};
 use bitchat_nostr::NostrConfig;
 
 // ----------------------------------------------------------------------------
@@ -27,28 +26,28 @@ use bitchat_nostr::NostrConfig;
 // ----------------------------------------------------------------------------
 
 /// Complete configuration for the BitChat CLI application
-/// 
+///
 /// This struct consolidates all configuration needed by the CLI:
 /// - Core BitChat configuration from bitchat-core
 /// - Transport-specific configurations (BLE, Nostr)
 /// - CLI-specific settings (logging, interface, etc.)
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize, Default)]
 pub struct CliAppConfig {
     /// Core BitChat protocol configuration
     pub core: BitchatConfig,
-    
+
     /// BLE transport configuration
     pub ble: BleTransportConfig,
-    
+
     /// Nostr transport configuration
     pub nostr: NostrConfig,
-    
+
     /// CLI-specific configuration
     pub cli: CliConfig,
-    
+
     /// Application identity configuration
     pub identity: IdentityConfig,
-    
+
     /// Runtime behavior configuration
     pub runtime: RuntimeConfig,
 }
@@ -58,22 +57,22 @@ pub struct CliAppConfig {
 pub struct CliConfig {
     /// Enable verbose logging output
     pub verbose: bool,
-    
+
     /// Prompt style for the interactive interface
     pub prompt: String,
-    
+
     /// Maximum number of recent messages to display
     pub max_recent_messages: usize,
-    
+
     /// Whether to auto-start discovery on startup
     pub auto_start_discovery: bool,
-    
+
     /// Whether to use colored output
     pub colored_output: bool,
-    
+
     /// Update interval for status display (in milliseconds)
     pub status_update_interval_ms: u64,
-    
+
     /// Command history size
     pub history_size: usize,
 }
@@ -84,14 +83,14 @@ pub struct IdentityConfig {
     /// Fixed peer ID (hex string, 16 characters)
     /// If None, will be generated from name or randomly
     pub peer_id: Option<String>,
-    
+
     /// Human-readable name for this peer
     /// Used to generate consistent peer ID if peer_id is not set
     pub name: Option<String>,
-    
+
     /// Whether to save generated identity to file for reuse
     pub persist_identity: bool,
-    
+
     /// Path to identity file (defaults to ~/.bitchat/identity.toml)
     pub identity_file: Option<PathBuf>,
 }
@@ -101,16 +100,16 @@ pub struct IdentityConfig {
 pub struct RuntimeConfig {
     /// Which transports to enable by default
     pub enabled_transports: Vec<String>, // ["ble", "nostr"]
-    
+
     /// Startup timeout in seconds
     pub startup_timeout_secs: u64,
-    
+
     /// Shutdown timeout in seconds
     pub shutdown_timeout_secs: u64,
-    
+
     /// Whether to exit on first error or retry
     pub exit_on_error: bool,
-    
+
     /// Heartbeat interval for health checking (in seconds)
     pub heartbeat_interval_secs: u64,
 }
@@ -156,19 +155,6 @@ impl Default for RuntimeConfig {
     }
 }
 
-impl Default for CliAppConfig {
-    fn default() -> Self {
-        Self {
-            core: BitchatConfig::default(),
-            ble: BleTransportConfig::default(),
-            nostr: NostrConfig::default(),
-            cli: CliConfig::default(),
-            identity: IdentityConfig::default(),
-            runtime: RuntimeConfig::default(),
-        }
-    }
-}
-
 // ----------------------------------------------------------------------------
 // Configuration Loading Logic
 // ----------------------------------------------------------------------------
@@ -189,7 +175,8 @@ impl CliAppConfig {
             // Load from environment variables with BITCHAT_ prefix
             .merge(Env::prefixed("BITCHAT_").split("_"));
 
-        let config: CliAppConfig = figment.extract()
+        let config: CliAppConfig = figment
+            .extract()
             .map_err(|e| ConfigError::Loading(format!("Failed to load configuration: {}", e)))?;
 
         // Validate the loaded configuration
@@ -204,8 +191,13 @@ impl CliAppConfig {
             .merge(Serialized::defaults(Self::default()))
             .merge(Toml::file(path.as_ref()));
 
-        let config: CliAppConfig = figment.extract()
-            .map_err(|e| ConfigError::Loading(format!("Failed to load from {}: {}", path.as_ref().display(), e)))?;
+        let config: CliAppConfig = figment.extract().map_err(|e| {
+            ConfigError::Loading(format!(
+                "Failed to load from {}: {}",
+                path.as_ref().display(),
+                e
+            ))
+        })?;
 
         config.validate()?;
         Ok(config)
@@ -238,7 +230,8 @@ impl CliAppConfig {
             figment = figment.merge(("runtime.enabled_transports", t));
         }
 
-        let config: CliAppConfig = figment.extract()
+        let config: CliAppConfig = figment
+            .extract()
             .map_err(|e| ConfigError::Loading(format!("Failed to load with overrides: {}", e)))?;
 
         config.validate()?;
@@ -249,8 +242,10 @@ impl CliAppConfig {
     fn default_config_path() -> Result<PathBuf, ConfigError> {
         let home = std::env::var("HOME")
             .or_else(|_| std::env::var("USERPROFILE"))
-            .map_err(|_| ConfigError::Environment("No HOME or USERPROFILE environment variable".to_string()))?;
-        
+            .map_err(|_| {
+                ConfigError::Environment("No HOME or USERPROFILE environment variable".to_string())
+            })?;
+
         Ok(PathBuf::from(home).join(".bitchat").join("config.toml"))
     }
 
@@ -264,12 +259,14 @@ impl CliAppConfig {
     pub fn save_to_file<P: AsRef<std::path::Path>>(&self, path: P) -> Result<(), ConfigError> {
         // Ensure parent directory exists
         if let Some(parent) = path.as_ref().parent() {
-            std::fs::create_dir_all(parent)
-                .map_err(|e| ConfigError::FileSystem(format!("Failed to create config directory: {}", e)))?;
+            std::fs::create_dir_all(parent).map_err(|e| {
+                ConfigError::FileSystem(format!("Failed to create config directory: {}", e))
+            })?;
         }
 
-        let toml_string = toml::to_string_pretty(self)
-            .map_err(|e| ConfigError::Serialization(format!("Failed to serialize config: {}", e)))?;
+        let toml_string = toml::to_string_pretty(self).map_err(|e| {
+            ConfigError::Serialization(format!("Failed to serialize config: {}", e))
+        })?;
 
         std::fs::write(path.as_ref(), toml_string)
             .map_err(|e| ConfigError::FileSystem(format!("Failed to write config file: {}", e)))?;
@@ -288,23 +285,34 @@ impl CliAppConfig {
         for transport in &self.runtime.enabled_transports {
             match transport.as_str() {
                 "ble" | "nostr" => {}
-                _ => return Err(ConfigError::Validation(format!("Unknown transport: {}", transport))),
+                _ => {
+                    return Err(ConfigError::Validation(format!(
+                        "Unknown transport: {}",
+                        transport
+                    )))
+                }
             }
         }
 
         // Validate timeouts are reasonable
         if self.runtime.startup_timeout_secs == 0 {
-            return Err(ConfigError::Validation("Startup timeout must be greater than 0".to_string()));
+            return Err(ConfigError::Validation(
+                "Startup timeout must be greater than 0".to_string(),
+            ));
         }
 
         // Validate BLE configuration
         if self.ble.max_packet_size == 0 {
-            return Err(ConfigError::Validation("BLE max packet size must be greater than 0".to_string()));
+            return Err(ConfigError::Validation(
+                "BLE max packet size must be greater than 0".to_string(),
+            ));
         }
 
         // Validate Nostr configuration
         if self.nostr.relays.is_empty() {
-            return Err(ConfigError::Validation("At least one Nostr relay must be configured".to_string()));
+            return Err(ConfigError::Validation(
+                "At least one Nostr relay must be configured".to_string(),
+            ));
         }
 
         Ok(())
@@ -328,12 +336,13 @@ impl CliAppConfig {
 
     /// Parse a peer ID from hex string
     fn parse_peer_id(&self, peer_id_str: &str) -> Result<PeerId, ConfigError> {
-        let peer_bytes = hex::decode(peer_id_str)
-            .map_err(|_| ConfigError::Validation(format!("Invalid peer ID hex format: {}", peer_id_str)))?;
+        let peer_bytes = hex::decode(peer_id_str).map_err(|_| {
+            ConfigError::Validation(format!("Invalid peer ID hex format: {}", peer_id_str))
+        })?;
 
         if peer_bytes.len() != 8 {
             return Err(ConfigError::Validation(format!(
-                "Peer ID must be exactly 8 bytes (16 hex chars), got {} bytes", 
+                "Peer ID must be exactly 8 bytes (16 hex chars), got {} bytes",
                 peer_bytes.len()
             )));
         }
@@ -349,7 +358,7 @@ impl CliAppConfig {
         let mut hasher = std::collections::hash_map::DefaultHasher::new();
         name.hash(&mut hasher);
         let hash = hasher.finish();
-        
+
         let peer_bytes = [
             (hash >> 56) as u8,
             (hash >> 48) as u8,
@@ -360,20 +369,20 @@ impl CliAppConfig {
             (hash >> 8) as u8,
             hash as u8,
         ];
-        
+
         PeerId::new(peer_bytes)
     }
 
     /// Generate a random peer ID
     fn generate_random_peer_id(&self) -> PeerId {
         use std::time::{SystemTime, UNIX_EPOCH};
-        
+
         // Generate pseudo-random peer ID from current time + some entropy
         let timestamp = SystemTime::now()
             .duration_since(UNIX_EPOCH)
             .unwrap_or_default()
             .as_nanos();
-        
+
         let peer_bytes = [
             (timestamp >> 56) as u8,
             (timestamp >> 48) as u8,
@@ -384,13 +393,14 @@ impl CliAppConfig {
             (timestamp >> 8) as u8,
             timestamp as u8,
         ];
-        
+
         PeerId::new(peer_bytes)
     }
 
     /// Get enabled transports as enum values
     pub fn get_enabled_transports(&self) -> Vec<ChannelTransportType> {
-        self.runtime.enabled_transports
+        self.runtime
+            .enabled_transports
             .iter()
             .filter_map(|t| match t.as_str() {
                 "ble" => Some(ChannelTransportType::Ble),
@@ -428,9 +438,8 @@ impl CliAppConfig {
             ..Default::default()
         };
 
-        toml::to_string_pretty(&example_config).unwrap_or_else(|_| {
-            "# Failed to generate example config".to_string()
-        })
+        toml::to_string_pretty(&example_config)
+            .unwrap_or_else(|_| "# Failed to generate example config".to_string())
     }
 }
 
@@ -470,8 +479,14 @@ mod tests {
         let config = CliAppConfig::default();
         assert!(!config.cli.verbose);
         assert_eq!(config.cli.prompt, "bitchat> ");
-        assert!(config.runtime.enabled_transports.contains(&"ble".to_string()));
-        assert!(config.runtime.enabled_transports.contains(&"nostr".to_string()));
+        assert!(config
+            .runtime
+            .enabled_transports
+            .contains(&"ble".to_string()));
+        assert!(config
+            .runtime
+            .enabled_transports
+            .contains(&"nostr".to_string()));
     }
 
     #[test]
@@ -516,7 +531,7 @@ mod tests {
     fn test_transport_parsing() {
         let mut config = CliAppConfig::default();
         config.runtime.enabled_transports = vec!["ble".to_string(), "nostr".to_string()];
-        
+
         let transports = config.get_enabled_transports();
         assert_eq!(transports.len(), 2);
         assert!(transports.contains(&ChannelTransportType::Ble));

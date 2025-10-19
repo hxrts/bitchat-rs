@@ -4,6 +4,30 @@
 //! for the BitChat peer-to-peer messaging protocol. It is designed to be `no_std` compatible
 //! and work across both native and WebAssembly targets.
 //!
+//! ## Feature Flags
+//!
+//! ### Core Features (Always Available)
+//! The default build includes only features that are compatible with the canonical Swift implementation:
+//! - Core messaging and encryption (Noise Protocol XX)
+//! - Message fragmentation and deduplication
+//! - Location-based channels and mesh networking
+//! - BLE and Nostr transport abstractions
+//!
+//! ### Experimental Features (`experimental` flag)
+//! Advanced features that exceed the canonical implementation can be enabled with the `experimental` feature flag:
+//! - **File Transfer**: Secure chunked file transfer with integrity verification
+//! - **Group Messaging**: Role-based group chat management
+//! - **Multi-Device Sync**: Cross-device session synchronization
+//! - **Capability Negotiation**: Automatic feature detection and graceful degradation
+//!
+//! ```bash
+//! # Build with canonical compatibility only
+//! cargo build
+//!
+//! # Build with all experimental features
+//! cargo build --features experimental
+//! ```
+//!
 //! ## Architecture Overview
 //!
 //! BitChat follows a clean architecture with clear separation of concerns across multiple crates:
@@ -36,7 +60,7 @@
 //! ## Usage Examples
 //!
 //! ### Basic Types and Configuration
-//! 
+//!
 //! BitChat Core provides ergonomic APIs that accept flexible input types:
 //!
 //! ```rust
@@ -53,7 +77,7 @@
 //!
 //! // Efficient configuration sharing with Arc
 //! let shared_config = BitchatConfig::shared_browser_optimized();
-//! 
+//!
 //! // Clone the Arc (cheap operation) to share across tasks
 //! let config_for_task = shared_config.clone();
 //! ```
@@ -69,7 +93,7 @@
 //! let peer_id: PeerId = "1234567890abcdef".parse()?;
 //!
 //! // Use bitchat-runtime crate for runtime functionality
-//! // Example: 
+//! // Example:
 //! // use bitchat_runtime::BitchatRuntime;
 //! // let mut runtime = BitchatRuntime::new(peer_id, config);
 //! // runtime.add_transport(ble_transport)?;
@@ -138,6 +162,56 @@
 extern crate alloc;
 
 // ----------------------------------------------------------------------------
+// Compile-time Feature Guards
+// ----------------------------------------------------------------------------
+// Ensures that only one of the three mutually exclusive features
+// (std, wasm, testing) is enabled at build time.
+
+// Ensure mutually exclusive features are not enabled together
+#[cfg(all(feature = "std", feature = "wasm"))]
+compile_error!("Features 'std' and 'wasm' are mutually exclusive. Enable only one.");
+
+// Note: 'testing' feature includes 'std' automatically, so they can coexist
+
+#[cfg(all(feature = "wasm", feature = "testing"))]
+compile_error!("Features 'wasm' and 'testing' are mutually exclusive. Enable only one.");
+
+// Ensure at least one feature is enabled (since testing includes std)
+#[cfg(not(any(feature = "std", feature = "wasm", feature = "testing")))]
+compile_error!("At least one of 'std', 'wasm', or 'testing' features must be enabled.");
+
+// Feature documentation for users
+#[cfg(feature = "std")]
+const _FEATURE_DOCS_STD: &str = "
+BitChat Core compiled with 'std' feature:
+- Full standard library support
+- Tokio async runtime  
+- Tracing logging
+- All monitoring capabilities
+- Optimized for CLI/server environments
+";
+
+#[cfg(feature = "wasm")]
+const _FEATURE_DOCS_WASM: &str = "
+BitChat Core compiled with 'wasm' feature:
+- WebAssembly compatible (no_std)
+- Browser async support via wasm-bindgen-futures
+- Reduced feature set for smaller bundle size
+- JavaScript interop capabilities
+- Optimized for browser environments
+";
+
+#[cfg(feature = "testing")]
+const _FEATURE_DOCS_TESTING: &str = "
+BitChat Core compiled with 'testing' feature:
+- All 'std' features included
+- Additional test utilities
+- Mock implementations
+- Enhanced debugging capabilities
+- Optimized for test environments
+";
+
+// ----------------------------------------------------------------------------
 // Module Declarations
 // ----------------------------------------------------------------------------
 
@@ -157,23 +231,58 @@ pub mod config;
 pub mod channel;
 pub mod protocol;
 
+#[cfg(feature = "std")]
+pub mod geohash;
+
 // ----------------------------------------------------------------------------
 // Public API - Minimal Interface for Application Developers
 // ----------------------------------------------------------------------------
 
 // Essential exports for application developers
-pub use errors::{BitchatError, BitchatResult, Result};
-pub use types::{PeerId, Fingerprint, Timestamp};
-pub use channel::{Command, AppEvent, ChannelTransportType, ConnectionStatus, TransportStatus};
-pub use transport_task::TransportTask;
+pub use channel::{AppEvent, ChannelTransportType, Command, ConnectionStatus, TransportStatus};
 pub use config::{BitchatConfig, SharedBitchatConfig};
+pub use errors::{BitchatError, BitchatResult, Result};
+pub use transport_task::TransportTask;
+pub use types::{Fingerprint, PeerId, Timestamp};
+
+#[cfg(feature = "std")]
+pub use geohash::{
+    ChannelIdentity, GeoLocation, GeohashChannel, GeohashError, GeohashPrecision,
+    LocationPrivacyManager,
+};
+
+// Core protocol exports (canonical implementation features)
+pub use protocol::{
+    BitchatMessage, BitchatPacket, BloomFilter, ConnectionEvent, ConnectionState, 
+    DeduplicationManager, DeduplicationStats, DeliveryAttempt, DeliveryStatus, Fragment,
+    FragmentHeader, MessageFragmenter, MessageReassembler, MessageType, NoiseHandshake,
+    NoisePayload, NoisePayloadType, PacketFlags, PacketHeader, TrackedMessage,
+};
+
+// Experimental feature exports (only available with experimental feature flag)
+#[cfg(feature = "experimental")]
+pub use protocol::{
+    // File transfer
+    FileAccept, FileChunk, FileComplete, FileHash, FileMetadata, FileOffer,
+    FileTransferId, FileTransferManager, FileTransferMessage, FileTransferSession, TransferStatus,
+    // Group messaging
+    GroupCreate, GroupId, GroupInvite, GroupJoin, GroupKick, GroupLeave, GroupManager, GroupMember,
+    GroupMessage, GroupMessagingMessage, GroupMetadata, GroupRole, GroupSettings, GroupUpdate,
+    // Multi-device sync
+    DeviceAnnouncement, DeviceCapabilities, DeviceHeartbeat, DeviceId, DeviceInfo, DeviceStatus,
+    DeviceType, MessageRef, MultiDeviceSessionManager, SessionSyncState, SessionStatus,
+    SessionSyncMessage, SessionSyncRequest, SessionSyncResponse,
+    // Capability negotiation
+    Capability, CapabilityId, CapabilityManager, CapabilityMessage, CapabilityRejection,
+    ImplementationInfo, NegotiationStatus, ProtocolVersion, RejectionReason, VersionAck, VersionHello,
+};
 
 // ----------------------------------------------------------------------------
 // Internal API - For Transport and UI Crate Developers
 // ----------------------------------------------------------------------------
 
 // These are needed by transport crate developers (bitchat-ble, bitchat-nostr, etc.)
-pub use channel::{Event, Effect, EventSender, EffectReceiver};
+pub use channel::{Effect, EffectReceiver, Event, EventSender};
 
 // ----------------------------------------------------------------------------
 // Advanced/Internal API - Use at Your Own Risk
@@ -183,27 +292,39 @@ pub use channel::{Event, Effect, EventSender, EffectReceiver};
 
 #[doc(hidden)]
 pub mod internal {
-    pub use crate::errors::{CryptographicError, TransportError, SessionError, FragmentationError, PacketError};
-    pub use crate::types::{Fingerprint, TimeSource, Timestamp};
-    #[cfg(feature = "std")]
-    pub use crate::types::SystemTimeSource;
     pub use crate::channel::{
-        ChannelConfig, ChannelError, NonBlockingSend, ChannelStats, TaskSpawner,
-        CommandSender, CommandReceiver, EventSender, EventReceiver, EffectSender, EffectReceiver, AppEventSender, AppEventReceiver,
-        create_command_channel, create_event_channel, create_effect_channel, create_effect_receiver, create_app_event_channel
+        create_app_event_channel, create_command_channel, create_effect_channel,
+        create_effect_receiver, create_event_channel, AppEventReceiver, AppEventSender,
+        ChannelConfig, ChannelError, ChannelStats, CommandReceiver, CommandSender, EffectReceiver,
+        EffectSender, EventReceiver, EventSender, NonBlockingSend, TaskSpawner,
+    };
+    pub use crate::config::{
+        BitchatConfig, ConfigPresets, DeliveryConfig, MessageStoreConfig, MonitoringConfig,
+        RateLimitConfig, SessionConfig, TestConfig,
+    };
+    pub use crate::errors::{
+        CryptographicError, FragmentationError, PacketError, SessionError, TransportError,
+    };
+    #[cfg(feature = "monitoring")]
+    pub use crate::monitoring::{
+        ChannelUtilization, DeadlockWarning, Monitorable, MonitoringReport, MonitoringSystem,
+        PerformanceMetrics, TaskHealth, TaskHealthMetrics,
+    };
+    pub use crate::protocol::{
+        generate_fingerprint, AuditEntry, ConnectionEvent, ConnectionState,
+        ContentAddressedMessage, ConversationId, DeliveryAttempt, DeliveryStatus, IdentityKeyPair,
+        MessageId, MessageStore, MessageStoreStats, NoiseHandshake, NoiseKeyPair, NoiseSession,
+        NoiseTransport, SessionParams, SessionState, StateTransition, StateTransitionError,
+        TrackedMessage,
     };
     #[cfg(feature = "task-logging")]
-    pub use crate::task_logging::{LogLevel, TaskId, Direction, CommEvent, MessageType as LogMessageType, MessageSummary, TaskLogger, ConsoleLogger, NoOpLogger};
-    #[cfg(feature = "monitoring")]
-    pub use crate::monitoring::{MonitoringSystem, MonitoringReport, TaskHealth, ChannelUtilization, TaskHealthMetrics, PerformanceMetrics, DeadlockWarning, Monitorable};
-    pub use crate::config::{ConfigPresets, SessionConfig, DeliveryConfig, MessageStoreConfig, BitchatConfig, MonitoringConfig, RateLimitConfig, TestConfig};
-    pub use crate::protocol::{
-        NoiseKeyPair, IdentityKeyPair, NoiseHandshake, NoiseTransport, generate_fingerprint,
-        NoiseSession, SessionState,
-        TrackedMessage, DeliveryStatus, DeliveryAttempt,
-        MessageId, ContentAddressedMessage, ConversationId, MessageStore, MessageStoreStats,
-        ConnectionState, ConnectionEvent, StateTransition, StateTransitionError, AuditEntry, SessionParams
+    pub use crate::task_logging::{
+        CommEvent, ConsoleLogger, Direction, LogLevel, MessageSummary,
+        MessageType as LogMessageType, NoOpLogger, TaskId, TaskLogger,
     };
+    #[cfg(feature = "std")]
+    pub use crate::types::SystemTimeSource;
+    pub use crate::types::{Fingerprint, TimeSource, Timestamp};
 }
 
 // Convenience type aliases for different feature combinations

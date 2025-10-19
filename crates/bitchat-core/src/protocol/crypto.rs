@@ -25,7 +25,7 @@ pub const NOISE_PATTERN: &str = "Noise_XX_25519_ChaChaPoly_SHA256";
 // ----------------------------------------------------------------------------
 
 /// Ed25519 signing key pair for identity
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub struct IdentityKeyPair {
     signing_key: SigningKey,
     verifying_key: VerifyingKey,
@@ -79,7 +79,11 @@ impl IdentityKeyPair {
     }
 
     /// Verify a signature from another key with flexible input types
-    pub fn verify<D: AsRef<[u8]>>(public_key: &[u8; 32], data: D, signature: &[u8; 64]) -> Result<()> {
+    pub fn verify<D: AsRef<[u8]>>(
+        public_key: &[u8; 32],
+        data: D,
+        signature: &[u8; 64],
+    ) -> Result<()> {
         let verifying_key =
             VerifyingKey::from_bytes(public_key).map_err(|_| BitchatError::signature_error())?;
         let signature = Signature::from_bytes(signature);
@@ -214,9 +218,7 @@ impl NoiseHandshake {
     /// Write handshake message
     pub fn write_message(&mut self, payload: &[u8]) -> Result<Vec<u8>> {
         let mut output = vec![0u8; 65536]; // Larger buffer for handshake messages
-        let len = self
-            .state
-            .write_message(payload, &mut output)?;
+        let len = self.state.write_message(payload, &mut output)?;
         output.truncate(len);
         Ok(output)
     }
@@ -330,7 +332,7 @@ mod tests {
         let fingerprint = keypair.fingerprint();
 
         // Test fingerprint generation
-        let expected_fingerprint = generate_fingerprint(&public_key);
+        let expected_fingerprint = generate_fingerprint(public_key);
         assert_eq!(fingerprint.as_bytes(), expected_fingerprint.as_bytes());
     }
 

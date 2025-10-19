@@ -10,6 +10,7 @@
 //! - [`config`] - Transport configuration and settings
 //! - [`error`] - Error types specific to Nostr transport
 //! - [`message`] - BitChat message format for Nostr events
+//! - [`nip17`] - NIP-17 gift-wrapping for encrypted direct messages
 //! - [`transport`] - Transport task implementation using CSP channels
 //!
 //! ## Usage
@@ -58,12 +59,14 @@
 pub mod config;
 pub mod error;
 pub mod message;
+pub mod nip17;
 pub mod transport;
 
 // Re-export public API
 pub use config::{NostrConfig, NostrRelayConfig};
 pub use error::NostrTransportError;
 pub use message::{BitchatNostrMessage, BITCHAT_KIND};
+pub use nip17::{Nip17Content, Nip17GiftUnwrapper, Nip17GiftWrapper, BITCHAT_NIP17_PREFIX};
 pub use transport::NostrTransportTask;
 
 // Re-export TransportTask trait for convenience

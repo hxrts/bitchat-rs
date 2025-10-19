@@ -1,7 +1,7 @@
 //! BLE protocol constants and utilities for BitChat
 
+use bitchat_core::internal::{generate_fingerprint, IdentityKeyPair};
 use bitchat_core::{BitchatError, PeerId, Result as BitchatResult};
-use bitchat_core::internal::{IdentityKeyPair, generate_fingerprint};
 use serde::{Deserialize, Serialize};
 use uuid::Uuid;
 
@@ -83,8 +83,7 @@ impl PeerAnnouncement {
             .as_slice()
             .try_into()
             .map_err(|_| BitchatError::InvalidPacket("Invalid public key length".into()))?;
-        let expected_peer_id =
-            generate_fingerprint(pub_key_array).to_peer_id();
+        let expected_peer_id = generate_fingerprint(pub_key_array).to_peer_id();
         if expected_peer_id != self.peer_id {
             return Ok(false);
         }
@@ -118,7 +117,7 @@ impl PeerAnnouncement {
 
     /// Deserialize announcement from BLE advertising bytes
     #[allow(dead_code)]
-pub fn from_bytes(data: &[u8]) -> BitchatResult<Self> {
+    pub fn from_bytes(data: &[u8]) -> BitchatResult<Self> {
         bincode::deserialize(data).map_err(BitchatError::Serialization)
     }
 }
@@ -136,7 +135,7 @@ pub fn generate_device_name(peer_id: &PeerId, prefix: &str) -> String {
 ///
 /// This function uses cryptographic verification of peer announcements to prevent
 /// man-in-the-middle attacks by verifying that the peer actually controls the claimed identity.
-/// 
+///
 /// Returns Ok(Some(peer_id)) if verification succeeds, Ok(None) if verification fails,
 /// or Err for parsing/validation errors.
 #[allow(dead_code)]
@@ -147,8 +146,9 @@ pub fn extract_and_verify_peer_id(
     max_age_seconds: u64,
 ) -> BitchatResult<Option<PeerId>> {
     // Parse the secure announcement from advertising data
-    let announcement = PeerAnnouncement::from_bytes(advertising_data)
-        .map_err(|_| BitchatError::InvalidPacket("Invalid or missing secure advertising data".into()))?;
+    let announcement = PeerAnnouncement::from_bytes(advertising_data).map_err(|_| {
+        BitchatError::InvalidPacket("Invalid or missing secure advertising data".into())
+    })?;
 
     // Verify the announcement cryptographically
     if !announcement.verify(device_name, max_age_seconds)? {
@@ -164,8 +164,6 @@ pub fn extract_and_verify_peer_id(
         Ok(None)
     }
 }
-
-
 
 /// Generate secure advertising data for this peer
 pub fn generate_advertising_data(
@@ -185,23 +183,24 @@ mod tests {
     fn test_secure_peer_discovery() {
         // Generate a test identity
         let identity = IdentityKeyPair::generate().unwrap();
-        let peer_id =
-            generate_fingerprint(&identity.public_key_bytes()).to_peer_id();
+        let peer_id = generate_fingerprint(identity.public_key_bytes()).to_peer_id();
         let device_name = generate_device_name(&peer_id, "BitChat");
 
         // Generate secure advertising data
         let advertising_data = generate_advertising_data(peer_id, &identity, &device_name).unwrap();
 
         // Verify peer discovery through secure verification
-        let discovered_peer = extract_and_verify_peer_id(&device_name, &advertising_data, "BitChat", 60).unwrap();
+        let discovered_peer =
+            extract_and_verify_peer_id(&device_name, &advertising_data, "BitChat", 60).unwrap();
         assert_eq!(discovered_peer, Some(peer_id));
 
         // Test with wrong device name should fail
         let wrong_device_name = "BitChat-wrongpeerid";
-        let discovered_peer = extract_and_verify_peer_id(wrong_device_name, &advertising_data, "BitChat", 60).unwrap();
+        let discovered_peer =
+            extract_and_verify_peer_id(wrong_device_name, &advertising_data, "BitChat", 60)
+                .unwrap();
         assert_eq!(discovered_peer, None);
     }
-
 
     #[test]
     fn test_device_name_generation() {

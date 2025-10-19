@@ -1,0 +1,169 @@
+# Integration Test Scenario
+# Tests the complete data-driven scenario system with TestHarness integration
+
+[metadata]
+name = "Integration Test"
+description = "Comprehensive test of the data-driven scenario system with enhanced TestHarness"
+version = "1.0"
+tags = ["integration", "comprehensive", "system-test"]
+duration_seconds = 45
+author = "Sam"
+
+[network]
+[network.profile]
+type = "SlowWifi"
+latency_ms = 10
+jitter_ms = 5
+
+[network.topology]
+type = "FullyConnected"
+
+[network.logging]
+enable_packet_logging = true
+enable_stats_logging = true
+stats_interval_seconds = 5
+
+[[peers]]
+name = "peer_a"
+[peers.behavior]
+auto_discovery = true
+auto_connect = true
+
+# Auto-messaging pattern
+[[peers.behavior.auto_messaging]]
+target = "peer_b"
+content = "Auto message {count}"
+interval_seconds = 3.0
+count = 5
+start_at_seconds = 5.0
+
+[[peers]]
+name = "peer_b"
+[peers.behavior]
+auto_discovery = true
+auto_connect = true
+
+# Response behavior
+[[peers.behavior.responses]]
+[peers.behavior.responses.trigger]
+type = "MessageReceived"
+from = "peer_a"
+[peers.behavior.responses.action]
+type = "SendMessage"
+target = "peer_a"
+content = "Response to your message"
+delay_seconds = 1.0
+
+[[peers]]
+name = "peer_c"
+start_delay_seconds = 10.0
+[peers.behavior]
+auto_discovery = true
+auto_connect = true
+
+# Test sequence
+[[sequence]]
+name = "initial_setup"
+at_time_seconds = 1.0
+action = "LogCheckpoint"
+message = "Starting integration test scenario"
+
+[[sequence]]
+name = "manual_message"
+at_time_seconds = 7.0
+action = "SendMessage"
+from = "peer_b"
+to = "peer_c"
+content = "Manual message to delayed peer"
+
+[[sequence]]
+name = "broadcast_test"
+at_time_seconds = 15.0
+action = "SendBroadcast"
+from = "peer_c"
+content = "Broadcast message from delayed peer"
+
+[[sequence]]
+name = "discovery_test"
+at_time_seconds = 20.0
+action = "StartDiscovery"
+peer = "peer_a"
+
+[[sequence]]
+name = "state_validation"
+at_time_seconds = 25.0
+action = "ValidateState"
+[sequence.validation]
+type = "PeerCount"
+peer = "peer_a"
+expected_count = 2
+
+[[sequence]]
+name = "session_validation"
+at_time_seconds = 30.0
+action = "ValidateState"
+[sequence.validation]
+type = "SessionEstablished"
+peer1 = "peer_a"
+peer2 = "peer_b"
+
+[[sequence]]
+name = "pause_for_stats"
+at_time_seconds = 35.0
+action = "PauseScenario"
+duration_seconds = 2.0
+
+[[sequence]]
+name = "final_checkpoint"
+at_time_seconds = 40.0
+action = "LogCheckpoint"
+message = "Integration test nearing completion"
+
+[validation]
+# Continuous validation
+[[validation.continuous_checks]]
+interval_seconds = 10.0
+start_at_seconds = 15.0
+[validation.continuous_checks.check]
+type = "NetworkStats"
+max_packet_loss = 0.05
+min_delivery_rate = 0.9
+
+# Final checks
+[[validation.final_checks]]
+type = "PeerConnected"
+peer1 = "peer_a"
+peer2 = "peer_b"
+
+[[validation.final_checks]]
+type = "PeerConnected"
+peer1 = "peer_b"
+peer2 = "peer_c"
+
+[[validation.final_checks]]
+type = "MessageCount"
+peer = "peer_a"
+expected_min = 5  # Should have received responses
+
+[[validation.final_checks]]
+type = "MessageCount"
+peer = "peer_b"
+expected_min = 6  # Auto messages + manual + broadcast
+
+[validation.timeouts]
+message_delivery_seconds = 15.0
+connection_establishment_seconds = 10.0
+peer_discovery_seconds = 5.0
+
+[performance]
+expected_throughput = 2.0
+max_latency_ms = 50
+max_packet_loss = 0.01
+
+[performance.memory_limits]
+max_per_peer_mb = 50
+max_total_mb = 150
+
+[performance.cpu_limits]
+max_per_peer_percent = 20.0
+max_total_percent = 60.0

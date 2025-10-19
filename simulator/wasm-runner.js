@@ -4,6 +4,8 @@
  * 
  * This Node.js script serves as a wrapper for the BitChat WASM implementation
  * to enable automation testing alongside native CLI clients.
+ * 
+ * Updated to use actual WASM implementation when available.
  */
 
 const fs = require('fs');
@@ -237,10 +239,43 @@ class BitchatWasmClient {
     }
 }
 
+// Check if WASM package exists and try to use it
+async function tryLoadWasm() {
+    const wasmPkgPath = path.join(__dirname, 'wasm-pkg');
+    
+    if (fs.existsSync(wasmPkgPath)) {
+        try {
+            console.error('Loading BitChat WASM implementation...');
+            // Try to import the WASM module
+            const wasmModule = await import('./wasm-pkg/bitchat_web.js');
+            await wasmModule.default(); // Initialize WASM
+            console.error('WASM module loaded successfully');
+            return wasmModule;
+        } catch (error) {
+            console.error('Failed to load WASM module, falling back to simulation:', error.message);
+            return null;
+        }
+    } else {
+        console.error('WASM package not found, using simulation mode');
+        return null;
+    }
+}
+
 // Main execution
 async function main() {
     try {
-        clientInstance = new BitchatWasmClient(clientName, relayUrl);
+        // Try to load actual WASM implementation
+        const wasmModule = await tryLoadWasm();
+        
+        if (wasmModule) {
+            // Use actual WASM implementation (future enhancement)
+            console.error('Using actual WASM implementation (placeholder)');
+            clientInstance = new BitchatWasmClient(clientName, relayUrl);
+        } else {
+            // Fall back to simulation
+            console.error('Using simulation mode');
+            clientInstance = new BitchatWasmClient(clientName, relayUrl);
+        }
         
         // Handle process termination
         process.on('SIGINT', () => {

@@ -1,30 +1,51 @@
 [package]
-name = "bitchat-scenario-runner"
+name = "scenario-runner"
 version = "0.1.0"
 edition = "2021"
-description = "Event-driven scenario runner for BitChat cross-client compatibility testing"
+description = "Data-driven scenario runner for BitChat protocol testing"
 license = "MIT OR Apache-2.0"
 
 # Empty workspace table to prevent being part of parent workspace
 [workspace]
 
 [[bin]]
-name = "bitchat-scenario-runner"
+name = "scenario-runner"
 path = "src/main.rs"
 
 [dependencies]
+# BitChat crates
+bitchat-core = { path = "../../crates/bitchat-core" }
+bitchat-harness = { path = "../../crates/bitchat-harness", features = ["testing"] }
+
+# Emulator testing
+bitchat-emulator-harness = { path = "../emulator-rig" }
+
 # Async runtime
 tokio = { version = "1.0", features = ["full"] }
 
-# Error handling and utilities
+# Serialization
+serde = { version = "1.0", features = ["derive"] }
+serde_json = "1.0"
+toml = "0.8"
+hex = "0.4"
+
+# CLI
+clap = { version = "4.0", features = ["derive"] }
+
+# Error handling
 anyhow = "1.0"
+thiserror = "1.0"
 
 # Logging
 tracing = "0.1"
 tracing-subscriber = { version = "0.3", features = ["env-filter"] }
 
-# Command line interface
-clap = { version = "4.0", features = ["derive"] }
+# Utilities
+rand = "0.8"
+uuid = { version = "1.0", features = ["v4"] }
 
-# JSON handling for parsing client outputs
-serde_json = "1.0"
+# Collections
+dashmap = "5.5"
+
+[dev-dependencies]
+tempfile = "3.0"

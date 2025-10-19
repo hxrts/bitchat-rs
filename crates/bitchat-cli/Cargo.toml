@@ -4,6 +4,10 @@ version = "0.1.0"
 edition = "2021"
 description = "BitChat command-line client with automation mode"
 
+[features]
+default = ["std"]
+std = []
+
 [[bin]]
 name = "bitchat-cli"
 path = "src/main.rs"
@@ -18,6 +22,7 @@ clap = { version = "4.0", features = ["derive"] }
 hex = "0.4"
 figment = { version = "0.10", features = ["toml", "env"] }
 serde = { workspace = true }
+serde_json = { workspace = true }
 toml = "0.8"
 thiserror = { workspace = true }
 tracing = "0.1"

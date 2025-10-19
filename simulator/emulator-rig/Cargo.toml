@@ -1,0 +1,30 @@
+[package]
+name = "bitchat-emulator-harness"
+version = "0.1.0"
+edition = "2021"
+
+[lib]
+name = "bitchat_emulator_harness"
+path = "src/lib.rs"
+
+[[bin]]
+name = "bitchat-emulator-harness"
+path = "src/main.rs"
+
+[dependencies]
+tokio = { version = "1.0", features = ["full"] }
+anyhow = "1.0"
+tracing = "0.1"
+tracing-subscriber = { version = "0.3", features = ["env-filter"] }
+serde = { version = "1.0", features = ["derive"] }
+serde_json = "1.0"
+clap = { version = "4.0", features = ["derive"] }
+uuid = { version = "1.0", features = ["v4"] }
+reqwest = { version = "0.11", features = ["json"] }
+base64 = "0.21"
+tempfile = "3.0"
+which = "4.0"
+
+# Platform-specific dependencies for emulator control
+[target.'cfg(target_os = "linux")'.dependencies]
+libc = "0.2"

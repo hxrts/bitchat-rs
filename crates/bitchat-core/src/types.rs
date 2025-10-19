@@ -57,11 +57,11 @@ impl FromStr for PeerId {
     fn from_str(s: &str) -> Result<Self, Self::Err> {
         // Remove common prefixes that might be present
         let clean_str = s.strip_prefix("0x").unwrap_or(s);
-        
+
         // Decode hex string
         let bytes = hex::decode(clean_str)
             .map_err(|_| crate::BitchatError::invalid_packet("Invalid hex in PeerId"))?;
-        
+
         // Must be exactly 8 bytes or we truncate/pad
         if bytes.len() != 8 {
             if bytes.len() > 8 {
@@ -128,16 +128,18 @@ impl FromStr for Fingerprint {
     fn from_str(s: &str) -> Result<Self, Self::Err> {
         // Remove common prefixes that might be present
         let clean_str = s.strip_prefix("0x").unwrap_or(s);
-        
+
         // Decode hex string
         let bytes = hex::decode(clean_str)
             .map_err(|_| crate::BitchatError::invalid_packet("Invalid hex in Fingerprint"))?;
-        
+
         // Must be exactly 32 bytes
         if bytes.len() != 32 {
-            return Err(crate::BitchatError::invalid_packet("Fingerprint must be exactly 32 bytes"));
+            return Err(crate::BitchatError::invalid_packet(
+                "Fingerprint must be exactly 32 bytes",
+            ));
         }
-        
+
         let mut fingerprint = [0u8; 32];
         fingerprint.copy_from_slice(&bytes);
         Ok(Self(fingerprint))
@@ -164,7 +166,7 @@ use core::ops::{Add, Sub};
 
 impl Add<u64> for Timestamp {
     type Output = Timestamp;
-    
+
     fn add(self, other: u64) -> Timestamp {
         Timestamp(self.0 + other)
     }
@@ -172,7 +174,7 @@ impl Add<u64> for Timestamp {
 
 impl Sub for Timestamp {
     type Output = u64;
-    
+
     fn sub(self, other: Timestamp) -> u64 {
         self.0.saturating_sub(other.0)
     }
@@ -200,10 +202,10 @@ impl Timestamp {
             } else if #[cfg(feature = "wasm")] {
                 // Fallback to instant crate if wasm feature but not WASM target
                 use instant::Instant;
-                
+
                 // Get time since page load/module instantiation
                 let millis = Instant::now().elapsed().as_millis() as u64;
-                
+
                 // This is a best-effort approximation - real applications should use std feature
                 // which provides proper Date.now() access
                 const WASM_FALLBACK_BASE: u64 = 1_700_000_000_000; // ~Nov 2023 as fallback base
@@ -218,6 +220,17 @@ impl Timestamp {
     /// Get the raw milliseconds
     pub fn as_millis(&self) -> u64 {
         self.0
+    }
+
+    /// Add seconds to this timestamp
+    pub fn add_seconds(&self, seconds: u64) -> Self {
+        Self(self.0 + (seconds * 1000))
+    }
+
+    /// Get duration since another timestamp
+    pub fn duration_since(&self, other: Self) -> core::time::Duration {
+        let millis_diff = self.0.saturating_sub(other.0);
+        core::time::Duration::from_millis(millis_diff)
     }
 }
 
@@ -281,6 +294,12 @@ cfg_if::cfg_if! {
         /// Standard library implementation of TimeSource
         #[derive(Debug, Clone, Copy, Default)]
         pub struct SystemTimeSource;
+
+        impl SystemTimeSource {
+            pub fn new() -> Self {
+                Self
+            }
+        }
 
         impl TimeSource for SystemTimeSource {
             fn now(&self) -> Timestamp {

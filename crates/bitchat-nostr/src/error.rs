@@ -1,6 +1,6 @@
 //! Error types for Nostr transport
 
-use bitchat_core::{BitchatError, PeerId, internal::TransportError};
+use bitchat_core::{internal::TransportError, BitchatError, PeerId};
 use thiserror::Error;
 
 // ----------------------------------------------------------------------------
@@ -22,6 +22,9 @@ pub enum NostrTransportError {
 
     #[error("Failed to serialize message: {0}")]
     SerializationFailed(#[from] bincode::Error),
+
+    #[error("Key operation failed: {0}")]
+    KeyOperationFailed(String),
 
     #[error("Failed to deserialize message: {0}")]
     DeserializationFailed(String),
@@ -45,10 +48,17 @@ pub enum NostrTransportError {
     UnknownPeer { peer_id: PeerId },
 }
 
+#[cfg(not(target_arch = "wasm32"))]
+impl From<nostr_sdk::key::Error> for NostrTransportError {
+    fn from(err: nostr_sdk::key::Error) -> Self {
+        NostrTransportError::KeyOperationFailed(err.to_string())
+    }
+}
+
 impl From<NostrTransportError> for BitchatError {
     fn from(err: NostrTransportError) -> Self {
-        BitchatError::Transport(TransportError::ReceiveFailed { 
-            reason: err.to_string() 
+        BitchatError::Transport(TransportError::ReceiveFailed {
+            reason: err.to_string(),
         })
     }
 }

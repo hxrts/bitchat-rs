@@ -1,0 +1,7 @@
+# Seeds for failure cases proptest has generated in the past. It is
+# automatically read and these particular cases re-run before any
+# novel cases are generated.
+#
+# It is recommended to check this file in to source control so that
+# everyone who runs the test benefits from these saved cases.
+cc ac8440cac296f36f51e25ae0b017b28fa98b7eae5b86d6e958d77d2ef5ee2d52 # shrinks to messages = [ContentAddressedMessage { id: MessageId([14, 17, 80, 248, 131, 218, 29, 26, 2, 221, 110, 35, 240, 156, 222, 124, 192, 143, 140, 90, 60, 193, 227, 202, 14, 224, 92, 73, 17, 18, 220, 164]), sender: PeerId([0, 0, 0, 0, 0, 0, 0, 0]), recipient: Some(PeerId([0, 0, 0, 0, 0, 0, 0, 0])), content: " ", timestamp: 1760874872907, sequence: 0 }]

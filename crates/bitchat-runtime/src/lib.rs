@@ -13,18 +13,29 @@ extern crate alloc;
 
 pub mod logic;
 pub mod managers;
-mod coordinator;
 pub mod rate_limiter;
+mod runtime;
 
-pub use coordinator::{
-    BitchatRuntime, 
-    TypeSafeBitchatRuntime, Configured, Running, Stopped
-};
+// New decomposed architecture modules
+pub mod builder;
+pub mod supervisor;
+pub mod tasks;
+
+pub use builder::{MonitoringConfig, RuntimeBuilder, RuntimeHandle};
 pub use managers::*;
+pub use runtime::*;
+pub use supervisor::SupervisorTask;
 
-// Re-export core/harness types for convenience
-pub use bitchat_core::{BitchatError, BitchatResult, PeerId, TransportTask};
-pub use bitchat_harness::{
-    channels::{AppEventReceiver, AppEventSender, CommandReceiver, CommandSender, EffectReceiver, EffectSender, EventReceiver, EventSender},
-    messages::{AppEvent, Command, Effect, Event, MessageEnvelope, TransportStatus},
+// Re-export core types for convenience
+pub use bitchat_core::{
+    channel::utils::{
+        create_app_event_channel, create_command_channel, create_effect_channel,
+        create_effect_receiver, create_event_channel, AppEventReceiver, AppEventSender,
+        ChannelError, ChannelStats, CommandReceiver, CommandSender, EffectReceiver, EffectSender,
+        EventReceiver, EventSender, NonBlockingSend,
+    },
+    channel::{
+        AppEvent, ChannelTransportType, Command, ConnectionStatus, Effect, Event, TransportStatus,
+    },
+    BitchatError, BitchatResult, PeerId, TransportTask,
 };

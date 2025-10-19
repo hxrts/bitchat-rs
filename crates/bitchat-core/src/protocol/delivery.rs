@@ -352,9 +352,10 @@ impl<T: TimeSource> DeliveryTracker<T> {
 
         for (id, tracked) in &self.tracked_messages {
             let age = core::time::Duration::from_millis(
-                now.as_millis().saturating_sub(tracked.created_at.as_millis())
+                now.as_millis()
+                    .saturating_sub(tracked.created_at.as_millis()),
             );
-            
+
             if age > max_age {
                 to_remove.push(*id);
             }
@@ -376,11 +377,12 @@ impl<T: TimeSource> DeliveryTracker<T> {
         }
 
         // Sort by creation time to remove oldest first
-        let mut messages_by_age: Vec<_> = self.tracked_messages
+        let mut messages_by_age: Vec<_> = self
+            .tracked_messages
             .iter()
             .map(|(id, tracked)| (*id, tracked.created_at))
             .collect();
-        
+
         messages_by_age.sort_by_key(|(_, created_at)| *created_at);
 
         let to_remove_count = self.tracked_messages.len() - max_count;

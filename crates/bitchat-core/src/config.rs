@@ -3,7 +3,7 @@
 //! This module consolidates all configuration structures used throughout BitChat Core
 //! to provide a unified, consistent configuration interface.
 
-use crate::{PeerId, ChannelTransportType};
+use crate::{ChannelTransportType, PeerId};
 
 #[cfg(feature = "task-logging")]
 use crate::internal::LogLevel;
@@ -42,12 +42,12 @@ pub struct RateLimitConfig {
 impl Default for RateLimitConfig {
     fn default() -> Self {
         Self {
-            messages_per_peer_per_window: 50,        // 50 messages per peer per window
-            connections_per_peer_per_window: 5,      // 5 connections per peer per window
-            global_messages_per_window: 1000,        // 1000 messages globally per window
-            global_connections_per_window: 100,      // 100 connections globally per window
-            window_duration_secs: 60,                // 60 second windows
-            max_tracked_peers: 1000,                 // Track up to 1000 peers
+            messages_per_peer_per_window: 50, // 50 messages per peer per window
+            connections_per_peer_per_window: 5, // 5 connections per peer per window
+            global_messages_per_window: 1000, // 1000 messages globally per window
+            global_connections_per_window: 100, // 100 connections globally per window
+            window_duration_secs: 60,         // 60 second windows
+            max_tracked_peers: 1000,          // Track up to 1000 peers
         }
     }
 }
@@ -98,10 +98,10 @@ pub struct ChannelConfig {
 impl Default for ChannelConfig {
     fn default() -> Self {
         Self {
-            command_buffer_size: 32,      // UI commands are infrequent
-            event_buffer_size: 128,       // Network events can be bursty
-            effect_buffer_size: 64,       // Effects are processed quickly
-            app_event_buffer_size: 64,    // UI updates need responsiveness
+            command_buffer_size: 32,   // UI commands are infrequent
+            event_buffer_size: 128,    // Network events can be bursty
+            effect_buffer_size: 64,    // Effects are processed quickly
+            app_event_buffer_size: 64, // UI updates need responsiveness
         }
     }
 }
@@ -110,9 +110,9 @@ impl ChannelConfig {
     /// Create configuration optimized for browser memory constraints
     pub fn browser_optimized() -> Self {
         Self {
-            command_buffer_size: 20,   // Smaller for memory efficiency
-            event_buffer_size: 50,     // Moderate for responsiveness
-            effect_buffer_size: 50,    // Moderate for transport coordination
+            command_buffer_size: 20,    // Smaller for memory efficiency
+            event_buffer_size: 50,      // Moderate for responsiveness
+            effect_buffer_size: 50,     // Moderate for transport coordination
             app_event_buffer_size: 100, // Larger for UI responsiveness
         }
     }
@@ -172,11 +172,11 @@ pub struct MessageStoreConfig {
 impl Default for MessageStoreConfig {
     fn default() -> Self {
         Self {
-            max_message_size: 65536,           // 64KB per message
-            max_messages_per_conversation: 10000,  // 10K messages per conversation
-            max_total_messages: 100000,        // 100K total messages
-            max_content_length: 32768,         // 32K characters
-            max_message_age_secs: 86400 * 30,  // 30 days
+            max_message_size: 65536,              // 64KB per message
+            max_messages_per_conversation: 10000, // 10K messages per conversation
+            max_total_messages: 100000,           // 100K total messages
+            max_content_length: 32768,            // 32K characters
+            max_message_age_secs: 86400 * 30,     // 30 days
             strict_content_validation: true,
         }
     }
@@ -186,11 +186,11 @@ impl MessageStoreConfig {
     /// Create configuration optimized for low memory environments
     pub fn low_memory() -> Self {
         Self {
-            max_message_size: 4096,            // 4KB per message
-            max_messages_per_conversation: 1000,   // 1K messages per conversation
-            max_total_messages: 10000,         // 10K total messages
-            max_content_length: 2048,          // 2K characters
-            max_message_age_secs: 86400 * 7,   // 7 days
+            max_message_size: 4096,              // 4KB per message
+            max_messages_per_conversation: 1000, // 1K messages per conversation
+            max_total_messages: 10000,           // 10K total messages
+            max_content_length: 2048,            // 2K characters
+            max_message_age_secs: 86400 * 7,     // 7 days
             strict_content_validation: true,
         }
     }
@@ -198,23 +198,23 @@ impl MessageStoreConfig {
     /// Create configuration optimized for high capacity environments
     pub fn high_capacity() -> Self {
         Self {
-            max_message_size: 1048576,         // 1MB per message
+            max_message_size: 1048576,             // 1MB per message
             max_messages_per_conversation: 100000, // 100K messages per conversation
-            max_total_messages: 1000000,       // 1M total messages
-            max_content_length: 524288,        // 512K characters
-            max_message_age_secs: 86400 * 365, // 1 year
-            strict_content_validation: false,  // Less strict for high throughput
+            max_total_messages: 1000000,           // 1M total messages
+            max_content_length: 524288,            // 512K characters
+            max_message_age_secs: 86400 * 365,     // 1 year
+            strict_content_validation: false,      // Less strict for high throughput
         }
     }
 
     /// Create configuration for testing with permissive limits
     pub fn testing() -> Self {
         Self {
-            max_message_size: 1024,            // 1KB per message for testing
-            max_messages_per_conversation: 100,    // 100 messages per conversation
-            max_total_messages: 1000,          // 1K total messages
-            max_content_length: 512,           // 512 characters
-            max_message_age_secs: 3600,        // 1 hour
+            max_message_size: 1024,             // 1KB per message for testing
+            max_messages_per_conversation: 100, // 100 messages per conversation
+            max_total_messages: 1000,           // 1K total messages
+            max_content_length: 512,            // 512 characters
+            max_message_age_secs: 3600,         // 1 hour
             strict_content_validation: true,
         }
     }
@@ -392,8 +392,7 @@ impl Default for MonitoringConfig {
 #[cfg(not(feature = "monitoring"))]
 impl Default for MonitoringConfig {
     fn default() -> Self {
-        Self {
-        }
+        Self {}
     }
 }
 
@@ -488,13 +487,13 @@ impl TestConfig {
         cfg_if::cfg_if! {
             if #[cfg(feature = "std")] {
                 use std::time::{SystemTime, UNIX_EPOCH};
-                
+
                 // Generate pseudo-random peer ID from current time
                 let timestamp = SystemTime::now()
                     .duration_since(UNIX_EPOCH)
                     .unwrap_or_default()
                     .as_nanos();
-                
+
                 let peer_bytes = [
                     (timestamp >> 56) as u8,
                     (timestamp >> 48) as u8,
@@ -505,17 +504,17 @@ impl TestConfig {
                     (timestamp >> 8) as u8,
                     timestamp as u8,
                 ];
-                
+
                 Self {
                     peer_id: PeerId::new(peer_bytes),
                     ..Default::default()
                 }
             } else if #[cfg(feature = "wasm")] {
                 use crate::types::Timestamp;
-                
+
                 // Generate pseudo-random peer ID from WASM timestamp
                 let timestamp = Timestamp::now().as_millis();
-                
+
                 let peer_bytes = [
                     (timestamp >> 56) as u8,
                     (timestamp >> 48) as u8,
@@ -526,7 +525,7 @@ impl TestConfig {
                     (timestamp >> 8) as u8,
                     timestamp as u8,
                 ];
-                
+
                 Self {
                     peer_id: PeerId::new(peer_bytes),
                     ..Default::default()
@@ -588,7 +587,6 @@ pub struct BitchatConfig {
     /// Test configuration (optional, used in testing contexts)
     pub test: Option<TestConfig>,
 }
-
 
 impl BitchatConfig {
     /// Create new configuration with default values
@@ -752,7 +750,6 @@ impl BitchatConfig {
     }
 }
 
-
 // ----------------------------------------------------------------------------
 // Configuration Presets
 // ----------------------------------------------------------------------------
@@ -831,32 +828,32 @@ impl BitchatConfig {
     pub fn into_shared(self) -> SharedBitchatConfig {
         Arc::new(self)
     }
-    
+
     /// Create a shared config with default values
     pub fn shared() -> SharedBitchatConfig {
         Arc::new(Self::default())
     }
-    
+
     /// Create a shared browser-optimized config
     pub fn shared_browser_optimized() -> SharedBitchatConfig {
         Arc::new(Self::browser_optimized())
     }
-    
+
     /// Create a shared server-optimized config
     pub fn shared_server_optimized() -> SharedBitchatConfig {
         Arc::new(Self::server_optimized())
     }
-    
+
     /// Create a shared mobile-optimized config
     pub fn shared_mobile_optimized() -> SharedBitchatConfig {
         Arc::new(Self::mobile_optimized())
     }
-    
+
     /// Create a shared testing config
     pub fn shared_testing() -> SharedBitchatConfig {
         Arc::new(Self::testing())
     }
-    
+
     /// Create a shared high-security config
     pub fn shared_high_security() -> SharedBitchatConfig {
         Arc::new(Self::high_security())
@@ -1028,7 +1025,9 @@ impl BitchatConfigBuilder {
         };
 
         // Validate the built configuration
-        config.validate().map_err(|msg| ConfigBuilderError { message: msg })?;
+        config
+            .validate()
+            .map_err(|msg| ConfigBuilderError { message: msg })?;
 
         Ok(config)
     }
@@ -1090,7 +1089,7 @@ mod tests {
             .with_channels(ChannelConfig::high_memory())
             .with_delivery(DeliveryConfig::aggressive())
             .with_monitoring(MonitoringConfig::detailed());
-        
+
         assert!(config.validate().is_ok());
     }
 
@@ -1116,7 +1115,7 @@ mod tests {
             .monitoring(MonitoringConfig::detailed())
             .build()
             .expect("Builder should create valid config");
-        
+
         assert!(config.validate().is_ok());
         assert_eq!(config.channels.command_buffer_size, 100);
     }
@@ -1127,27 +1126,27 @@ mod tests {
             .browser_optimized()
             .build()
             .expect("Browser config should be valid");
-        
+
         let server_config = BitchatConfig::builder()
             .server_optimized()
             .build()
             .expect("Server config should be valid");
-        
+
         let mobile_config = BitchatConfig::builder()
             .mobile_optimized()
             .build()
             .expect("Mobile config should be valid");
-        
+
         let security_config = BitchatConfig::builder()
             .high_security()
             .build()
             .expect("Security config should be valid");
-        
+
         let test_config = BitchatConfig::builder()
             .testing()
             .build()
             .expect("Test config should be valid");
-        
+
         assert!(browser_config.validate().is_ok());
         assert!(server_config.validate().is_ok());
         assert!(mobile_config.validate().is_ok());
@@ -1163,7 +1162,7 @@ mod tests {
             .session(SessionConfig::high_security()) // Add high security session
             .build()
             .expect("Customized config should be valid");
-        
+
         assert!(config.validate().is_ok());
         // Should retain browser-optimized channels but use aggressive delivery
         assert_eq!(config.channels.command_buffer_size, 20); // browser-optimized
@@ -1177,9 +1176,12 @@ mod tests {
                 ..ChannelConfig::default()
             })
             .build();
-        
+
         assert!(result.is_err());
-        assert!(result.unwrap_err().message.contains("Command buffer size cannot be zero"));
+        assert!(result
+            .unwrap_err()
+            .message
+            .contains("Command buffer size cannot be zero"));
     }
 
     #[test]
@@ -1190,7 +1192,7 @@ mod tests {
                 ..ChannelConfig::default()
             })
             .build_unchecked();
-        
+
         // Config was created but validation would fail
         assert!(config.validate().is_err());
     }

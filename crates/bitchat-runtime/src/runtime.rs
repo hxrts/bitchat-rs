@@ -31,8 +31,8 @@
 //! #         _effect_receiver: bitchat_core::EffectReceiver,
 //! #     ) -> bitchat_core::BitchatResult<()> { Ok(()) }
 //! #     async fn run(&mut self) -> bitchat_core::BitchatResult<()> { Ok(()) }
-//! #     fn transport_type(&self) -> bitchat_core::ChannelTransportType { 
-//! #         bitchat_core::ChannelTransportType::Ble 
+//! #     fn transport_type(&self) -> bitchat_core::ChannelTransportType {
+//! #         bitchat_core::ChannelTransportType::Ble
 //! #     }
 //! # }
 //! # #[async_trait::async_trait]
@@ -43,8 +43,8 @@
 //! #         _effect_receiver: bitchat_core::EffectReceiver,
 //! #     ) -> bitchat_core::BitchatResult<()> { Ok(()) }
 //! #     async fn run(&mut self) -> bitchat_core::BitchatResult<()> { Ok(()) }
-//! #     fn transport_type(&self) -> bitchat_core::ChannelTransportType { 
-//! #         bitchat_core::ChannelTransportType::Nostr 
+//! #     fn transport_type(&self) -> bitchat_core::ChannelTransportType {
+//! #         bitchat_core::ChannelTransportType::Nostr
 //! #     }
 //! # }
 //!
@@ -71,32 +71,31 @@
 //!
 //! Convenience functions provide ready-to-use runtimes with stub transports for testing.
 
-use bitchat_core::{
-    PeerId, BitchatError, BitchatResult, TransportTask,
-    ChannelTransportType,
-    EventSender, EffectReceiver,
-    internal::{
-        BitchatConfig, ConsoleLogger, NoOpLogger, LogLevel, TaskLogger, TaskId,
-        TransportError, CommandSender, AppEventReceiver,
-        create_command_channel, create_event_channel, create_effect_channel, create_effect_receiver, create_app_event_channel
-    }
-};
 use crate::logic::{CoreLogicTask, LoggerWrapper};
-use tokio::task::JoinHandle;
+use bitchat_core::{
+    internal::{
+        create_app_event_channel, create_command_channel, create_effect_channel,
+        create_effect_receiver, create_event_channel, AppEventReceiver, BitchatConfig,
+        CommandSender, ConsoleLogger, LogLevel, NoOpLogger, TaskId, TaskLogger, TransportError,
+    },
+    BitchatError, BitchatResult, ChannelTransportType, EffectReceiver, EventSender, PeerId,
+    TransportTask,
+};
 use std::collections::HashMap;
+use tokio::task::JoinHandle;
 
 // ----------------------------------------------------------------------------
 // BitChat Runtime
 // ----------------------------------------------------------------------------
 
 /// Core runtime for coordinating BitChat system components
-/// 
+///
 /// The runtime can manage any number of transport implementations, allowing different
 /// applications (CLI, WASM, tests) to plug in their own transport tasks while keeping
 /// the core logic unchanged.
-/// 
+///
 /// ## Design Trade-offs
-/// 
+///
 /// The current architecture serializes all core logic through a single `CoreLogicTask`.
 /// This provides excellent correctness guarantees (no race conditions, no shared state bugs)
 /// but may become a performance bottleneck under very high load. The design anticipates
@@ -126,7 +125,12 @@ pub struct BitchatRuntime {
 impl BitchatRuntime {
     /// Create new BitChat runtime with custom configuration
     pub fn new(peer_id: PeerId, config: BitchatConfig) -> Self {
-        let logger = if config.test.as_ref().map(|t| t.enable_logging).unwrap_or(false) {
+        let logger = if config
+            .test
+            .as_ref()
+            .map(|t| t.enable_logging)
+            .unwrap_or(false)
+        {
             LoggerWrapper::Console(ConsoleLogger::new(LogLevel::Debug))
         } else {
             LoggerWrapper::NoOp(NoOpLogger)
@@ -148,7 +152,7 @@ impl BitchatRuntime {
     /// Create runtime optimized for CLI usage
     pub fn for_cli(peer_id: PeerId, verbose: bool) -> Self {
         let mut config = BitchatConfig::default();
-        
+
         // Optimize for interactive CLI usage
         config.channels.command_buffer_size = 50;
         config.channels.app_event_buffer_size = 200; // Larger for responsive UI
@@ -183,24 +187,31 @@ impl BitchatRuntime {
     }
 
     /// Add a transport task to the runtime
-    /// 
+    ///
     /// Transport tasks must be added before calling `start()`. Each transport type
     /// can only be registered once to avoid conflicts.
     pub fn add_transport<T: TransportTask + 'static>(&mut self, transport: T) -> BitchatResult<()> {
         if self.running {
-            return Err(BitchatError::Transport(TransportError::InvalidConfiguration {
-                reason: "Cannot add transports to a running runtime".to_string(),
-            }));
+            return Err(BitchatError::Transport(
+                TransportError::InvalidConfiguration {
+                    reason: "Cannot add transports to a running runtime".to_string(),
+                },
+            ));
         }
 
         let transport_type = transport.transport_type();
-        
+
         // Check for duplicate transport types
         for existing in &self.pending_transports {
             if existing.transport_type() == transport_type {
-                return Err(BitchatError::Transport(TransportError::InvalidConfiguration {
-                    reason: format!("Transport type {:?} is already registered", transport_type),
-                }));
+                return Err(BitchatError::Transport(
+                    TransportError::InvalidConfiguration {
+                        reason: format!(
+                            "Transport type {:?} is already registered",
+                            transport_type
+                        ),
+                    },
+                ));
             }
         }
 
@@ -208,77 +219,79 @@ impl BitchatRuntime {
         Ok(())
     }
 
-//     /// Special start method for convenience functions that adds a stub transport
-//     pub async fn start_with_stub_transport(&mut self) -> BitchatResult<()> {
-//         if self.running {
-//             return Err(BitchatError::Transport(TransportError::InvalidConfiguration {
-//                 reason: "Runtime already running".to_string(),
-//             }));
-//         }
-// 
-//         // Validate configuration
-//         self.config.validate().map_err(|e| BitchatError::Configuration { reason: e })?;
-// 
-//         // Create channels
-//         let (command_sender, command_receiver) = create_command_channel(&self.config.channels);
-//         let (event_sender, event_receiver) = create_event_channel(&self.config.channels);
-//         let (effect_sender, effect_receiver) = create_effect_channel(&self.config.channels);
-//         let (app_event_sender, app_event_receiver) = create_app_event_channel(&self.config.channels);
-// 
-//         // Store channels for external access
-//         self.command_sender = Some(command_sender);
-//         self.app_event_receiver = Some(app_event_receiver);
-// 
-//         // Create stub transport with proper channels
-//         let stub_transport = crate::testing::StubTransportTask::new(
-//             event_sender.clone(),
-//             effect_receiver,
-//             self.logger.clone(),
-//         );
-//         let transport_type = stub_transport.transport_type();
-// 
-//         // Start Core Logic task
-//         let mut core_logic = CoreLogicTask::new(
-//             self.peer_id,
-//             command_receiver,
-//             event_receiver,
-//             effect_sender,
-//             app_event_sender,
-//             self.logger.clone(),
-//             self.config.session.clone(),
-//             self.config.delivery.clone(),
-//             self.config.rate_limiting.clone(),
-//         )?;
-// 
-//         let core_handle = tokio::spawn(async move {
-//             core_logic.run().await
-//         });
-//         self.core_logic_handle = Some(core_handle);
-// 
-//         // Start the stub transport
-//         let (_, _transport_effect_receiver) = create_effect_channel(&self.config.channels);
-//         let handle = self.start_transport_task(Box::new(stub_transport), event_sender, _transport_effect_receiver).await?;
-//         self.transport_handles.insert(transport_type, handle);
-// 
-//         self.running = true;
-// 
-//         if let LoggerWrapper::Console(ref logger) = self.logger {
-//             logger.log_task_event(
-//                 bitchat_core::internal::TaskId::CoreLogic,
-//                 LogLevel::Info,
-//                 &format!("BitChat application started for peer {} with stub transport", self.peer_id)
-//             );
-//         }
-//
-//         Ok(())
-//     }
+    //     /// Special start method for convenience functions that adds a stub transport
+    //     pub async fn start_with_stub_transport(&mut self) -> BitchatResult<()> {
+    //         if self.running {
+    //             return Err(BitchatError::Transport(TransportError::InvalidConfiguration {
+    //                 reason: "Runtime already running".to_string(),
+    //             }));
+    //         }
+    //
+    //         // Validate configuration
+    //         self.config.validate().map_err(|e| BitchatError::Configuration { reason: e })?;
+    //
+    //         // Create channels
+    //         let (command_sender, command_receiver) = create_command_channel(&self.config.channels);
+    //         let (event_sender, event_receiver) = create_event_channel(&self.config.channels);
+    //         let (effect_sender, effect_receiver) = create_effect_channel(&self.config.channels);
+    //         let (app_event_sender, app_event_receiver) = create_app_event_channel(&self.config.channels);
+    //
+    //         // Store channels for external access
+    //         self.command_sender = Some(command_sender);
+    //         self.app_event_receiver = Some(app_event_receiver);
+    //
+    //         // Create stub transport with proper channels
+    //         let stub_transport = crate::testing::StubTransportTask::new(
+    //             event_sender.clone(),
+    //             effect_receiver,
+    //             self.logger.clone(),
+    //         );
+    //         let transport_type = stub_transport.transport_type();
+    //
+    //         // Start Core Logic task
+    //         let mut core_logic = CoreLogicTask::new(
+    //             self.peer_id,
+    //             command_receiver,
+    //             event_receiver,
+    //             effect_sender,
+    //             app_event_sender,
+    //             self.logger.clone(),
+    //             self.config.session.clone(),
+    //             self.config.delivery.clone(),
+    //             self.config.rate_limiting.clone(),
+    //         )?;
+    //
+    //         let core_handle = tokio::spawn(async move {
+    //             core_logic.run().await
+    //         });
+    //         self.core_logic_handle = Some(core_handle);
+    //
+    //         // Start the stub transport
+    //         let (_, _transport_effect_receiver) = create_effect_channel(&self.config.channels);
+    //         let handle = self.start_transport_task(Box::new(stub_transport), event_sender, _transport_effect_receiver).await?;
+    //         self.transport_handles.insert(transport_type, handle);
+    //
+    //         self.running = true;
+    //
+    //         if let LoggerWrapper::Console(ref logger) = self.logger {
+    //             logger.log_task_event(
+    //                 bitchat_core::internal::TaskId::CoreLogic,
+    //                 LogLevel::Info,
+    //                 &format!("BitChat application started for peer {} with stub transport", self.peer_id)
+    //             );
+    //         }
+    //
+    //         Ok(())
+    //     }
 
     /// Start the BitChat application
     pub async fn start(&mut self) -> BitchatResult<()> {
         if self.running {
-            return Err(BitchatError::Transport(TransportError::InvalidConfiguration {
-                reason: "Runtime already running".to_string(),
-            }));
+            return Err(BitchatError::Transport(
+                TransportError::InvalidConfiguration {
+                    reason: "Runtime already running".to_string(),
+                },
+            ));
         }
 
         if self.pending_transports.is_empty() {
@@ -288,14 +301,18 @@ impl BitchatRuntime {
         }
 
         // Validate configuration
-        self.config.validate().map_err(|e| BitchatError::Configuration { reason: e })?;
+        self.config
+            .validate()
+            .map_err(|e| BitchatError::Configuration { reason: e })?;
 
         // Create channels following dependency injection pattern
         let (command_sender, command_receiver) = create_command_channel(&self.config.channels);
         let (event_sender, event_receiver) = create_event_channel(&self.config.channels);
-        let (effect_sender, _initial_effect_receiver) = create_effect_channel(&self.config.channels);
-        let (app_event_sender, app_event_receiver) = create_app_event_channel(&self.config.channels);
-        
+        let (effect_sender, _initial_effect_receiver) =
+            create_effect_channel(&self.config.channels);
+        let (app_event_sender, app_event_receiver) =
+            create_app_event_channel(&self.config.channels);
+
         // Clone effect_sender for creating transport subscriptions
         let effect_sender_for_transports = effect_sender.clone();
 
@@ -316,25 +333,25 @@ impl BitchatRuntime {
             self.config.rate_limiting.clone(),
         )?;
 
-        let core_handle = tokio::spawn(async move {
-            core_logic.run().await
-        });
+        let core_handle = tokio::spawn(async move { core_logic.run().await });
         self.core_logic_handle = Some(core_handle);
 
         // Collect transport info before the loop to avoid borrow checker issues
-        let transport_info: Vec<_> = self.pending_transports.iter().map(|t| t.transport_type()).collect();
+        let transport_info: Vec<_> = self
+            .pending_transports
+            .iter()
+            .map(|t| t.transport_type())
+            .collect();
         let transports = self.pending_transports.drain(..).collect::<Vec<_>>();
-        
+
         // Start all registered transport tasks
         for (i, transport) in transports.into_iter().enumerate() {
             let transport_type = transport_info[i];
             // Each transport gets its own subscription to the broadcast effect channel
             let transport_effect_receiver = create_effect_receiver(&effect_sender_for_transports);
-            let handle = self.start_transport_task(
-                transport,
-                event_sender.clone(),
-                transport_effect_receiver,
-            ).await?;
+            let handle = self
+                .start_transport_task(transport, event_sender.clone(), transport_effect_receiver)
+                .await?;
             self.transport_handles.insert(transport_type, handle);
         }
 
@@ -344,8 +361,11 @@ impl BitchatRuntime {
             logger.log_task_event(
                 bitchat_core::internal::TaskId::CoreLogic,
                 LogLevel::Info,
-                &format!("BitChat application started for peer {} with {} transport(s)", 
-                    self.peer_id, self.transport_handles.len())
+                &format!(
+                    "BitChat application started for peer {} with {} transport(s)",
+                    self.peer_id,
+                    self.transport_handles.len()
+                ),
             );
         }
 
@@ -366,7 +386,7 @@ impl BitchatRuntime {
                 logger.log_task_event(
                     bitchat_core::internal::TaskId::Transport(transport_type),
                     LogLevel::Debug,
-                    &format!("Stopping {:?} transport task", transport_type)
+                    &format!("Stopping {:?} transport task", transport_type),
                 );
             }
             handle.abort();
@@ -385,7 +405,7 @@ impl BitchatRuntime {
             logger.log_task_event(
                 bitchat_core::internal::TaskId::CoreLogic,
                 LogLevel::Info,
-                &format!("BitChat application stopped for peer {}", self.peer_id)
+                &format!("BitChat application stopped for peer {}", self.peer_id),
             );
         }
 
@@ -422,7 +442,10 @@ impl BitchatRuntime {
         if self.running {
             self.transport_handles.keys().cloned().collect()
         } else {
-            self.pending_transports.iter().map(|t| t.transport_type()).collect()
+            self.pending_transports
+                .iter()
+                .map(|t| t.transport_type())
+                .collect()
         }
     }
 
@@ -431,7 +454,9 @@ impl BitchatRuntime {
         if self.running {
             self.transport_handles.contains_key(&transport_type)
         } else {
-            self.pending_transports.iter().any(|t| t.transport_type() == transport_type)
+            self.pending_transports
+                .iter()
+                .any(|t| t.transport_type() == transport_type)
         }
     }
 
@@ -443,14 +468,14 @@ impl BitchatRuntime {
         effect_receiver: EffectReceiver,
     ) -> BitchatResult<JoinHandle<BitchatResult<()>>> {
         let transport_type = transport.transport_type();
-        
+
         transport.attach_channels(event_sender, effect_receiver)?;
-        
+
         if let LoggerWrapper::Console(ref logger) = self.logger {
             logger.log_task_event(
                 TaskId::Transport(transport_type),
                 LogLevel::Debug,
-                &format!("Starting {:?} transport task", transport_type)
+                &format!("Starting {:?} transport task", transport_type),
             );
         }
 
@@ -468,7 +493,7 @@ impl Drop for BitchatRuntime {
     fn drop(&mut self) {
         if self.running {
             // Abort tasks if runtime is dropped while running
-            for (_, handle) in &self.transport_handles {
+            for handle in self.transport_handles.values() {
                 handle.abort();
             }
             if let Some(ref handle) = self.core_logic_handle {
@@ -483,21 +508,21 @@ impl Drop for BitchatRuntime {
 // ----------------------------------------------------------------------------
 
 // /// Create and start a BitChat runtime for CLI usage with stub transport
-// /// 
-// /// Note: In a real CLI application, you would create a runtime and register 
+// ///
+// /// Note: In a real CLI application, you would create a runtime and register
 // /// appropriate transport tasks (BleTransportTask, NostrTransportTask) from their respective crates.
 // pub async fn start_cli_runtime(peer_id: PeerId, verbose: bool) -> BitchatResult<BitchatRuntime> {
 //     let mut runtime = BitchatRuntime::for_cli(peer_id, verbose);
-//     
+//
 //     // For convenience functions, we'll use a special approach that adds the transport after start
 //     runtime.start_with_stub_transport().await?;
 //     Ok(runtime)
 // }
-// 
+//
 // // /// Create and start a BitChat runtime for testing with stub transport
 // // pub async fn start_test_runtime(peer_id: PeerId) -> BitchatResult<BitchatRuntime> {
 // //     let mut runtime = BitchatRuntime::for_testing(peer_id);
-// //     
+// //
 // //     // For convenience functions, we'll use a special approach that adds the transport after start
 // //     runtime.start_with_stub_transport().await?;
 // //     Ok(runtime)
@@ -506,19 +531,19 @@ impl Drop for BitchatRuntime {
 // #[cfg(test)]
 // mod tests {
 //     use super::*;
-// 
+//
 //     #[tokio::test]
 //     async fn test_runtime_lifecycle() {
 //         let peer_id = PeerId::new([1, 2, 3, 4, 5, 6, 7, 8]);
 //         let mut runtime = BitchatRuntime::for_testing(peer_id);
-// 
+//
 //         assert!(!runtime.is_running());
-//         
+//
 //         // Use the proper convenience method that handles channel setup
 //         runtime.start_with_stub_transport().await.unwrap();
 //         assert!(runtime.is_running());
 //         assert!(runtime.command_sender().is_some());
-// 
+//
 //         runtime.stop().await.unwrap();
 //         assert!(!runtime.is_running());
 //     }
@@ -527,29 +552,29 @@ impl Drop for BitchatRuntime {
 //     async fn test_cli_runtime_creation() {
 //         let peer_id = PeerId::new([1, 2, 3, 4, 5, 6, 7, 8]);
 //         let runtime = BitchatRuntime::for_cli(peer_id, true);
-//         
+//
 //         assert_eq!(runtime.peer_id(), peer_id);
 //         assert_eq!(runtime.config().channels.app_event_buffer_size, 200);
 //     }
-// 
-    // #[tokio::test]
-    // async fn test_transport_registration() {
-    //     let peer_id = PeerId::new([1, 2, 3, 4, 5, 6, 7, 8]);
-    //     let runtime = BitchatRuntime::for_testing(peer_id);
+//
+// #[tokio::test]
+// async fn test_transport_registration() {
+//     let peer_id = PeerId::new([1, 2, 3, 4, 5, 6, 7, 8]);
+//     let runtime = BitchatRuntime::for_testing(peer_id);
 
-    //     assert_eq!(runtime.transport_types().len(), 0);
-        
-    //     // This test doesn't actually start the runtime, so we can't test transport registration
-    //     // because our new design requires proper channel setup during start().
-    //     // We'll test this through other integration tests instead.
-    // }
+//     assert_eq!(runtime.transport_types().len(), 0);
 
-    // #[tokio::test]
-    // async fn test_start_cli_runtime() {
-    //     let peer_id = PeerId::new([1, 2, 3, 4, 5, 6, 7, 8]);
-    //     let mut runtime = start_cli_runtime(peer_id, false).await.unwrap();
-        
-    //     assert!(runtime.is_running());
-    //     runtime.stop().await.unwrap();
-    // }
+//     // This test doesn't actually start the runtime, so we can't test transport registration
+//     // because our new design requires proper channel setup during start().
+//     // We'll test this through other integration tests instead.
+// }
+
+// #[tokio::test]
+// async fn test_start_cli_runtime() {
+//     let peer_id = PeerId::new([1, 2, 3, 4, 5, 6, 7, 8]);
+//     let mut runtime = start_cli_runtime(peer_id, false).await.unwrap();
+
+//     assert!(runtime.is_running());
+//     runtime.stop().await.unwrap();
+// }
 // }

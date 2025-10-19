@@ -7,16 +7,13 @@
 //! 4. Managing the AppEvent stream and forwarding events to JavaScript UI
 
 use bitchat_core::{
-    PeerId, Command, AppEvent, BytesExt,
-    internal::{
-        ChannelConfig, CommandSender, 
-        create_command_channel, create_app_event_channel
-    },
+    internal::{create_app_event_channel, create_command_channel, ChannelConfig, CommandSender},
+    AppEvent, Command, PeerId,
 };
 // Note: NostrConfig is not used in current implementation - web app starts with stub transport
+use serde::{Deserialize, Serialize};
 use wasm_bindgen::prelude::*;
 use wasm_bindgen_futures::spawn_local;
-use serde::{Serialize, Deserialize};
 
 // ----------------------------------------------------------------------------
 // JavaScript Interop Types
@@ -38,7 +35,7 @@ impl From<PeerId> for JsPeerId {
 
 impl TryFrom<JsPeerId> for PeerId {
     type Error = String;
-    
+
     fn try_from(js_peer_id: JsPeerId) -> Result<Self, Self::Error> {
         hex::decode(&js_peer_id.id)
             .map_err(|e| format!("Invalid hex: {}", e))
@@ -89,9 +86,6 @@ impl From<AppEvent> for JsAppEvent {
                 }
             }
             AppEvent::MessageReceived { from, content, timestamp } => {
-                let content = content
-                    .to_string_utf8()
-                    .unwrap_or_else(|_| "<invalid utf-8>".to_string());
                 Self {
                     event_type: "message_received".to_string(),
                     data: serde_wasm_bindgen::to_value(&JsMessage {
@@ -103,9 +97,6 @@ impl From<AppEvent> for JsAppEvent {
                 }
             }
             AppEvent::MessageSent { to, content, timestamp } => {
-                let content = content
-                    .to_string_utf8()
-                    .unwrap_or_else(|_| "<invalid utf-8>".to_string());
                 Self {
                     event_type: "message_sent".to_string(),
                     data: serde_wasm_bindgen::to_value(&JsMessage {
@@ -169,6 +160,64 @@ impl From<AppEvent> for JsAppEvent {
                     })).unwrap_or(JsValue::NULL),
                 }
             }
+            AppEvent::MessageStatusReport { message_id, status, sent_at, delivered_at, retry_count, last_error } => {
+                Self {
+                    event_type: "message_status_report".to_string(),
+                    data: serde_wasm_bindgen::to_value(&serde_json::json!({
+                        "message_id": format!("{:?}", message_id),
+                        "status": format!("{:?}", status),
+                        "sent_at": sent_at,
+                        "delivered_at": delivered_at,
+                        "retry_count": retry_count,
+                        "last_error": last_error
+                    })).unwrap_or(JsValue::NULL),
+                }
+            }
+            AppEvent::PeerSessionReport { peer_id, session_state, established_at, last_activity, messages_sent, messages_received, encryption_status } => {
+                Self {
+                    event_type: "peer_session_report".to_string(),
+                    data: serde_wasm_bindgen::to_value(&serde_json::json!({
+                        "peer_id": peer_id.to_string(),
+                        "session_state": format!("{:?}", session_state),
+                        "established_at": established_at,
+                        "last_activity": last_activity,
+                        "messages_sent": messages_sent,
+                        "messages_received": messages_received,
+                        "encryption_status": format!("{:?}", encryption_status)
+                    })).unwrap_or(JsValue::NULL),
+                }
+            }
+            AppEvent::DeliveryStatusReport { peer_id, pending_messages, delivered_messages, failed_messages, avg_delivery_time_ms } => {
+                Self {
+                    event_type: "delivery_status_report".to_string(),
+                    data: serde_wasm_bindgen::to_value(&serde_json::json!({
+                        "peer_id": peer_id.to_string(),
+                        "pending_messages": pending_messages.iter().map(|id| format!("{:?}", id)).collect::<Vec<_>>(),
+                        "delivered_messages": delivered_messages,
+                        "failed_messages": failed_messages,
+                        "avg_delivery_time_ms": avg_delivery_time_ms
+                    })).unwrap_or(JsValue::NULL),
+                }
+            }
+            AppEvent::InternalStateReport { peer_id, active_sessions, message_store_size, pending_deliveries, connection_states, memory_usage_estimate, uptime_ms } => {
+                Self {
+                    event_type: "internal_state_report".to_string(),
+                    data: serde_wasm_bindgen::to_value(&serde_json::json!({
+                        "peer_id": peer_id.to_string(),
+                        "active_sessions": active_sessions,
+                        "message_store_size": message_store_size,
+                        "pending_deliveries": pending_deliveries,
+                        "connection_states": connection_states.iter().map(|(pid, status)| {
+                            serde_json::json!({
+                                "peer_id": pid.to_string(),
+                                "status": format!("{:?}", status)
+                            })
+                        }).collect::<Vec<_>>(),
+                        "memory_usage_estimate": memory_usage_estimate,
+                        "uptime_ms": uptime_ms
+                    })).unwrap_or(JsValue::NULL),
+                }
+            }
         }
     }
 }
@@ -178,7 +227,7 @@ impl From<AppEvent> for JsAppEvent {
 // ----------------------------------------------------------------------------
 
 /// Main BitChat Web Application - the composition root for the WebAssembly frontend
-/// 
+///
 /// This class is responsible for:
 /// - Managing BitChat core channels and components
 /// - Providing a JavaScript API via #[wasm_bindgen] methods
@@ -211,7 +260,7 @@ impl BitchatWebApp {
                     Err(JsValue::from_str("PeerId must be at least 8 bytes"))
                 }
             })?;
-        
+
         Ok(BitchatWebApp {
             peer_id,
             command_sender: None,
@@ -245,20 +294,18 @@ impl BitchatWebApp {
             spawn_local(async move {
                 while let Some(app_event) = app_event_receiver.recv().await {
                     let js_event = JsAppEvent::from(app_event);
-                    
+
                     // Create a simple object to pass to JavaScript
                     let event_obj = js_sys::Object::new();
                     js_sys::Reflect::set(
                         &event_obj,
                         &JsValue::from("type"),
                         &JsValue::from(js_event.event_type),
-                    ).unwrap();
-                    js_sys::Reflect::set(
-                        &event_obj,
-                        &JsValue::from("data"),
-                        &js_event.data,
-                    ).unwrap();
-                    
+                    )
+                    .unwrap();
+                    js_sys::Reflect::set(&event_obj, &JsValue::from("data"), &js_event.data)
+                        .unwrap();
+
                     let _ = callback_clone.call1(&JsValue::NULL, &event_obj);
                 }
             });
@@ -273,7 +320,7 @@ impl BitchatWebApp {
     pub async fn stop(&mut self) -> Result<(), JsValue> {
         self.command_sender = None;
         self.event_task_handle = None;
-        
+
         web_sys::console::log_1(&"BitChat Web App stopped".into());
         Ok(())
     }
@@ -287,12 +334,19 @@ impl BitchatWebApp {
                 if bytes.len() >= 8 {
                     Ok(PeerId::from_bytes(&bytes))
                 } else {
-                    Err(JsValue::from_str("Recipient PeerId must be at least 8 bytes"))
+                    Err(JsValue::from_str(
+                        "Recipient PeerId must be at least 8 bytes",
+                    ))
                 }
             })?;
-            
+
         if let Some(sender) = &self.command_sender {
-            sender.send(Command::send_message_string(recipient, content.to_string())).await
+            sender
+                .send(Command::SendMessage {
+                    recipient,
+                    content: content.to_string(),
+                })
+                .await
                 .map_err(|_| JsValue::from_str("Failed to send command"))?;
             Ok(())
         } else {
@@ -304,7 +358,9 @@ impl BitchatWebApp {
     #[wasm_bindgen]
     pub async fn start_discovery(&self) -> Result<(), JsValue> {
         if let Some(sender) = &self.command_sender {
-            sender.send(Command::StartDiscovery).await
+            sender
+                .send(Command::StartDiscovery)
+                .await
                 .map_err(|_| JsValue::from_str("Failed to send command"))?;
             Ok(())
         } else {
@@ -316,7 +372,9 @@ impl BitchatWebApp {
     #[wasm_bindgen]
     pub async fn stop_discovery(&self) -> Result<(), JsValue> {
         if let Some(sender) = &self.command_sender {
-            sender.send(Command::StopDiscovery).await
+            sender
+                .send(Command::StopDiscovery)
+                .await
                 .map_err(|_| JsValue::from_str("Failed to send command"))?;
             Ok(())
         } else {
@@ -336,9 +394,11 @@ impl BitchatWebApp {
                     Err(JsValue::from_str("PeerId must be at least 8 bytes"))
                 }
             })?;
-            
+
         if let Some(sender) = &self.command_sender {
-            sender.send(Command::ConnectToPeer { peer_id }).await
+            sender
+                .send(Command::ConnectToPeer { peer_id })
+                .await
                 .map_err(|_| JsValue::from_str("Failed to send command"))?;
             Ok(())
         } else {
@@ -358,9 +418,11 @@ impl BitchatWebApp {
                     Err(JsValue::from_str("PeerId must be at least 8 bytes"))
                 }
             })?;
-            
+
         if let Some(sender) = &self.command_sender {
-            sender.send(Command::DisconnectFromPeer { peer_id }).await
+            sender
+                .send(Command::DisconnectFromPeer { peer_id })
+                .await
                 .map_err(|_| JsValue::from_str("Failed to send command"))?;
             Ok(())
         } else {
@@ -388,7 +450,7 @@ impl BitchatWebApp {
             peer_id: self.peer_id.to_string(),
             connected_peers: Vec::new(),
         };
-        
+
         serde_wasm_bindgen::to_value(&status)
             .map_err(|e| JsValue::from_str(&format!("Failed to serialize status: {}", e)))
     }
@@ -433,7 +495,10 @@ mod tests {
             id: "0102030405060708".to_string(),
         };
         let peer_id = PeerId::try_from(js_peer_id).unwrap();
-        assert_eq!(peer_id.as_bytes(), &[0x01, 0x02, 0x03, 0x04, 0x05, 0x06, 0x07, 0x08]);
+        assert_eq!(
+            peer_id.as_bytes(),
+            &[0x01, 0x02, 0x03, 0x04, 0x05, 0x06, 0x07, 0x08]
+        );
     }
 
     #[test]
@@ -457,14 +522,14 @@ mod tests {
     #[test]
     #[cfg(target_arch = "wasm32")]
     fn test_app_event_conversion() {
-        use bitchat_core::{AppEvent, ConnectionStatus, ChannelTransportType};
-        
+        use bitchat_core::{AppEvent, ChannelTransportType, ConnectionStatus};
+
         let app_event = AppEvent::PeerStatusChanged {
             peer_id: PeerId::new([1, 2, 3, 4, 5, 6, 7, 8]),
             status: ConnectionStatus::Connected,
             transport: Some(ChannelTransportType::Nostr),
         };
-        
+
         let js_event = JsAppEvent::from(app_event);
         assert_eq!(js_event.event_type, "peer_status_changed");
     }
@@ -472,15 +537,15 @@ mod tests {
     #[test]
     #[cfg(not(target_arch = "wasm32"))]
     fn test_app_event_type_mapping() {
-        use bitchat_core::{AppEvent, ConnectionStatus, ChannelTransportType};
-        
+        use bitchat_core::{AppEvent, ChannelTransportType, ConnectionStatus};
+
         // Test just the event type mapping without WASM serialization
         let app_event = AppEvent::PeerStatusChanged {
             peer_id: PeerId::new([1, 2, 3, 4, 5, 6, 7, 8]),
             status: ConnectionStatus::Connected,
             transport: Some(ChannelTransportType::Nostr),
         };
-        
+
         // We can't actually create JsAppEvent without WASM, but we can test the logic
         let event_type = match app_event {
             AppEvent::PeerStatusChanged { .. } => "peer_status_changed",
@@ -491,8 +556,12 @@ mod tests {
             AppEvent::DiscoveryStateChanged { .. } => "discovery_state_changed",
             AppEvent::ConversationUpdated { .. } => "conversation_updated",
             AppEvent::SystemStatusReport { .. } => "system_status_report",
+            AppEvent::MessageStatusReport { .. } => "message_status_report",
+            AppEvent::PeerSessionReport { .. } => "peer_session_report",
+            AppEvent::DeliveryStatusReport { .. } => "delivery_status_report",
+            AppEvent::InternalStateReport { .. } => "internal_state_report",
         };
-        
+
         assert_eq!(event_type, "peer_status_changed");
     }
 
@@ -503,7 +572,7 @@ mod tests {
             peer_id: "0102030405060708".to_string(),
             connected_peers: vec!["abcdef1234567890".to_string()],
         };
-        
+
         let serialized = serde_json::to_string(&status).unwrap();
         assert!(serialized.contains("running"));
         assert!(serialized.contains("peer_id"));
@@ -523,7 +592,7 @@ mod tests {
         // Valid cases
         assert!(validate_peer_id("0102030405060708"));
         assert!(validate_peer_id("abcdef0123456789abcdef01"));
-        
+
         // Invalid cases
         assert!(!validate_peer_id(""));
         assert!(!validate_peer_id("123"));

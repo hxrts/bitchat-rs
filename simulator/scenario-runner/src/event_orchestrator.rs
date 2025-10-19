@@ -21,8 +21,12 @@ use anyhow::{Context, Result};
 pub enum ClientType {
     /// Native Rust CLI implementation
     RustCli,
+    /// Native Rust implementation (alias for compatibility)
+    Native,
     /// WebAssembly implementation running in browser/Node.js
     Wasm,
+    /// WebAssembly implementation (alias for compatibility)
+    Web,
     /// Swift native implementation
     Swift,
     /// Kotlin/Java implementation
@@ -33,8 +37,8 @@ impl ClientType {
     /// Get human-readable name for the client type
     pub fn name(&self) -> &'static str {
         match self {
-            ClientType::RustCli => "Rust CLI",
-            ClientType::Wasm => "WebAssembly",
+            ClientType::RustCli | ClientType::Native => "Rust Native",
+            ClientType::Wasm | ClientType::Web => "Rust WebAssembly",
             ClientType::Swift => "Swift",
             ClientType::Kotlin => "Kotlin",
         }
@@ -43,12 +47,13 @@ impl ClientType {
     /// Get short identifier for the client type
     pub fn identifier(&self) -> &'static str {
         match self {
-            ClientType::RustCli => "rust-cli",
-            ClientType::Wasm => "wasm",
+            ClientType::RustCli | ClientType::Native => "native",
+            ClientType::Wasm | ClientType::Web => "web",
             ClientType::Swift => "swift",
             ClientType::Kotlin => "kotlin",
         }
     }
+
 }
 
 /// Event-driven test orchestrator
@@ -59,6 +64,7 @@ pub struct EventOrchestrator {
 }
 
 /// Handle for managing a client process
+#[allow(dead_code)]
 struct ClientHandle {
     name: String,
     client_type: ClientType,
@@ -69,6 +75,7 @@ struct ClientHandle {
 
 /// Structured event from client automation mode
 #[derive(Debug, Clone)]
+#[allow(dead_code)]
 pub struct ClientEvent {
     pub client_name: String,
     pub client_type: ClientType,
@@ -87,6 +94,7 @@ impl EventOrchestrator {
     }
 
     /// Start a Rust CLI client in automation mode
+    #[allow(dead_code)]
     pub async fn start_rust_client(&mut self, name: String) -> Result<()> {
         self.start_rust_cli_client(name).await
     }
@@ -96,12 +104,17 @@ impl EventOrchestrator {
         let relay_url = self.relay_url.clone();
         let client_name = name.clone();
         
-        self.start_client(
-            name, 
-            ClientType::RustCli, 
-            "cargo", 
-            &["run", "-p", "bitchat-cli", "--", "interactive", "--automation-mode", "--name", &client_name, "--relay", &relay_url]
-        ).await
+        let cmd_args = vec![
+            "run", "-p", "bitchat-cli", "--", "interactive", 
+            "--automation-mode", "--name", &client_name, "--relay", &relay_url
+        ];
+        
+        // Set working directory to project root
+        let mut cmd = tokio::process::Command::new("cargo");
+        cmd.args(&cmd_args)
+            .current_dir("../../");  // Go to project root
+            
+        self.start_client_with_command(name, ClientType::RustCli, cmd).await
     }
 
     /// Start a WASM client in automation mode (Node.js runner)
@@ -109,8 +122,44 @@ impl EventOrchestrator {
         let relay_url = self.relay_url.clone();
         let client_name = name.clone();
         
-        // For now, use a Node.js wrapper that will run the WASM implementation
-        // This will need to be implemented as a separate Node.js script
+        // Build the WASM package first
+        info!("Building BitChat WASM client...");
+        let build_result = tokio::process::Command::new("cargo")
+            .args([
+                "build", 
+                "--target", "wasm32-unknown-unknown",
+                "--package", "bitchat-web",
+                "--features", "experimental"
+            ])
+            .current_dir("../../")  // Go to project root
+            .output()
+            .await
+            .context("Failed to run cargo build for WASM")?;
+        
+        if !build_result.status.success() {
+            let stderr = String::from_utf8_lossy(&build_result.stderr);
+            anyhow::bail!("WASM build failed: {}", stderr);
+        }
+        
+        // Use wasm-pack to generate JS bindings
+        info!("Generating WASM bindings...");
+        let pack_result = tokio::process::Command::new("wasm-pack")
+            .args([
+                "build",
+                "../../crates/bitchat-web",
+                "--target", "nodejs",
+                "--out-dir", "../../simulator/wasm-pkg"
+            ])
+            .output()
+            .await
+            .context("Failed to run wasm-pack")?;
+        
+        if !pack_result.status.success() {
+            let stderr = String::from_utf8_lossy(&pack_result.stderr);
+            anyhow::bail!("wasm-pack failed: {}", stderr);
+        }
+        
+        // Run the Node.js wrapper with the generated WASM
         self.start_client(
             name, 
             ClientType::Wasm,
@@ -127,7 +176,7 @@ impl EventOrchestrator {
         self.start_client(
             name, 
             ClientType::Swift,
-            "../clients/swift-cli/.build/debug/bitchat-swift-cli", 
+            "../clients/swift-cli/result/bin/bitchat-swift-cli", 
             &["--automation-mode", "--name", &client_name, "--relay", &relay_url]
         ).await
     }
@@ -140,9 +189,101 @@ impl EventOrchestrator {
         self.start_client(
             name, 
             ClientType::Kotlin,
-            "simulator/clients/kotlin-cli/build/install/bitchat-kotlin-cli/bin/bitchat-kotlin-cli", 
+            "../clients/kotlin-cli/result/bin/bitchat-kotlin-cli", 
             &["--automation-mode", "--name", &client_name, "--relay", &relay_url]
         ).await
+    }
+
+    /// Start a client process with a pre-configured Command
+    async fn start_client_with_command(&mut self, name: String, client_type: ClientType, mut cmd: tokio::process::Command) -> Result<()> {
+        info!("Starting {} client '{}' with automation mode", client_type.name(), name);
+
+        cmd.stdin(std::process::Stdio::piped())
+            .stdout(std::process::Stdio::piped())
+            .stderr(std::process::Stdio::inherit())
+            .kill_on_drop(true);
+
+        let mut process = cmd.spawn()
+            .with_context(|| format!("Failed to start client '{}'", name))?;
+
+        let stdout = process.stdout.take()
+            .context("Failed to get stdout")?;
+        
+        let stdin = process.stdin.take()
+            .context("Failed to get stdin")?;
+
+        // Create channels for event communication
+        let (event_tx, event_rx) = mpsc::unbounded_channel();
+        let (stdin_tx, mut stdin_rx) = mpsc::unbounded_channel();
+
+        // Spawn stdin handler
+        let client_name_stdin = name.clone();
+        tokio::spawn(async move {
+            let mut stdin = stdin;
+            while let Some(command) = stdin_rx.recv().await {
+                if let Err(e) = stdin.write_all(format!("{}\n", command).as_bytes()).await {
+                    error!("Failed to write to '{}' stdin: {}", client_name_stdin, e);
+                    break;
+                }
+                if let Err(e) = stdin.flush().await {
+                    error!("Failed to flush '{}' stdin: {}", client_name_stdin, e);
+                    break;
+                }
+            }
+        });
+
+        // Spawn event parsing task
+        let client_name_events = name.clone();
+        let client_type_events = client_type;
+        tokio::spawn(async move {
+            let reader = BufReader::new(stdout);
+            let mut lines = reader.lines();
+            
+            while let Ok(Some(line)) = lines.next_line().await {
+                // Try to parse as JSON automation event
+                if let Ok(json) = serde_json::from_str::<Value>(&line) {
+                    if let Some(event_type) = json.get("type").and_then(|v| v.as_str()) {
+                        let timestamp = json.get("data")
+                            .and_then(|data| data.get("timestamp"))
+                            .and_then(|v| v.as_u64())
+                            .unwrap_or_else(|| {
+                                std::time::SystemTime::now()
+                                    .duration_since(std::time::UNIX_EPOCH)
+                                    .unwrap()
+                                    .as_millis() as u64
+                            });
+
+                        let event = ClientEvent {
+                            client_name: client_name_events.clone(),
+                            client_type: client_type_events,
+                            event_type: event_type.to_string(),
+                            data: json.clone(),
+                            timestamp,
+                        };
+
+                        debug!("Received event '{}' from client '{}'", event_type, client_name_events);
+
+                        if event_tx.send(event).is_err() {
+                            break; // Receiver dropped
+                        }
+                    }
+                } else {
+                    // Non-JSON output (logs, errors) - log but don't parse
+                    debug!("Client '{}' log: {}", client_name_events, line);
+                }
+            }
+        });
+
+        let handle = ClientHandle {
+            name: name.clone(),
+            client_type,
+            process,
+            event_rx,
+            stdin_tx,
+        };
+
+        self.clients.insert(name, handle);
+        Ok(())
     }
 
     /// Start a client process with automation mode enabled
@@ -352,16 +493,19 @@ impl EventOrchestrator {
     }
 
     /// Set event timeout
+    #[allow(dead_code)]
     pub fn set_event_timeout(&mut self, timeout: Duration) {
         self.event_timeout = timeout;
     }
 
     /// Get relay URL
+    #[allow(dead_code)]
     pub fn relay_url(&self) -> &str {
         &self.relay_url
     }
 
     /// Get client type for a given client name
+    #[allow(dead_code)]
     pub fn get_client_type(&self, client_name: &str) -> Option<ClientType> {
         self.clients.get(client_name).map(|handle| handle.client_type)
     }
@@ -375,11 +519,12 @@ impl EventOrchestrator {
         result
     }
 
+
     /// Start a client of any supported type
     pub async fn start_client_by_type(&mut self, client_type: ClientType, name: String) -> Result<()> {
         match client_type {
-            ClientType::RustCli => self.start_rust_cli_client(name).await,
-            ClientType::Wasm => self.start_wasm_client(name).await,
+            ClientType::RustCli | ClientType::Native => self.start_rust_cli_client(name).await,
+            ClientType::Wasm | ClientType::Web => self.start_wasm_client(name).await,
             ClientType::Swift => self.start_swift_client(name).await,
             ClientType::Kotlin => self.start_kotlin_client(name).await,
         }

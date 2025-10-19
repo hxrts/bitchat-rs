@@ -3,12 +3,12 @@
 //! This module contains the stateful NoiseSessionManager that manages multiple
 //! sessions with different peers.
 
-use std::collections::HashMap;
 use core::time::Duration;
+use std::collections::HashMap;
 
 use bitchat_core::{
-    BitchatError, BitchatResult, PeerId, 
-    internal::{SessionError, NoiseKeyPair, NoiseSession, SessionState, TimeSource, Fingerprint}
+    internal::{Fingerprint, NoiseKeyPair, NoiseSession, SessionError, SessionState, TimeSource},
+    BitchatError, BitchatResult, PeerId,
 };
 
 // ----------------------------------------------------------------------------
@@ -82,22 +82,22 @@ impl<T: TimeSource> NoiseSessionManager<T> {
             e.insert(session);
         }
 
-        self.sessions
-            .get_mut(&peer_id)
-            .ok_or_else(|| BitchatError::Session(SessionError::SessionNotFound {
+        self.sessions.get_mut(&peer_id).ok_or_else(|| {
+            BitchatError::Session(SessionError::SessionNotFound {
                 peer_id: peer_id.to_string(),
-            }))
+            })
+        })
     }
 
     /// Create inbound session
     pub fn create_inbound(&mut self, peer_id: PeerId) -> BitchatResult<&mut NoiseSession> {
         let session = NoiseSession::new_inbound(peer_id, &self.local_key, &self.time_source)?;
         self.sessions.insert(peer_id, session);
-        self.sessions
-            .get_mut(&peer_id)
-            .ok_or_else(|| BitchatError::Session(SessionError::SessionNotFound {
+        self.sessions.get_mut(&peer_id).ok_or_else(|| {
+            BitchatError::Session(SessionError::SessionNotFound {
                 peer_id: peer_id.to_string(),
-            }))
+            })
+        })
     }
 
     /// Get existing session

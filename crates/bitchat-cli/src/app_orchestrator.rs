@@ -2,20 +2,18 @@
 //!
 //! Provides a reusable orchestrator for setting up and managing the BitChat CLI application
 
+use crate::terminal_interface::TerminalInterfaceTask;
+use bitchat_ble::BleTransportTask;
 use bitchat_core::{
-    PeerId, ChannelTransportType, BitchatResult, BitchatError,
-    EventSender, TransportTask,
     config::TestConfig,
     internal::{
-        ChannelConfig, SessionConfig, DeliveryConfig, RateLimitConfig,
-        EffectSender,
-        create_command_channel, create_event_channel, create_effect_channel, create_effect_receiver, create_app_event_channel,
-        ConsoleLogger, LogLevel, TransportError
-    }
+        create_app_event_channel, create_command_channel, create_effect_channel,
+        create_effect_receiver, create_event_channel, ChannelConfig, ConsoleLogger, DeliveryConfig,
+        EffectSender, LogLevel, RateLimitConfig, SessionConfig, TransportError,
+    },
+    BitchatError, BitchatResult, ChannelTransportType, EventSender, PeerId, TransportTask,
 };
 use bitchat_runtime::logic::{CoreLogicTask, LoggerWrapper};
-use bitchat_ble::BleTransportTask;
-use crate::terminal_interface::TerminalInterfaceTask;
 use tokio::task::JoinHandle;
 
 // ----------------------------------------------------------------------------
@@ -77,7 +75,7 @@ pub struct CliAppOrchestrator {
     /// Peer identity
     peer_id: PeerId,
     /// Configuration
-    config: TestConfig,
+    _config: TestConfig,
     /// Transport configuration
     transport_config: TransportConfig,
     /// Verbose logging enabled
@@ -99,7 +97,11 @@ impl CliAppOrchestrator {
     }
 
     /// Create new CLI orchestrator with specific transport configuration
-    pub fn with_transports(peer_id: PeerId, verbose: bool, transport_config: TransportConfig) -> Self {
+    pub fn with_transports(
+        peer_id: PeerId,
+        verbose: bool,
+        transport_config: TransportConfig,
+    ) -> Self {
         let config = if verbose {
             TestConfig::new().with_peer_id(peer_id).with_logging()
         } else {
@@ -108,7 +110,7 @@ impl CliAppOrchestrator {
 
         Self {
             peer_id,
-            config,
+            _config: config,
             transport_config,
             verbose,
             core_logic_handle: None,
@@ -124,10 +126,14 @@ impl CliAppOrchestrator {
     }
 
     /// Create orchestrator from TestConfig with specific transport configuration
-    pub fn from_config_with_transports(config: TestConfig, verbose: bool, transport_config: TransportConfig) -> Self {
+    pub fn from_config_with_transports(
+        config: TestConfig,
+        verbose: bool,
+        transport_config: TransportConfig,
+    ) -> Self {
         Self {
             peer_id: config.peer_id,
-            config,
+            _config: config,
             transport_config,
             verbose,
             core_logic_handle: None,
@@ -140,9 +146,11 @@ impl CliAppOrchestrator {
     /// Start the CLI application
     pub async fn start(&mut self) -> BitchatResult<()> {
         if self.running {
-            return Err(BitchatError::Transport(TransportError::InvalidConfiguration {
-                reason: "CLI application already running".to_string(),
-            }));
+            return Err(BitchatError::Transport(
+                TransportError::InvalidConfiguration {
+                    reason: "CLI application already running".to_string(),
+                },
+            ));
         }
 
         // Create channels optimized for CLI usage
@@ -157,10 +165,10 @@ impl CliAppOrchestrator {
         let (event_sender, event_receiver) = create_event_channel(&channel_config);
         let (effect_sender, _initial_effect_receiver) = create_effect_channel(&channel_config);
         let (app_event_sender, app_event_receiver) = create_app_event_channel(&channel_config);
-        
+
         // Clone effect_sender for creating transport subscriptions
         let effect_sender_for_transports = effect_sender.clone();
-        
+
         // Create logger
         let logger = if self.verbose {
             LoggerWrapper::Console(ConsoleLogger::new(LogLevel::Debug).with_timestamps(false))
@@ -181,21 +189,20 @@ impl CliAppOrchestrator {
             RateLimitConfig::default(),
         )?;
 
-        let core_handle = tokio::spawn(async move {
-            core_logic.run().await
-        });
+        let core_handle = tokio::spawn(async move { core_logic.run().await });
         self.core_logic_handle = Some(core_handle);
 
         // Start transport tasks based on configuration
-        self.start_configured_transports(event_sender, effect_sender_for_transports, logger.clone()).await?;
+        self.start_configured_transports(
+            event_sender,
+            effect_sender_for_transports,
+            logger.clone(),
+        )
+        .await?;
 
         // Create and store terminal interface for external access
-        let terminal_interface = TerminalInterfaceTask::new(
-            self.peer_id,
-            command_sender,
-            app_event_receiver,
-            logger,
-        );
+        let terminal_interface =
+            TerminalInterfaceTask::new(self.peer_id, command_sender, app_event_receiver, logger);
         self.terminal_interface = Some(terminal_interface);
 
         // Note: We don't start the terminal interface task here - it will be managed externally
@@ -252,20 +259,24 @@ impl CliAppOrchestrator {
         logger: LoggerWrapper,
     ) -> BitchatResult<()> {
         if self.transport_config.enabled_transports.is_empty() {
-            return Err(BitchatError::Transport(TransportError::InvalidConfiguration {
-                reason: "No transports enabled in configuration".to_string(),
-            }));
+            return Err(BitchatError::Transport(
+                TransportError::InvalidConfiguration {
+                    reason: "No transports enabled in configuration".to_string(),
+                },
+            ));
         }
 
         // Start multiple transports, each with its own subscription to the broadcast channel
         for transport_type in &self.transport_config.enabled_transports {
             match transport_type {
                 ChannelTransportType::Ble if self.transport_config.ble_enabled => {
-                    let handle = self.start_ble_transport(
-                        event_sender.clone(),
-                        effect_sender.clone(),
-                        logger.clone(),
-                    ).await?;
+                    let handle = self
+                        .start_ble_transport(
+                            event_sender.clone(),
+                            effect_sender.clone(),
+                            logger.clone(),
+                        )
+                        .await?;
                     self.transport_handles.push(handle);
                 }
                 ChannelTransportType::Nostr if self.transport_config.nostr_enabled => {
@@ -286,9 +297,11 @@ impl CliAppOrchestrator {
         }
 
         if self.transport_handles.is_empty() {
-            return Err(BitchatError::Transport(TransportError::InvalidConfiguration {
-                reason: "No supported transports could be started".to_string(),
-            }));
+            return Err(BitchatError::Transport(
+                TransportError::InvalidConfiguration {
+                    reason: "No supported transports could be started".to_string(),
+                },
+            ));
         }
 
         Ok(())
@@ -299,15 +312,13 @@ impl CliAppOrchestrator {
         &self,
         event_sender: EventSender,
         effect_sender: EffectSender,
-        logger: LoggerWrapper,
+        _logger: LoggerWrapper,
     ) -> BitchatResult<JoinHandle<BitchatResult<()>>> {
         let mut ble_task = BleTransportTask::new();
         let effect_receiver = create_effect_receiver(&effect_sender);
         ble_task.attach_channels(event_sender, effect_receiver)?;
 
-        let handle = tokio::spawn(async move {
-            ble_task.run().await
-        });
+        let handle = tokio::spawn(async move { ble_task.run().await });
 
         Ok(handle)
     }
@@ -318,14 +329,20 @@ impl CliAppOrchestrator {
 // ----------------------------------------------------------------------------
 
 /// Create and start a CLI application
-pub async fn start_cli_application(peer_id: PeerId, verbose: bool) -> BitchatResult<CliAppOrchestrator> {
+pub async fn start_cli_application(
+    peer_id: PeerId,
+    verbose: bool,
+) -> BitchatResult<CliAppOrchestrator> {
     let mut orchestrator = CliAppOrchestrator::new(peer_id, verbose);
     orchestrator.start().await?;
     Ok(orchestrator)
 }
 
 /// Create and start a CLI application from config
-pub async fn start_cli_application_with_config(config: TestConfig, verbose: bool) -> BitchatResult<CliAppOrchestrator> {
+pub async fn start_cli_application_with_config(
+    config: TestConfig,
+    verbose: bool,
+) -> BitchatResult<CliAppOrchestrator> {
     let mut orchestrator = CliAppOrchestrator::from_config(config, verbose);
     orchestrator.start().await?;
     Ok(orchestrator)
@@ -333,9 +350,9 @@ pub async fn start_cli_application_with_config(config: TestConfig, verbose: bool
 
 /// Create and start a CLI application with specific transport configuration
 pub async fn start_cli_application_with_transports(
-    peer_id: PeerId, 
-    verbose: bool, 
-    transport_config: TransportConfig
+    peer_id: PeerId,
+    verbose: bool,
+    transport_config: TransportConfig,
 ) -> BitchatResult<CliAppOrchestrator> {
     let mut orchestrator = CliAppOrchestrator::with_transports(peer_id, verbose, transport_config);
     orchestrator.start().await?;
@@ -350,7 +367,7 @@ mod tests {
     async fn test_orchestrator_creation() {
         let peer_id = PeerId::new([1, 2, 3, 4, 5, 6, 7, 8]);
         let orchestrator = CliAppOrchestrator::new(peer_id, false);
-        
+
         assert_eq!(orchestrator.peer_id(), peer_id);
         assert!(!orchestrator.is_running());
     }
@@ -361,7 +378,7 @@ mod tests {
         let mut orchestrator = CliAppOrchestrator::new(peer_id, false);
 
         assert!(!orchestrator.is_running());
-        
+
         // Note: We can't easily test start() here without proper transport setup
         // This would require integration testing with actual transport crates
     }

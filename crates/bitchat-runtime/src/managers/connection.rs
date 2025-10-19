@@ -3,14 +3,14 @@
 //! This module contains the ConnectionManager that manages peer connection states
 //! and handles connection lifecycle transitions.
 
-use std::collections::HashMap;
 use bitchat_core::{
-    PeerId, ChannelTransportType,
     internal::{
-        ConnectionState, ConnectionEvent, StateTransition, StateTransitionError,
-        AuditEntry, TimeSource
-    }
+        AuditEntry, ConnectionEvent, ConnectionState, StateTransition, StateTransitionError,
+        TimeSource,
+    },
+    ChannelTransportType, PeerId,
 };
+use std::collections::HashMap;
 
 // ----------------------------------------------------------------------------
 // Connection Manager
@@ -56,16 +56,17 @@ impl<T: TimeSource> ConnectionManager<T> {
     }
 
     /// Get connections for a specific transport
-    pub fn get_connections_by_transport(&self, transport: ChannelTransportType) -> Vec<(&PeerId, &ConnectionState)> {
+    pub fn get_connections_by_transport(
+        &self,
+        transport: ChannelTransportType,
+    ) -> Vec<(&PeerId, &ConnectionState)> {
         self.connections
             .iter()
-            .filter(|(_, state)| {
-                match state {
-                    ConnectionState::Connecting(s) => s.transport == transport,
-                    ConnectionState::Connected(s) => s.transport == transport,
-                    ConnectionState::Failed(s) => s.transport == Some(transport),
-                    _ => false,
-                }
+            .filter(|(_, state)| match state {
+                ConnectionState::Connecting(s) => s.transport == transport,
+                ConnectionState::Connected(s) => s.transport == transport,
+                ConnectionState::Failed(s) => s.transport == Some(transport),
+                _ => false,
             })
             .collect()
     }
@@ -80,27 +81,30 @@ impl<T: TimeSource> ConnectionManager<T> {
 
     /// Process a connection event and update state
     pub fn process_connection_event(
-        &mut self, 
-        peer_id: PeerId, 
-        event: ConnectionEvent
+        &mut self,
+        peer_id: PeerId,
+        event: ConnectionEvent,
     ) -> Result<StateTransition, StateTransitionError> {
         // Ensure peer is initialized
         self.initialize_peer(peer_id);
-        
+
         // Take the current state to consume it
-        let current_state = self.connections.remove(&peer_id)
+        let current_state = self
+            .connections
+            .remove(&peer_id)
             .expect("Peer must exist after initialization");
-        
+
         // Process the transition
         let transition = current_state.transition(event)?;
-        
+
         // Store the new state
-        self.connections.insert(peer_id, transition.new_state.clone());
-        
+        self.connections
+            .insert(peer_id, transition.new_state.clone());
+
         // Record audit entry
         self.audit_trail.push(transition.audit_entry.clone());
         self.stats.state_transitions += 1;
-        
+
         // Cleanup old audit entries (keep last 1000)
         if self.audit_trail.len() > 1000 {
             self.audit_trail.remove(0);
@@ -121,7 +125,7 @@ impl<T: TimeSource> ConnectionManager<T> {
     /// Get count of peers in each state
     pub fn get_state_counts(&self) -> StateDistribution {
         let mut distribution = StateDistribution::default();
-        
+
         for state in self.connections.values() {
             match state {
                 ConnectionState::Disconnected(_) => distribution.disconnected += 1,
@@ -131,7 +135,7 @@ impl<T: TimeSource> ConnectionManager<T> {
                 ConnectionState::Failed(_) => distribution.failed += 1,
             }
         }
-        
+
         distribution
     }
 
@@ -191,10 +195,12 @@ impl<T: TimeSource> ConnectionManager<T> {
     /// Clear disconnected and failed peers older than specified age
     pub fn cleanup_old_peers(&mut self, max_age_seconds: u64) {
         let current_time = self.time_source.now();
-        let cutoff_time = current_time.as_millis().saturating_sub(max_age_seconds * 1000);
+        let cutoff_time = current_time
+            .as_millis()
+            .saturating_sub(max_age_seconds * 1000);
 
         let mut to_remove = Vec::new();
-        
+
         for (peer_id, state) in &self.connections {
             let should_remove = match state {
                 ConnectionState::Disconnected(s) => {
@@ -203,13 +209,11 @@ impl<T: TimeSource> ConnectionManager<T> {
                     } else {
                         false // Keep peers we've never seen
                     }
-                },
-                ConnectionState::Failed(s) => {
-                    s.failed_at.as_millis() < cutoff_time
-                },
+                }
+                ConnectionState::Failed(s) => s.failed_at.as_millis() < cutoff_time,
                 _ => false, // Keep active connections
             };
-            
+
             if should_remove {
                 to_remove.push(*peer_id);
             }
@@ -279,6 +283,7 @@ mod tests {
         PeerId::new([id, 0, 0, 0, 0, 0, 0, 0])
     }
 
+    #[allow(dead_code)]
     fn create_test_session_params() -> SessionParams {
         SessionParams {
             protocol_version: 1,
@@ -309,10 +314,14 @@ mod tests {
         manager.initialize_peer(peer_id);
 
         // Start discovery
-        let transition = manager.process_connection_event(
-            peer_id, 
-            ConnectionEvent::StartDiscovery { timeout_seconds: Some(60) }
-        ).unwrap();
+        let transition = manager
+            .process_connection_event(
+                peer_id,
+                ConnectionEvent::StartDiscovery {
+                    timeout_seconds: Some(60),
+                },
+            )
+            .unwrap();
 
         assert_eq!(transition.new_state.state_name(), "Discovering");
         assert!(!transition.effects.is_empty());
@@ -327,14 +336,18 @@ mod tests {
         // Add peers in different states
         let peer1 = create_test_peer_id(1);
         let peer2 = create_test_peer_id(2);
-        
+
         manager.initialize_peer(peer1);
         manager.initialize_peer(peer2);
-        
-        manager.process_connection_event(
-            peer1, 
-            ConnectionEvent::StartDiscovery { timeout_seconds: Some(60) }
-        ).unwrap();
+
+        manager
+            .process_connection_event(
+                peer1,
+                ConnectionEvent::StartDiscovery {
+                    timeout_seconds: Some(60),
+                },
+            )
+            .unwrap();
 
         let distribution = manager.get_state_counts();
         assert_eq!(distribution.total(), 2);

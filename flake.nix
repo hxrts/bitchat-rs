@@ -58,6 +58,9 @@
           # Environment variables
           RUST_SRC_PATH = "${rustToolchain}/lib/rustlib/src/rust/library";
           RUST_BACKTRACE = "1";
+          
+          # macOS linking environment
+          LIBRARY_PATH = pkgs.lib.makeLibraryPath darwinDeps;
 
           shellHook = ''
             echo "BitChat Development Environment (Rust)"
@@ -67,6 +70,34 @@
             echo "  - rust $(rustc --version | cut -d' ' -f2)"
             echo "  - cargo (with clippy, rustfmt)"
             echo "  - just (task runner)"
+            echo ""
+            
+            # Add system PATH for macOS development tools on Darwin
+            if [[ "$OSTYPE" == "darwin"* ]]; then
+              export PATH="/usr/bin:/System/Library/Frameworks/CoreServices.framework/Frameworks/LaunchServices.framework/Support:$PATH"
+              
+              # Set developer directory to system Xcode for iOS Simulator tools
+              if [ -d "/Applications/Xcode.app" ]; then
+                export DEVELOPER_DIR="/Applications/Xcode.app/Contents/Developer"
+                echo "  - Using system Xcode: $DEVELOPER_DIR"
+              fi
+              
+              # Fix libiconv linking by using system libraries
+              export LIBRARY_PATH="/usr/lib:$LIBRARY_PATH"
+              export LDFLAGS="-L/usr/lib $LDFLAGS"
+              
+              if command -v xcrun >/dev/null 2>&1; then
+                echo "  - xcrun (Xcode command line tools)"
+                if xcrun simctl help >/dev/null 2>&1; then
+                  echo "  - simctl (iOS Simulator control)"
+                else
+                  echo "  - WARNING: simctl not available - check Xcode installation"
+                fi
+              else
+                echo "  - WARNING: xcrun not found - install Xcode Command Line Tools"
+              fi
+            fi
+            
             echo ""
             echo "For Swift development: nix develop ./simulator/clients/swift-cli"
             echo "For Kotlin development: nix develop ./simulator/clients/kotlin-cli"

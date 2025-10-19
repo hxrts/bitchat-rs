@@ -8,6 +8,10 @@ license = "MIT OR Apache-2.0"
 [lib]
 crate-type = ["cdylib"]
 
+[features]
+# Experimental features for advanced functionality
+experimental = ["bitchat-core/experimental"]
+
 [dependencies]
 # Core BitChat protocol - headless and platform-agnostic
 bitchat-core = { path = "../bitchat-core" }

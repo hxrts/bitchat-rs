@@ -48,6 +48,114 @@ BitChat is being reorganised around a four-layer architecture that explicitly se
 - `bitchat-core` defaults to `std`; enabling `wasm` or `testing` must be mutually exclusive with other runtime-specific flags.
 - `bitchat-harness` coordinates runtime-specific async shims; transports and runtime inherit the feature gating through the harness.
 
+## Feature Matrix
+
+The BitChat workspace uses three mutually exclusive feature flags that control platform-specific functionality and dependencies:
+
+### Core Features
+
+#### `std` (Default)
+**Target Environment**: Native applications, CLI tools, server deployments
+
+**Key Capabilities**:
+- Full Rust standard library support
+- Tokio async runtime with multi-threading
+- Comprehensive logging via `tracing` crate
+- File system access and networking primitives
+- High-precision timing and system clock access
+
+**Dependencies Enabled**:
+- `tokio` with full feature set (sync, time, rt, macros)
+- `tracing` for structured logging
+- `instant` for performance timing
+- Standard library features in serde, crypto crates
+- `futures-channel/std` for async communication
+
+**Example Use Cases**: Desktop CLI client, server-side message relay, integration testing
+
+#### `wasm` 
+**Target Environment**: WebAssembly in browser contexts
+
+**Key Capabilities**:
+- Browser-compatible async primitives via `wasm-bindgen-futures`
+- JavaScript interop through `js-sys`
+- Alternative channel implementations using `async-broadcast`
+- Browser-safe timing via `instant` crate's WASM backend
+- No-std core with `alloc` for memory management
+
+**Dependencies Enabled**:
+- `wasm-bindgen-futures` for browser Promise integration
+- `js-sys` for JavaScript API access
+- `async-broadcast` for cross-task communication
+- `instant` with WASM performance timing
+- `futures-channel` without std dependency
+
+**Limitations**:
+- No file system access
+- No native networking (must use browser APIs)
+- Limited crypto randomness (uses browser crypto APIs)
+- Single-threaded execution model
+
+**Example Use Cases**: Browser-based messaging app, WebRTC signaling, WASM-based relay nodes
+
+#### `testing`
+**Target Environment**: Test environments with additional debugging utilities
+
+**Key Capabilities**:
+- All `std` features plus enhanced testing utilities
+- Mock transport implementations
+- Additional monitoring and metrics collection  
+- Debug assertions and validation helpers
+- Extended logging for test debugging
+
+**Dependencies Enabled**:
+- All `std` dependencies
+- `task-logging` and `monitoring` internal flags
+- Mock transport and channel inspection utilities
+- Property testing framework integration
+
+**Example Use Cases**: Unit tests, integration tests, property-based testing, simulator environments
+
+### Feature Interaction Rules
+
+1. **Mutual Exclusion**: Only one of `std`, `wasm`, or `testing` may be enabled at compilation time
+2. **Default Behavior**: `std` is enabled by default for backwards compatibility
+3. **Inheritance**: Transport crates and runtime inherit feature selection from core
+4. **Validation**: Compile-time guards prevent invalid feature combinations
+
+### Internal Feature Flags
+
+The following features are implementation details and should not be used by external consumers:
+
+- `task-logging`: Enables `tracing` dependency (controlled by top-level features)
+- `monitoring`: Enables metrics collection (controlled by top-level features)
+
+### Migration Notes
+
+When updating from legacy feature flags:
+1. Replace `default` with explicit `std` if needed
+2. Remove any transport-specific feature combinations
+3. Ensure only one of the three main features is active
+4. Update build scripts to use the new feature names
+
+### Build Examples
+
+```bash
+# Native/CLI development (default)
+cargo build
+
+# WebAssembly compilation  
+cargo build --no-default-features --features wasm --target wasm32-unknown-unknown
+
+# Testing with enhanced utilities
+cargo test --no-default-features --features testing
+
+# CI validation of different targets
+cargo check --features std
+cargo check --no-default-features --features wasm --target wasm32-unknown-unknown
+cargo test --no-default-features --features testing
+```
+
 ## Implementation Guidelines
 
 1. **Canonical Messages**: Harness defines a single set of channel payload types (commands/events/effects). Transports use helper constructors to normalise raw packets before forwarding them.

@@ -2,17 +2,14 @@
 //!
 //! Contains the core application state, statistics, and logger wrapper.
 
+use crate::managers::{DeliveryTracker, NoiseSessionManager, SessionTimeouts};
 use bitchat_core::{
-    PeerId,
-    Command, Event, Effect, AppEvent,
-    BitchatResult,
     internal::{
-        ConnectionState, MessageStore, TimeSource, Timestamp,
-        TaskLogger, TaskId, LogLevel, ConsoleLogger, NoOpLogger,
-        SessionConfig, DeliveryConfig, AuditEntry
-    }
+        AuditEntry, ConnectionState, ConsoleLogger, DeliveryConfig, LogLevel, MessageStore,
+        NoOpLogger, SessionConfig, TaskId, TaskLogger, TimeSource, Timestamp,
+    },
+    AppEvent, BitchatResult, Command, Effect, Event, PeerId,
 };
-use crate::managers::{NoiseSessionManager, DeliveryTracker, SessionTimeouts};
 use std::collections::HashMap;
 use std::time::{SystemTime, UNIX_EPOCH};
 
@@ -45,12 +42,12 @@ pub struct CoreState {
 impl CoreState {
     /// Create new core state with given peer ID and configurations
     pub fn new(
-        peer_id: PeerId, 
+        peer_id: PeerId,
         session_config: SessionConfig,
         delivery_config: DeliveryConfig,
     ) -> BitchatResult<Self> {
         let time_source = SystemTimeSource;
-        
+
         // Generate or load cryptographic keys (simplified for now)
         let noise_key = bitchat_core::internal::NoiseKeyPair::generate();
         let timeouts = SessionTimeouts {
@@ -59,7 +56,7 @@ impl CoreState {
         };
         let session_manager = NoiseSessionManager::new(noise_key, time_source, timeouts);
         let delivery_tracker = DeliveryTracker::with_config(delivery_config, SystemTimeSource);
-        
+
         Ok(Self {
             peer_id,
             session_manager,
@@ -82,30 +79,66 @@ pub enum LoggerWrapper {
 }
 
 impl LoggerWrapper {
-    pub fn log_receive_command(&self, from: TaskId, to: TaskId, message: &Command, channel_utilization: Option<f32>) {
+    pub fn log_receive_command(
+        &self,
+        from: TaskId,
+        to: TaskId,
+        message: &Command,
+        channel_utilization: Option<f32>,
+    ) {
         match self {
-            LoggerWrapper::Console(logger) => logger.log_receive(from, to, message, channel_utilization),
-            LoggerWrapper::NoOp(logger) => logger.log_receive(from, to, message, channel_utilization),
+            LoggerWrapper::Console(logger) => {
+                logger.log_receive(from, to, message, channel_utilization)
+            }
+            LoggerWrapper::NoOp(logger) => {
+                logger.log_receive(from, to, message, channel_utilization)
+            }
         }
     }
 
-    pub fn log_receive_event(&self, from: TaskId, to: TaskId, message: &Event, channel_utilization: Option<f32>) {
+    pub fn log_receive_event(
+        &self,
+        from: TaskId,
+        to: TaskId,
+        message: &Event,
+        channel_utilization: Option<f32>,
+    ) {
         match self {
-            LoggerWrapper::Console(logger) => logger.log_receive(from, to, message, channel_utilization),
-            LoggerWrapper::NoOp(logger) => logger.log_receive(from, to, message, channel_utilization),
+            LoggerWrapper::Console(logger) => {
+                logger.log_receive(from, to, message, channel_utilization)
+            }
+            LoggerWrapper::NoOp(logger) => {
+                logger.log_receive(from, to, message, channel_utilization)
+            }
         }
     }
 
-    pub fn log_send_effect(&self, from: TaskId, to: TaskId, message: &Effect, channel_utilization: Option<f32>) {
+    pub fn log_send_effect(
+        &self,
+        from: TaskId,
+        to: TaskId,
+        message: &Effect,
+        channel_utilization: Option<f32>,
+    ) {
         match self {
-            LoggerWrapper::Console(logger) => logger.log_send(from, to, message, channel_utilization),
+            LoggerWrapper::Console(logger) => {
+                logger.log_send(from, to, message, channel_utilization)
+            }
             LoggerWrapper::NoOp(logger) => logger.log_send(from, to, message, channel_utilization),
         }
     }
 
-    pub fn log_send_app_event(&self, from: TaskId, to: TaskId, message: &AppEvent, channel_utilization: Option<f32>) {
+    pub fn log_send_app_event(
+        &self,
+        from: TaskId,
+        to: TaskId,
+        message: &AppEvent,
+        channel_utilization: Option<f32>,
+    ) {
         match self {
-            LoggerWrapper::Console(logger) => logger.log_send(from, to, message, channel_utilization),
+            LoggerWrapper::Console(logger) => {
+                logger.log_send(from, to, message, channel_utilization)
+            }
             LoggerWrapper::NoOp(logger) => logger.log_send(from, to, message, channel_utilization),
         }
     }
@@ -136,9 +169,11 @@ pub struct SystemTimeSource;
 
 impl TimeSource for SystemTimeSource {
     fn now(&self) -> Timestamp {
-        Timestamp::new(SystemTime::now()
-            .duration_since(UNIX_EPOCH)
-            .unwrap_or_default()
-            .as_millis() as u64)
+        Timestamp::new(
+            SystemTime::now()
+                .duration_since(UNIX_EPOCH)
+                .unwrap_or_default()
+                .as_millis() as u64,
+        )
     }
 }

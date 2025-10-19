@@ -4,7 +4,7 @@
 //! - tokio-channels: Uses tokio::sync::mpsc for std environments
 //! - wasm-channels: Uses futures-channel::mpsc for WASM environments
 
-use crate::channel::communication::{Command, Event, Effect, AppEvent};
+use crate::channel::communication::{AppEvent, Command, Effect, Event};
 use crate::config::ChannelConfig;
 
 cfg_if::cfg_if! {
@@ -213,7 +213,7 @@ cfg_if::cfg_if! {
 // Channel Health Monitoring
 // ----------------------------------------------------------------------------
 
-use core::sync::atomic::{AtomicU64, AtomicU32, Ordering};
+use core::sync::atomic::{AtomicU32, AtomicU64, Ordering};
 
 /// Channel utilization statistics for monitoring
 /// Uses atomic counters to prevent race conditions in concurrent environments
@@ -256,14 +256,15 @@ impl ChannelStats {
         } else {
             (current_size * 10000 / self.buffer_size) as u32 // Store as percentage * 100
         };
-        self.current_utilization.store(utilization_percent, Ordering::Relaxed);
+        self.current_utilization
+            .store(utilization_percent, Ordering::Relaxed);
     }
 
     /// Get current drop rate (thread-safe)
     pub fn drop_rate(&self) -> f32 {
         let sent = self.messages_sent.load(Ordering::Relaxed);
         let dropped = self.messages_dropped.load(Ordering::Relaxed);
-        
+
         if sent + dropped == 0 {
             0.0
         } else {
@@ -309,7 +310,7 @@ pub trait TaskSpawner {
     fn spawn<F>(&self, future: F)
     where
         F: core::future::Future<Output = ()> + Send + 'static;
-    
+
     fn spawn_local<F>(&self, future: F)
     where
         F: core::future::Future<Output = ()> + 'static;
@@ -327,7 +328,7 @@ cfg_if::cfg_if! {
             {
                 tokio::spawn(future);
             }
-            
+
             fn spawn_local<F>(&self, future: F)
             where
                 F: core::future::Future<Output = ()> + 'static,
@@ -346,7 +347,7 @@ cfg_if::cfg_if! {
             {
                 wasm_bindgen_futures::spawn_local(future);
             }
-            
+
             fn spawn_local<F>(&self, future: F)
             where
                 F: core::future::Future<Output = ()> + 'static,
@@ -378,15 +379,15 @@ mod tests {
     fn test_channel_stats() {
         let stats = ChannelStats::new("test", 100);
         assert_eq!(stats.drop_rate(), 0.0);
-        
+
         stats.record_send_success();
         stats.record_send_success();
         stats.record_send_dropped();
-        
+
         assert_eq!(stats.messages_sent(), 2);
         assert_eq!(stats.messages_dropped(), 1);
         assert!((stats.drop_rate() - 0.333).abs() < 0.01);
-        
+
         stats.update_utilization(50);
         assert!((stats.current_utilization() - 0.5).abs() < 0.01);
     }
@@ -395,10 +396,10 @@ mod tests {
     async fn test_command_channel_creation() {
         let config = ChannelConfig::default();
         let (sender, mut receiver) = create_command_channel(&config);
-        
+
         let test_command = Command::StartDiscovery;
         sender.send(test_command).await.unwrap();
-        
+
         let received = receiver.recv().await.unwrap();
         match received {
             Command::StartDiscovery => (),
@@ -407,4 +408,6 @@ mod tests {
     }
 }
 #[cfg(all(feature = "std", feature = "wasm"))]
-compile_error!("`std` and `wasm` features are mutually exclusive. Enable only one channel backend at a time.");
+compile_error!(
+    "`std` and `wasm` features are mutually exclusive. Enable only one channel backend at a time."
+);

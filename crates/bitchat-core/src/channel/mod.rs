@@ -9,9 +9,8 @@ pub mod utils;
 
 // Re-export communication types
 pub use communication::{
-    Command, Event, Effect, AppEvent, 
-    TransportType as ChannelTransportType, 
-    ConnectionStatus, TransportStatus
+    AppEvent, Command, ConnectionStatus, Effect, Event, TransportStatus,
+    TransportType as ChannelTransportType,
 };
 
 // Re-export ChannelConfig from config module
@@ -19,8 +18,8 @@ pub use crate::config::ChannelConfig;
 
 // Re-export utility types
 pub use utils::{
-    ChannelError, NonBlockingSend, ChannelStats, TaskSpawner,
-    CommandSender, CommandReceiver, EventSender, EventReceiver,
-    EffectSender, EffectReceiver, AppEventSender, AppEventReceiver,
-    create_command_channel, create_event_channel, create_effect_channel, create_effect_receiver, create_app_event_channel
+    create_app_event_channel, create_command_channel, create_effect_channel,
+    create_effect_receiver, create_event_channel, AppEventReceiver, AppEventSender, ChannelError,
+    ChannelStats, CommandReceiver, CommandSender, EffectReceiver, EffectSender, EventReceiver,
+    EventSender, NonBlockingSend, TaskSpawner,
 };

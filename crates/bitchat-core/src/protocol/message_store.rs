@@ -3,11 +3,11 @@
 //! Provides immutable message storage with cryptographic identifiers for
 //! automatic deduplication and integrity verification.
 
-use crate::{PeerId, Result as BitchatResult, BitchatError};
-use serde::{Deserialize, Serialize};
-use hashbrown::HashMap;
-use alloc::collections::BTreeMap;
 use crate::types::Timestamp;
+use crate::{BitchatError, PeerId, Result as BitchatResult};
+use alloc::collections::BTreeMap;
+use hashbrown::HashMap;
+use serde::{Deserialize, Serialize};
 
 cfg_if::cfg_if! {
     if #[cfg(feature = "std")] {
@@ -20,7 +20,7 @@ cfg_if::cfg_if! {
         use alloc::boxed::Box;
     }
 }
-use sha2::{Sha256, Digest};
+use sha2::{Digest, Sha256};
 
 // ----------------------------------------------------------------------------
 // Message Types
@@ -83,12 +83,7 @@ pub struct ContentAddressedMessage {
 
 impl ContentAddressedMessage {
     /// Create new message with content-addressed ID
-    pub fn new(
-        sender: PeerId,
-        recipient: Option<PeerId>,
-        content: String,
-        sequence: u64,
-    ) -> Self {
+    pub fn new(sender: PeerId, recipient: Option<PeerId>, content: String, sequence: u64) -> Self {
         let timestamp = {
             cfg_if::cfg_if! {
                 if #[cfg(any(feature = "std", feature = "wasm"))] {
@@ -236,7 +231,10 @@ impl ConversationId {
         if peer1.as_bytes() < peer2.as_bytes() {
             Self::Direct { peer1, peer2 }
         } else {
-            Self::Direct { peer1: peer2, peer2: peer1 }
+            Self::Direct {
+                peer1: peer2,
+                peer2: peer1,
+            }
         }
     }
 
@@ -318,19 +316,25 @@ impl MessageStore {
         let char_count = message.content.chars().count();
         if char_count > self.config.max_content_length {
             return Err(BitchatError::InvalidPacket(
-                format!("Message content exceeds maximum length of {} characters", 
-                    self.config.max_content_length).into()
+                format!(
+                    "Message content exceeds maximum length of {} characters",
+                    self.config.max_content_length
+                )
+                .into(),
             ));
         }
 
         // Check message size limit (in bytes) - use serialized size
-        let message_size = bincode::serialized_size(message)
-            .map_err(|_| BitchatError::serialization_error())?;
-        
+        let message_size =
+            bincode::serialized_size(message).map_err(|_| BitchatError::serialization_error())?;
+
         if message_size as usize > self.config.max_message_size {
             return Err(BitchatError::InvalidPacket(
-                format!("Message size {} bytes exceeds maximum of {} bytes", 
-                    message_size, self.config.max_message_size).into()
+                format!(
+                    "Message size {} bytes exceeds maximum of {} bytes",
+                    message_size, self.config.max_message_size
+                )
+                .into(),
             ));
         }
 
@@ -347,7 +351,7 @@ impl MessageStore {
         // Check for null bytes (can cause issues in some contexts)
         if content.contains('\0') {
             return Err(BitchatError::InvalidPacket(
-                "Message content contains null bytes".into()
+                "Message content contains null bytes".into(),
             ));
         }
 
@@ -356,10 +360,10 @@ impl MessageStore {
         if total_chars > 0 {
             let whitespace_count = content.chars().filter(|c| c.is_whitespace()).count();
             let whitespace_ratio = whitespace_count as f32 / total_chars as f32;
-            
+
             if whitespace_ratio > 0.9 {
                 return Err(BitchatError::InvalidPacket(
-                    "Message content is mostly whitespace".into()
+                    "Message content is mostly whitespace".into(),
                 ));
             }
         }
@@ -368,23 +372,26 @@ impl MessageStore {
         for c in content.chars() {
             if c.is_control() && !matches!(c, '\n' | '\r' | '\t') {
                 return Err(BitchatError::InvalidPacket(
-                    "Message content contains invalid control characters".into()
+                    "Message content contains invalid control characters".into(),
                 ));
             }
         }
 
         Ok(())
     }
-    
+
     /// Enforce store capacity limits
-    fn enforce_capacity_limits(&mut self, new_message: &ContentAddressedMessage) -> BitchatResult<()> {
+    fn enforce_capacity_limits(
+        &mut self,
+        new_message: &ContentAddressedMessage,
+    ) -> BitchatResult<()> {
         // Check total message limit
         if self.stats.total_messages >= self.config.max_total_messages {
             // Try to clean up old messages first
             let removed = self.cleanup_old_messages();
             if removed == 0 && self.stats.total_messages >= self.config.max_total_messages {
                 return Err(BitchatError::InvalidPacket(
-                    "Message store at maximum capacity".into()
+                    "Message store at maximum capacity".into(),
                 ));
             }
         }
@@ -394,12 +401,15 @@ impl MessageStore {
         if let Some(messages_in_conv) = self.conversations.get(&conversation_id) {
             if messages_in_conv.len() >= self.config.max_messages_per_conversation {
                 return Err(BitchatError::InvalidPacket(
-                    format!("Conversation has reached maximum of {} messages", 
-                        self.config.max_messages_per_conversation).into()
+                    format!(
+                        "Conversation has reached maximum of {} messages",
+                        self.config.max_messages_per_conversation
+                    )
+                    .into(),
                 ));
             }
         }
-        
+
         Ok(())
     }
 
@@ -415,9 +425,9 @@ impl MessageStore {
             }
         };
         let cutoff_time = current_time.saturating_sub(self.config.max_message_age_secs);
-        
+
         let mut to_remove = Vec::new();
-        
+
         for (message_id, message) in &self.messages {
             if message.timestamp < cutoff_time {
                 to_remove.push(*message_id);
@@ -441,7 +451,8 @@ impl MessageStore {
                 conv_messages.retain(|id| id != message_id);
                 if conv_messages.is_empty() {
                     self.conversations.remove(&conversation_id);
-                    self.stats.unique_conversations = self.stats.unique_conversations.saturating_sub(1);
+                    self.stats.unique_conversations =
+                        self.stats.unique_conversations.saturating_sub(1);
                 }
             }
 
@@ -611,25 +622,17 @@ mod tests {
     fn test_message_id_creation() {
         let peer1 = create_test_peer_id(1);
         let peer2 = create_test_peer_id(2);
-        
-        let message = ContentAddressedMessage::new(
-            peer1,
-            Some(peer2),
-            "Hello World".to_string(),
-            1,
-        );
+
+        let message =
+            ContentAddressedMessage::new(peer1, Some(peer2), "Hello World".to_string(), 1);
 
         // Verify message integrity
         assert!(message.verify_integrity());
 
         // Different content should produce different ID
-        let message2 = ContentAddressedMessage::new(
-            peer1,
-            Some(peer2),
-            "Different message".to_string(),
-            1,
-        );
-        
+        let message2 =
+            ContentAddressedMessage::new(peer1, Some(peer2), "Different message".to_string(), 1);
+
         // IDs should be different due to different content
         assert_ne!(message.id, message2.id);
     }
@@ -640,12 +643,8 @@ mod tests {
         let peer1 = create_test_peer_id(1);
         let peer2 = create_test_peer_id(2);
 
-        let message = ContentAddressedMessage::new(
-            peer1,
-            Some(peer2),
-            "Test message".to_string(),
-            1,
-        );
+        let message =
+            ContentAddressedMessage::new(peer1, Some(peer2), "Test message".to_string(), 1);
 
         // First store should succeed
         let stored = store.store_message(message.clone()).unwrap();
@@ -667,26 +666,11 @@ mod tests {
         let peer3 = create_test_peer_id(3);
 
         // Add messages to peer1 ↔ peer2 conversation
-        let msg1 = ContentAddressedMessage::new(
-            peer1,
-            Some(peer2),
-            "Message 1".to_string(),
-            1,
-        );
-        let msg2 = ContentAddressedMessage::new(
-            peer2,
-            Some(peer1),
-            "Message 2".to_string(),
-            2,
-        );
+        let msg1 = ContentAddressedMessage::new(peer1, Some(peer2), "Message 1".to_string(), 1);
+        let msg2 = ContentAddressedMessage::new(peer2, Some(peer1), "Message 2".to_string(), 2);
 
         // Add message to peer1 ↔ peer3 conversation
-        let msg3 = ContentAddressedMessage::new(
-            peer1,
-            Some(peer3),
-            "Message 3".to_string(),
-            1,
-        );
+        let msg3 = ContentAddressedMessage::new(peer1, Some(peer3), "Message 3".to_string(), 1);
 
         store.store_message(msg1).unwrap();
         store.store_message(msg2).unwrap();
@@ -722,12 +706,8 @@ mod tests {
         let peer1 = create_test_peer_id(1);
         let peer2 = create_test_peer_id(2);
 
-        let mut message = ContentAddressedMessage::new(
-            peer1,
-            Some(peer2),
-            "Original content".to_string(),
-            1,
-        );
+        let mut message =
+            ContentAddressedMessage::new(peer1, Some(peer2), "Original content".to_string(), 1);
 
         assert!(message.verify_integrity());
 

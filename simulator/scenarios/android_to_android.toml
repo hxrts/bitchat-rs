@@ -1,0 +1,158 @@
+# Android to Android Cross-Platform Testing Scenario
+# Tests BitChat protocol compatibility between two Android devices/emulators
+
+[metadata]
+name = "Android to Android"
+description = "Cross-platform messaging test between two Android devices with real BitChat apps"
+version = "1.0"
+tags = ["android", "cross-platform", "real-apps", "emulator"]
+duration_seconds = 120
+author = "Sam"
+
+# Network configuration for real device testing
+[network]
+[network.profile]
+type = "SlowWifi"
+latency_ms = 50
+jitter_ms = 10
+packet_loss = 0.02  # 2% packet loss to simulate real conditions
+
+[network.topology]
+type = "FullyConnected"
+
+[network.logging]
+enable_packet_logging = true
+enable_stats_logging = true
+stats_interval_seconds = 10
+
+# Two Android devices/emulators
+[[peers]]
+name = "android_device_1"
+start_delay_seconds = 5.0
+
+[peers.behavior]
+auto_discovery = true
+auto_connect = true
+
+# Auto-messaging to test basic communication
+[[peers.behavior.auto_messaging]]
+target = "android_device_2"
+content = "Hello from Android device 1!"
+interval_seconds = 10.0
+count = 3
+start_at_seconds = 15.0
+
+[[peers]]
+name = "android_device_2"
+start_delay_seconds = 10.0
+
+[peers.behavior]
+auto_discovery = true
+auto_connect = true
+
+# Response behavior - reply to messages from device 1
+[[peers.behavior.responses]]
+[peers.behavior.responses.trigger]
+type = "MessageReceived"
+from = "android_device_1"
+[peers.behavior.responses.action]
+type = "SendMessage"
+target = "android_device_1"
+content = "Android device 2 received your message!"
+delay_seconds = 2.0
+
+# Test sequence for coordinated actions
+[[sequence]]
+name = "startup_verification"
+at_time_seconds = 20.0
+action = "LogCheckpoint"
+message = "Both Android devices should be online and discovering each other"
+
+[[sequence]]
+name = "force_discovery"
+at_time_seconds = 25.0
+action = "StartDiscovery"
+peer = "android_device_1"
+
+[[sequence]]
+name = "force_discovery_2"
+at_time_seconds = 27.0
+action = "StartDiscovery"
+peer = "android_device_2"
+
+[[sequence]]
+name = "manual_message_test"
+at_time_seconds = 40.0
+action = "SendMessage"
+from = "android_device_2"
+to = "android_device_1"
+content = "Manual test message from Android 2 to Android 1"
+
+[[sequence]]
+name = "broadcast_test"
+at_time_seconds = 60.0
+action = "SendBroadcast"
+from = "android_device_1"
+content = "Broadcast message from Android device 1"
+
+[[sequence]]
+name = "connection_validation"
+at_time_seconds = 80.0
+action = "ValidateState"
+[sequence.validation]
+type = "PeerConnected"
+peer1 = "android_device_1"
+peer2 = "android_device_2"
+
+[[sequence]]
+name = "final_checkpoint"
+at_time_seconds = 110.0
+action = "LogCheckpoint"
+message = "Android to Android test completing - checking final state"
+
+# Validation configuration
+[validation]
+# Continuous monitoring during the test
+[[validation.continuous_checks]]
+interval_seconds = 15.0
+start_at_seconds = 30.0
+[validation.continuous_checks.check]
+type = "NetworkStats"
+max_packet_loss = 0.1
+min_delivery_rate = 0.8
+
+# Final validation checks
+[[validation.final_checks]]
+type = "PeerConnected"
+peer1 = "android_device_1"
+peer2 = "android_device_2"
+
+[[validation.final_checks]]
+type = "MessageCount"
+peer = "android_device_1"
+expected_min = 3  # Should have received responses and manual message
+
+[[validation.final_checks]]
+type = "MessageCount"
+peer = "android_device_2"
+expected_min = 4  # Should have received auto messages + manual message + broadcast
+
+# Timeout configuration for real devices (longer than mock tests)
+[validation.timeouts]
+message_delivery_seconds = 30.0
+connection_establishment_seconds = 20.0
+peer_discovery_seconds = 15.0
+
+# Performance expectations for real Android devices
+[performance]
+expected_throughput = 1.0  # Lower throughput expected for real devices
+max_latency_ms = 200
+max_packet_loss = 0.05
+
+[performance.memory_limits]
+max_per_peer_mb = 100
+max_total_mb = 250
+
+[performance.cpu_limits]
+max_per_peer_percent = 30.0
+max_total_percent = 70.0

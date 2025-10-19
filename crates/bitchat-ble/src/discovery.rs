@@ -8,8 +8,8 @@
 use std::collections::HashMap;
 use std::sync::Arc;
 
-use bitchat_core::{BitchatError, PeerId, Result as BitchatResult};
 use bitchat_core::internal::{IdentityKeyPair, TransportError};
+use bitchat_core::{BitchatError, PeerId, Result as BitchatResult};
 use btleplug::api::{Central, CentralEvent, Manager as _, Peripheral, ScanFilter};
 use btleplug::platform::{Adapter, Manager};
 use tokio::sync::RwLock;
@@ -44,26 +44,23 @@ impl BleDiscovery {
     /// Initialize BLE adapter
     #[allow(dead_code)]
     pub async fn initialize_adapter(&mut self) -> BitchatResult<()> {
-        let manager = Manager::new().await.map_err(|e| BitchatError::Transport(
-            TransportError::InvalidConfiguration {
+        let manager = Manager::new().await.map_err(|e| {
+            BitchatError::Transport(TransportError::InvalidConfiguration {
                 reason: format!("Failed to create BLE manager: {}", e),
-            }
-        ))?;
+            })
+        })?;
 
-        let adapters = manager
-            .adapters()
-            .await
-            .map_err(|e| BitchatError::Transport(
-                TransportError::InvalidConfiguration {
-                    reason: format!("Failed to get BLE adapters: {}", e),
-                }
-            ))?;
+        let adapters = manager.adapters().await.map_err(|e| {
+            BitchatError::Transport(TransportError::InvalidConfiguration {
+                reason: format!("Failed to get BLE adapters: {}", e),
+            })
+        })?;
 
         if adapters.is_empty() {
             return Err(BitchatError::Transport(
                 TransportError::TransportUnavailable {
                     transport_type: "BLE".to_string(),
-                }
+                },
             ));
         }
 
@@ -80,27 +77,21 @@ impl BleDiscovery {
 
     /// Start scanning for BitChat peers
     pub async fn start_scanning(&self) -> BitchatResult<()> {
-        let adapter = self
-            .adapter
-            .as_ref()
-            .ok_or_else(|| BitchatError::Transport(
-                TransportError::TransportUnavailable {
-                    transport_type: "BLE adapter not initialized".to_string(),
-                }
-            ))?;
+        let adapter = self.adapter.as_ref().ok_or_else(|| {
+            BitchatError::Transport(TransportError::TransportUnavailable {
+                transport_type: "BLE adapter not initialized".to_string(),
+            })
+        })?;
 
         let scan_filter = ScanFilter {
             services: vec![BITCHAT_SERVICE_UUID],
         };
 
-        adapter
-            .start_scan(scan_filter)
-            .await
-            .map_err(|e| BitchatError::Transport(
-                TransportError::InvalidConfiguration {
-                    reason: format!("Failed to start BLE scan: {}", e),
-                }
-            ))?;
+        adapter.start_scan(scan_filter).await.map_err(|e| {
+            BitchatError::Transport(TransportError::InvalidConfiguration {
+                reason: format!("Failed to start BLE scan: {}", e),
+            })
+        })?;
 
         info!("Started BLE scanning for BitChat peers");
         Ok(())
@@ -109,14 +100,11 @@ impl BleDiscovery {
     /// Stop scanning for peers
     pub async fn stop_scanning(&self) -> BitchatResult<()> {
         if let Some(adapter) = &self.adapter {
-            adapter
-                .stop_scan()
-                .await
-                .map_err(|e| BitchatError::Transport(
-                    TransportError::InvalidConfiguration {
-                        reason: format!("Failed to stop BLE scan: {}", e),
-                    }
-                ))?;
+            adapter.stop_scan().await.map_err(|e| {
+                BitchatError::Transport(TransportError::InvalidConfiguration {
+                    reason: format!("Failed to stop BLE scan: {}", e),
+                })
+            })?;
         }
         Ok(())
     }
@@ -145,7 +133,7 @@ impl BleDiscovery {
                                         .get(&0xFFFF) // Use company ID 0xFFFF for test/development
                                         .cloned()
                                         .unwrap_or_default();
-                                    
+
                                     if manufacturer_data.is_empty() {
                                         debug!("Rejecting device '{}' - missing secure advertising data", name);
                                         return Ok(());
@@ -158,13 +146,17 @@ impl BleDiscovery {
                                         60, // 60 second max age
                                     ) {
                                         Ok(Some(peer_id)) => {
-                                            let ble_peer = BlePeer::new(peer_id, peripheral, name.clone());
+                                            let ble_peer =
+                                                BlePeer::new(peer_id, peripheral, name.clone());
 
                                             let mut peers_lock = peers.write().await;
                                             if let std::collections::hash_map::Entry::Vacant(e) =
                                                 peers_lock.entry(peer_id)
                                             {
-                                                debug!("Discovered secure BitChat peer: {} ({})", peer_id, name);
+                                                debug!(
+                                                    "Discovered secure BitChat peer: {} ({})",
+                                                    peer_id, name
+                                                );
                                                 e.insert(ble_peer);
 
                                                 // Update cached peers list
@@ -173,10 +165,16 @@ impl BleDiscovery {
                                             }
                                         }
                                         Ok(None) => {
-                                            debug!("Cryptographic verification failed for device: {}", name);
+                                            debug!(
+                                                "Cryptographic verification failed for device: {}",
+                                                name
+                                            );
                                         }
                                         Err(e) => {
-                                            debug!("Invalid advertising data from device '{}': {}", name, e);
+                                            debug!(
+                                                "Invalid advertising data from device '{}': {}",
+                                                name, e
+                                            );
                                         }
                                     }
                                 }
@@ -207,7 +205,11 @@ impl BleDiscovery {
     /// - Linux: Uses bluer crate with BlueZ for complete GATT service implementation
     /// - macOS: Uses Core Bluetooth framework via Objective-C bindings for CBPeripheralManager
     /// - Other platforms: Logs warning about lack of support
-    pub async fn start_advertising(&mut self, peer_id: PeerId, identity: &IdentityKeyPair) -> BitchatResult<()> {
+    pub async fn start_advertising(
+        &mut self,
+        peer_id: PeerId,
+        identity: &IdentityKeyPair,
+    ) -> BitchatResult<()> {
         self.advertising_manager
             .start(peer_id, identity, &self.config)
             .await?;
@@ -231,7 +233,9 @@ impl BleDiscovery {
     /// Rotate advertising data for privacy
     #[allow(dead_code)]
     pub async fn rotate_advertising(&mut self, identity: &IdentityKeyPair) -> BitchatResult<()> {
-        self.advertising_manager.rotate(identity, &self.config).await?;
+        self.advertising_manager
+            .rotate(identity, &self.config)
+            .await?;
         debug!("Rotated BLE advertising data");
         Ok(())
     }

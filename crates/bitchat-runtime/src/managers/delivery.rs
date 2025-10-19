@@ -3,15 +3,13 @@
 //! This module contains the stateful DeliveryTracker that manages message
 //! delivery attempts and retries.
 
+use alloc::vec::Vec;
 use std::collections::HashMap;
 use uuid::Uuid;
-use alloc::vec::Vec;
 
 use bitchat_core::{
+    internal::{DeliveryConfig, DeliveryStatus, TimeSource, TrackedMessage},
     PeerId,
-    internal::{
-        DeliveryStatus, DeliveryConfig, TrackedMessage, TimeSource
-    }
 };
 
 // ----------------------------------------------------------------------------
@@ -136,9 +134,7 @@ impl<T: TimeSource> DeliveryTracker<T> {
         self.tracked_messages.retain(|_, msg| {
             !matches!(
                 msg.status,
-                DeliveryStatus::Confirmed
-                    | DeliveryStatus::Failed
-                    | DeliveryStatus::Cancelled
+                DeliveryStatus::Confirmed | DeliveryStatus::Failed | DeliveryStatus::Cancelled
             )
         });
     }

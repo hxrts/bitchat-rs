@@ -3,8 +3,8 @@
 //! Provides structured logging for CSP channel communication debugging
 //! Compatible with both native and WASM environments
 
-use crate::channel::{Command, Event, Effect, AppEvent, ChannelTransportType};
-use serde::{Serialize, Deserialize};
+use crate::channel::{AppEvent, ChannelTransportType, Command, Effect, Event};
+use serde::{Deserialize, Serialize};
 
 cfg_if::cfg_if! {
     if #[cfg(feature = "std")] {
@@ -45,6 +45,8 @@ impl fmt::Display for LogLevel {
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
 pub enum TaskId {
     CoreLogic,
+    SessionManager,
+    DeliveryManager,
     Transport(ChannelTransportType),
     UI,
     TestOrchestrator,
@@ -54,6 +56,8 @@ impl fmt::Display for TaskId {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
             TaskId::CoreLogic => write!(f, "CoreLogic"),
+            TaskId::SessionManager => write!(f, "SessionManager"),
+            TaskId::DeliveryManager => write!(f, "DeliveryManager"),
             TaskId::Transport(transport) => write!(f, "Transport({})", transport),
             TaskId::UI => write!(f, "UI"),
             TaskId::TestOrchestrator => write!(f, "TestOrchestrator"),
@@ -74,7 +78,7 @@ impl fmt::Display for Direction {
         match self {
             Direction::Send => write!(f, "→"),
             Direction::Receive => write!(f, "←"),
-            Direction::Drop => write!(f, "✗"),
+            Direction::Drop => write!(f, "X"),
         }
     }
 }
@@ -128,6 +132,10 @@ impl From<&Command> for MessageType {
             Command::PauseTransport { .. } => "PauseTransport",
             Command::ResumeTransport { .. } => "ResumeTransport",
             Command::GetSystemStatus => "GetSystemStatus",
+            Command::QueryMessageStatus { .. } => "QueryMessageStatus",
+            Command::QueryPeerSession { .. } => "QueryPeerSession",
+            Command::QueryDeliveryStatus { .. } => "QueryDeliveryStatus",
+            Command::QueryInternalState => "QueryInternalState",
         };
         MessageType::Command(variant.to_string())
     }
@@ -138,6 +146,7 @@ impl From<&Event> for MessageType {
         let variant = match event {
             Event::PeerDiscovered { .. } => "PeerDiscovered",
             Event::MessageReceived { .. } => "MessageReceived",
+            Event::BitchatPacketReceived { .. } => "BitchatPacketReceived",
             Event::ConnectionEstablished { .. } => "ConnectionEstablished",
             Event::ConnectionLost { .. } => "ConnectionLost",
             Event::TransportError { .. } => "TransportError",
@@ -150,6 +159,8 @@ impl From<&Effect> for MessageType {
     fn from(effect: &Effect) -> Self {
         let variant = match effect {
             Effect::SendPacket { .. } => "SendPacket",
+            Effect::SendBitchatPacket { .. } => "SendBitchatPacket",
+            Effect::BroadcastBitchatPacket { .. } => "BroadcastBitchatPacket",
             Effect::InitiateConnection { .. } => "InitiateConnection",
             Effect::StartListening { .. } => "StartListening",
             Effect::StopListening { .. } => "StopListening",
@@ -175,6 +186,10 @@ impl From<&AppEvent> for MessageType {
             AppEvent::SystemBusy { .. } => "SystemBusy",
             AppEvent::SystemError { .. } => "SystemError",
             AppEvent::SystemStatusReport { .. } => "SystemStatusReport",
+            AppEvent::MessageStatusReport { .. } => "MessageStatusReport",
+            AppEvent::PeerSessionReport { .. } => "PeerSessionReport",
+            AppEvent::DeliveryStatusReport { .. } => "DeliveryStatusReport",
+            AppEvent::InternalStateReport { .. } => "InternalStateReport",
         };
         MessageType::AppEvent(variant.to_string())
     }
@@ -227,6 +242,16 @@ impl MessageSummary for Command {
             Command::PauseTransport { transport } => format!("pausing transport:{}", transport),
             Command::ResumeTransport { transport } => format!("resuming transport:{}", transport),
             Command::GetSystemStatus => "requesting system status".to_string(),
+            Command::QueryMessageStatus { message_id } => {
+                format!("querying message status for {:?}", message_id)
+            }
+            Command::QueryPeerSession { peer_id } => {
+                format!("querying session state for peer {}", peer_id)
+            }
+            Command::QueryDeliveryStatus { peer_id } => {
+                format!("querying delivery status for peer {}", peer_id)
+            }
+            Command::QueryInternalState => "querying internal state".to_string(),
         }
     }
 }
@@ -234,16 +259,42 @@ impl MessageSummary for Command {
 impl MessageSummary for Event {
     fn summary(&self) -> String {
         match self {
-            Event::PeerDiscovered { peer_id, transport, signal_strength } => {
-                format!("peer:{} via:{} signal:{:?}", peer_id, transport, signal_strength)
+            Event::PeerDiscovered {
+                peer_id,
+                transport,
+                signal_strength,
+            } => {
+                format!(
+                    "peer:{} via:{} signal:{:?}",
+                    peer_id, transport, signal_strength
+                )
             }
-            Event::MessageReceived { from, content, transport, .. } => {
+            Event::MessageReceived {
+                from,
+                content,
+                transport,
+                ..
+            } => {
                 format!("from:{} via:{} content:{:.20}...", from, transport, content)
+            }
+            Event::BitchatPacketReceived {
+                from,
+                packet,
+                transport,
+            } => {
+                format!(
+                    "from:{} via:{} type:{:?}",
+                    from, transport, packet.header.message_type
+                )
             }
             Event::ConnectionEstablished { peer_id, transport } => {
                 format!("peer:{} via:{}", peer_id, transport)
             }
-            Event::ConnectionLost { peer_id, transport, reason } => {
+            Event::ConnectionLost {
+                peer_id,
+                transport,
+                reason,
+            } => {
                 format!("peer:{} via:{} reason:{}", peer_id, transport, reason)
             }
             Event::TransportError { transport, error } => {
@@ -256,8 +307,28 @@ impl MessageSummary for Event {
 impl MessageSummary for Effect {
     fn summary(&self) -> String {
         match self {
-            Effect::SendPacket { peer_id, data, transport } => {
+            Effect::SendPacket {
+                peer_id,
+                data,
+                transport,
+            } => {
                 format!("to:{} via:{} bytes:{}", peer_id, transport, data.len())
+            }
+            Effect::SendBitchatPacket {
+                peer_id,
+                packet,
+                transport,
+            } => {
+                format!(
+                    "to:{} via:{} type:{:?}",
+                    peer_id, transport, packet.header.message_type
+                )
+            }
+            Effect::BroadcastBitchatPacket { packet, transport } => {
+                format!(
+                    "broadcast via:{} type:{:?}",
+                    transport, packet.header.message_type
+                )
             }
             Effect::InitiateConnection { peer_id, transport } => {
                 format!("peer:{} via:{}", peer_id, transport)
@@ -287,20 +358,87 @@ impl MessageSummary for AppEvent {
             AppEvent::MessageSent { to, content, .. } => {
                 format!("to:{} content:{:.20}...", to, content)
             }
-            AppEvent::PeerStatusChanged { peer_id, status, transport } => {
+            AppEvent::PeerStatusChanged {
+                peer_id,
+                status,
+                transport,
+            } => {
                 format!("peer:{} status:{} via:{:?}", peer_id, status, transport)
             }
             AppEvent::DiscoveryStateChanged { active, transport } => {
                 format!("active:{} transport:{:?}", active, transport)
             }
-            AppEvent::ConversationUpdated { peer_id, message_count, .. } => {
+            AppEvent::ConversationUpdated {
+                peer_id,
+                message_count,
+                ..
+            } => {
                 format!("peer:{} messages:{}", peer_id, message_count)
             }
             AppEvent::SystemBusy { reason } => format!("reason:{}", reason),
             AppEvent::SystemError { error } => format!("error:{}", error),
-            AppEvent::SystemStatusReport { peer_count, active_connections, message_count, uptime_seconds, .. } => {
-                format!("peers:{} connected:{} messages:{} uptime:{}s", peer_count, active_connections, message_count, uptime_seconds)
-            },
+            AppEvent::SystemStatusReport {
+                peer_count,
+                active_connections,
+                message_count,
+                uptime_seconds,
+                ..
+            } => {
+                format!(
+                    "peers:{} connected:{} messages:{} uptime:{}s",
+                    peer_count, active_connections, message_count, uptime_seconds
+                )
+            }
+            AppEvent::MessageStatusReport {
+                message_id,
+                status,
+                retry_count,
+                ..
+            } => {
+                format!(
+                    "message:{:?} status:{} retries:{}",
+                    message_id, status, retry_count
+                )
+            }
+            AppEvent::PeerSessionReport {
+                peer_id,
+                session_state,
+                messages_sent,
+                messages_received,
+                ..
+            } => {
+                format!(
+                    "peer:{} state:{} sent:{} received:{}",
+                    peer_id, session_state, messages_sent, messages_received
+                )
+            }
+            AppEvent::DeliveryStatusReport {
+                peer_id,
+                pending_messages,
+                delivered_messages,
+                failed_messages,
+                ..
+            } => {
+                format!(
+                    "peer:{} pending:{} delivered:{} failed:{}",
+                    peer_id,
+                    pending_messages.len(),
+                    delivered_messages,
+                    failed_messages
+                )
+            }
+            AppEvent::InternalStateReport {
+                peer_id,
+                active_sessions,
+                message_store_size,
+                pending_deliveries,
+                ..
+            } => {
+                format!(
+                    "peer:{} sessions:{} store_size:{} pending:{}",
+                    peer_id, active_sessions, message_store_size, pending_deliveries
+                )
+            }
         }
     }
 }
@@ -311,13 +449,8 @@ impl MessageSummary for AppEvent {
 
 /// Task communication logger
 pub trait TaskLogger {
-    fn log_send<T>(
-        &self,
-        from: TaskId,
-        to: TaskId,
-        message: &T,
-        channel_utilization: Option<f32>,
-    ) where
+    fn log_send<T>(&self, from: TaskId, to: TaskId, message: &T, channel_utilization: Option<f32>)
+    where
         for<'a> &'a T: Into<MessageType>,
         T: MessageSummary;
 
@@ -331,13 +464,8 @@ pub trait TaskLogger {
         for<'a> &'a T: Into<MessageType>,
         T: MessageSummary;
 
-    fn log_drop<T>(
-        &self,
-        from: TaskId,
-        to: TaskId,
-        message: &T,
-        reason: &str,
-    ) where
+    fn log_drop<T>(&self, from: TaskId, to: TaskId, message: &T, reason: &str)
+    where
         for<'a> &'a T: Into<MessageType>,
         T: MessageSummary;
 
@@ -367,7 +495,10 @@ impl ConsoleLogger {
     fn should_log(&self, level: LogLevel) -> bool {
         use LogLevel::*;
         let level_order = [Trace, Debug, Info, Warn, Error];
-        let min_index = level_order.iter().position(|&l| l == self.min_level).unwrap_or(0);
+        let min_index = level_order
+            .iter()
+            .position(|&l| l == self.min_level)
+            .unwrap_or(0);
         let current_index = level_order.iter().position(|&l| l == level).unwrap_or(0);
         current_index >= min_index
     }
@@ -394,15 +525,10 @@ impl ConsoleLogger {
 }
 
 impl TaskLogger for ConsoleLogger {
-    fn log_send<T>(
-        &self,
-        from: TaskId,
-        to: TaskId,
-        message: &T,
-        channel_utilization: Option<f32>,
-    ) where
+    fn log_send<T>(&self, from: TaskId, to: TaskId, message: &T, channel_utilization: Option<f32>)
+    where
         for<'a> &'a T: Into<MessageType>,
-        T: MessageSummary
+        T: MessageSummary,
     {
         if !self.should_log(LogLevel::Debug) {
             return;
@@ -432,7 +558,7 @@ impl TaskLogger for ConsoleLogger {
         channel_utilization: Option<f32>,
     ) where
         for<'a> &'a T: Into<MessageType>,
-        T: MessageSummary
+        T: MessageSummary,
     {
         if !self.should_log(LogLevel::Debug) {
             return;
@@ -454,15 +580,10 @@ impl TaskLogger for ConsoleLogger {
         );
     }
 
-    fn log_drop<T>(
-        &self,
-        from: TaskId,
-        to: TaskId,
-        message: &T,
-        reason: &str,
-    ) where
+    fn log_drop<T>(&self, from: TaskId, to: TaskId, message: &T, reason: &str)
+    where
         for<'a> &'a T: Into<MessageType>,
-        T: MessageSummary
+        T: MessageSummary,
     {
         if !self.should_log(LogLevel::Warn) {
             return;
@@ -518,17 +639,9 @@ impl TaskLogger for NoOpLogger {
     ) {
     }
 
-    fn log_drop<T>(
-        &self,
-        _from: TaskId,
-        _to: TaskId,
-        _message: &T,
-        _reason: &str,
-    ) {
-    }
+    fn log_drop<T>(&self, _from: TaskId, _to: TaskId, _message: &T, _reason: &str) {}
 
-    fn log_task_event(&self, _task: TaskId, _level: LogLevel, _message: &str) {
-    }
+    fn log_task_event(&self, _task: TaskId, _level: LogLevel, _message: &str) {}
 }
 
 #[cfg(test)]
@@ -558,7 +671,10 @@ mod tests {
     #[test]
     fn test_task_id_display() {
         assert_eq!(format!("{}", TaskId::CoreLogic), "CoreLogic");
-        assert_eq!(format!("{}", TaskId::Transport(ChannelTransportType::Ble)), "Transport(BLE)");
+        assert_eq!(
+            format!("{}", TaskId::Transport(ChannelTransportType::Ble)),
+            "Transport(BLE)"
+        );
         assert_eq!(format!("{}", TaskId::UI), "UI");
     }
 

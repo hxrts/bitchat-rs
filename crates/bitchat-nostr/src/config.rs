@@ -1,6 +1,6 @@
 //! Configuration for Nostr transport task
 
-use nostr_sdk::{Keys, ToBech32, FromBech32};
+use nostr_sdk::{FromBech32, Keys, ToBech32};
 use serde::Deserialize;
 use std::time::Duration;
 

@@ -1,0 +1,93 @@
+# Basic Messaging Scenario
+# Tests fundamental message sending and receiving between two peers
+
+[metadata]
+name = "Basic Messaging"
+description = "Tests basic message sending and receiving between two peers under ideal network conditions"
+version = "1.0"
+tags = ["basic", "messaging", "two-peer"]
+duration_seconds = 30
+author = "Sam"
+
+[network]
+[network.profile]
+type = "Perfect"
+
+[network.topology]
+type = "FullyConnected"
+
+[network.logging]
+enable_packet_logging = true
+enable_stats_logging = true
+stats_interval_seconds = 5
+
+[[peers]]
+name = "alice"
+[peers.behavior]
+auto_discovery = true
+auto_connect = true
+
+[[peers]]
+name = "bob"
+[peers.behavior]
+auto_discovery = true
+auto_connect = true
+
+[[sequence]]
+name = "alice_sends_hello"
+at_time_seconds = 2.0
+action = "SendMessage"
+from = "alice"
+to = "bob"
+content = "Hello Bob!"
+
+[[sequence]]
+name = "bob_responds"
+at_time_seconds = 4.0
+action = "SendMessage"
+from = "bob"
+to = "alice"
+content = "Hello Alice!"
+
+[[sequence]]
+name = "validate_alice_received"
+at_time_seconds = 5.0
+action = "ValidateState"
+[sequence.validation]
+type = "MessageDelivered"
+from = "bob"
+to = "alice"
+content = "Hello Alice!"
+
+[[sequence]]
+name = "validate_bob_received"
+at_time_seconds = 5.0
+action = "ValidateState"
+[sequence.validation]
+type = "MessageDelivered"
+from = "alice"
+to = "bob"
+content = "Hello Bob!"
+
+[validation]
+[[validation.final_checks]]
+type = "PeerConnected"
+peer1 = "alice"
+peer2 = "bob"
+
+[[validation.final_checks]]
+type = "MessageCount"
+peer = "alice"
+expected_min = 1
+expected_max = 1
+
+[[validation.final_checks]]
+type = "MessageCount"
+peer = "bob"
+expected_min = 1
+expected_max = 1
+
+[performance]
+max_latency_ms = 100
+max_packet_loss = 0.0
+expected_throughput = 1.0

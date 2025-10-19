@@ -10,8 +10,8 @@ pub mod manager;
 // Re-export manager types
 pub use manager::AdvertisingManager;
 
-use bitchat_core::{PeerId, Result as BitchatResult};
 use bitchat_core::internal::IdentityKeyPair;
+use bitchat_core::{PeerId, Result as BitchatResult};
 
 use crate::config::BleTransportConfig;
 
@@ -62,17 +62,14 @@ pub enum PlatformAdvertiser {
 impl PlatformAdvertiser {
     /// Create the appropriate advertiser for the current platform
     pub fn new() -> Self {
-        #[cfg(target_os = "linux")]
-        {
-            Self::Linux(linux::LinuxAdvertiser::new())
-        }
-        #[cfg(target_os = "macos")]
-        {
-            Self::MacOS(macos::MacOSAdvertiser::new())
-        }
-        #[cfg(not(any(target_os = "linux", target_os = "macos")))]
-        {
-            Self::Fallback(fallback::FallbackAdvertiser::new())
+        cfg_if::cfg_if! {
+            if #[cfg(target_os = "linux")] {
+                Self::Linux(linux::LinuxAdvertiser::new())
+            } else if #[cfg(target_os = "macos")] {
+                Self::MacOS(macos::MacOSAdvertiser::new())
+            } else {
+                Self::Fallback(fallback::FallbackAdvertiser::new())
+            }
         }
     }
 }
@@ -93,11 +90,21 @@ impl BleAdvertiser for PlatformAdvertiser {
     ) -> BitchatResult<()> {
         match self {
             #[cfg(target_os = "linux")]
-            Self::Linux(ref mut advertiser) => advertiser.start_advertising(peer_id, identity, config).await,
+            Self::Linux(ref mut advertiser) => {
+                advertiser
+                    .start_advertising(peer_id, identity, config)
+                    .await
+            }
             #[cfg(target_os = "macos")]
-            Self::MacOS(ref mut advertiser) => advertiser.start_advertising(peer_id, identity, config).await,
+            Self::MacOS(ref mut advertiser) => {
+                advertiser
+                    .start_advertising(peer_id, identity, config)
+                    .await
+            }
             Self::Fallback(ref mut advertiser) => {
-                advertiser.start_advertising(peer_id, identity, config).await
+                advertiser
+                    .start_advertising(peer_id, identity, config)
+                    .await
             }
         }
     }
@@ -131,14 +138,20 @@ impl BleAdvertiser for PlatformAdvertiser {
         match self {
             #[cfg(target_os = "linux")]
             Self::Linux(ref mut advertiser) => {
-                advertiser.update_advertising_data(peer_id, identity, config).await
+                advertiser
+                    .update_advertising_data(peer_id, identity, config)
+                    .await
             }
             #[cfg(target_os = "macos")]
             Self::MacOS(ref mut advertiser) => {
-                advertiser.update_advertising_data(peer_id, identity, config).await
+                advertiser
+                    .update_advertising_data(peer_id, identity, config)
+                    .await
             }
             Self::Fallback(ref mut advertiser) => {
-                advertiser.update_advertising_data(peer_id, identity, config).await
+                advertiser
+                    .update_advertising_data(peer_id, identity, config)
+                    .await
             }
         }
     }

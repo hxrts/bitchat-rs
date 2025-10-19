@@ -3,8 +3,8 @@
 use std::collections::HashMap;
 use std::sync::Arc;
 
-use bitchat_core::{BitchatError, PeerId, Result as BitchatResult};
 use bitchat_core::internal::TransportError;
+use bitchat_core::{BitchatError, PeerId, Result as BitchatResult};
 use btleplug::api::{Peripheral as _, WriteType};
 use btleplug::platform::Peripheral;
 use futures::stream::StreamExt;
@@ -45,34 +45,28 @@ impl BleConnection {
         peers: &Arc<RwLock<HashMap<PeerId, BlePeer>>>,
     ) -> BitchatResult<()> {
         let mut peers_lock = peers.write().await;
-        let peer = peers_lock
-            .get_mut(peer_id)
-            .ok_or_else(|| BitchatError::Transport(
-                TransportError::PeerNotFound {
-                    peer_id: peer_id.to_string(),
-                }
-            ))?;
+        let peer = peers_lock.get_mut(peer_id).ok_or_else(|| {
+            BitchatError::Transport(TransportError::PeerNotFound {
+                peer_id: peer_id.to_string(),
+            })
+        })?;
 
         if peer.is_connected() {
             return Ok(());
         }
 
         if peer.is_connecting() {
-            return Err(BitchatError::Transport(
-                TransportError::ConnectionFailed {
-                    peer_id: peer_id.to_string(),
-                    reason: "Connection in progress".to_string(),
-                }
-            ));
+            return Err(BitchatError::Transport(TransportError::ConnectionFailed {
+                peer_id: peer_id.to_string(),
+                reason: "Connection in progress".to_string(),
+            }));
         }
 
         if !peer.can_retry() {
-            return Err(BitchatError::Transport(
-                TransportError::ConnectionFailed {
-                    peer_id: peer_id.to_string(),
-                    reason: "Too many failed connection attempts".to_string(),
-                }
-            ));
+            return Err(BitchatError::Transport(TransportError::ConnectionFailed {
+                peer_id: peer_id.to_string(),
+                reason: "Too many failed connection attempts".to_string(),
+            }));
         }
 
         peer.start_connection_attempt();
@@ -89,12 +83,10 @@ impl BleConnection {
                 if let Err(e) = peer.peripheral.discover_services().await {
                     error!("Failed to discover services for peer {}: {}", peer_id, e);
                     peer.mark_failed();
-                    return Err(BitchatError::Transport(
-                        TransportError::ConnectionFailed {
-                            peer_id: peer_id.to_string(),
-                            reason: format!("Failed to discover services: {}", e),
-                        }
-                    ));
+                    return Err(BitchatError::Transport(TransportError::ConnectionFailed {
+                        peer_id: peer_id.to_string(),
+                        reason: format!("Failed to discover services: {}", e),
+                    }));
                 }
 
                 // Start receiving data from this peer
@@ -106,21 +98,17 @@ impl BleConnection {
             Ok(Err(e)) => {
                 peer.mark_failed();
                 error!("Failed to connect to peer {}: {}", peer_id, e);
-                Err(BitchatError::Transport(
-                    TransportError::ConnectionFailed {
-                        peer_id: peer_id.to_string(),
-                        reason: format!("Connection failed: {}", e),
-                    }
-                ))
+                Err(BitchatError::Transport(TransportError::ConnectionFailed {
+                    peer_id: peer_id.to_string(),
+                    reason: format!("Connection failed: {}", e),
+                }))
             }
             Err(_) => {
                 peer.mark_failed();
                 error!("Connection to peer {} timed out", peer_id);
-                Err(BitchatError::Transport(
-                    TransportError::Timeout {
-                        duration_ms: self.config.connection_timeout.as_millis() as u64,
-                    }
-                ))
+                Err(BitchatError::Transport(TransportError::Timeout {
+                    duration_ms: self.config.connection_timeout.as_millis() as u64,
+                }))
             }
         }
     }
@@ -137,34 +125,27 @@ impl BleConnection {
         let rx_char = characteristics
             .iter()
             .find(|c| c.uuid == BITCHAT_RX_CHARACTERISTIC_UUID)
-            .ok_or_else(|| BitchatError::Transport(
-                TransportError::InvalidConfiguration {
+            .ok_or_else(|| {
+                BitchatError::Transport(TransportError::InvalidConfiguration {
                     reason: "RX characteristic not found".to_string(),
-                }
-            ))?;
+                })
+            })?;
 
         // Subscribe to notifications
-        peripheral
-            .subscribe(rx_char)
-            .await
-            .map_err(|e| BitchatError::Transport(
-                TransportError::InvalidConfiguration {
-                    reason: format!("Failed to subscribe to notifications: {}", e),
-                }
-            ))?;
+        peripheral.subscribe(rx_char).await.map_err(|e| {
+            BitchatError::Transport(TransportError::InvalidConfiguration {
+                reason: format!("Failed to subscribe to notifications: {}", e),
+            })
+        })?;
 
         // Start notification handler
         let packet_tx = self.packet_tx.clone();
         let peer_id_copy = *peer_id;
-        let mut notifications =
-            peripheral
-                .notifications()
-                .await
-                .map_err(|e| BitchatError::Transport(
-                    TransportError::InvalidConfiguration {
-                        reason: format!("Failed to get notifications stream: {}", e),
-                    }
-                ))?;
+        let mut notifications = peripheral.notifications().await.map_err(|e| {
+            BitchatError::Transport(TransportError::InvalidConfiguration {
+                reason: format!("Failed to get notifications stream: {}", e),
+            })
+        })?;
 
         tokio::spawn(async move {
             while let Some(data) = notifications.next().await {
@@ -172,10 +153,10 @@ impl BleConnection {
                     // Send raw data without deserializing
                     if !data.value.is_empty() {
                         if let Err(e) = packet_tx.send((peer_id_copy, data.value)) {
-                                error!("Failed to send received packet to channel: {}", e);
-                                break;
-                            }
+                            error!("Failed to send received packet to channel: {}", e);
+                            break;
                         }
+                    }
                 }
             }
             debug!("Notification handler for peer {} ended", peer_id_copy);
@@ -192,21 +173,17 @@ impl BleConnection {
         peers: &Arc<RwLock<HashMap<PeerId, BlePeer>>>,
     ) -> BitchatResult<()> {
         let peers_lock = peers.read().await;
-        let peer = peers_lock
-            .get(peer_id)
-            .ok_or_else(|| BitchatError::Transport(
-                TransportError::PeerNotFound {
-                    peer_id: peer_id.to_string(),
-                }
-            ))?;
+        let peer = peers_lock.get(peer_id).ok_or_else(|| {
+            BitchatError::Transport(TransportError::PeerNotFound {
+                peer_id: peer_id.to_string(),
+            })
+        })?;
 
         if !peer.is_connected() {
-            return Err(BitchatError::Transport(
-                TransportError::ConnectionFailed {
-                    peer_id: peer_id.to_string(),
-                    reason: "Peer not connected".to_string(),
-                }
-            ));
+            return Err(BitchatError::Transport(TransportError::ConnectionFailed {
+                peer_id: peer_id.to_string(),
+                reason: "Peer not connected".to_string(),
+            }));
         }
 
         // Find the TX characteristic
@@ -214,11 +191,11 @@ impl BleConnection {
         let tx_char = characteristics
             .iter()
             .find(|c| c.uuid == BITCHAT_TX_CHARACTERISTIC_UUID)
-            .ok_or_else(|| BitchatError::Transport(
-                TransportError::InvalidConfiguration {
+            .ok_or_else(|| {
+                BitchatError::Transport(TransportError::InvalidConfiguration {
                     reason: "TX characteristic not found".to_string(),
-                }
-            ))?;
+                })
+            })?;
 
         // Split data into chunks if necessary (BLE MTU limitations)
         const BLE_MTU: usize = 244; // Conservative MTU size
@@ -228,11 +205,11 @@ impl BleConnection {
             peer.peripheral
                 .write(tx_char, chunk, WriteType::WithoutResponse)
                 .await
-                .map_err(|e| BitchatError::Transport(
-                    TransportError::InvalidConfiguration {
+                .map_err(|e| {
+                    BitchatError::Transport(TransportError::InvalidConfiguration {
                         reason: format!("Failed to write to characteristic: {}", e),
-                    }
-                ))?;
+                    })
+                })?;
         }
 
         debug!("Sent {} bytes to peer {}", data.len(), peer_id);

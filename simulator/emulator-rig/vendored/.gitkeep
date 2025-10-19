@@ -1,0 +1,6 @@
+# Vendored Repositories
+
+This directory contains external BitChat application repositories used for app testing:
+
+- `bitchat-ios/` - iOS BitChat application from https://github.com/permissionlesstech/bitchat
+- `bitchat-android/` - Android BitChat application from https://github.com/permissionlesstech/bitchat-android

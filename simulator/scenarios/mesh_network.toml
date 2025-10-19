@@ -1,0 +1,169 @@
+# Mesh Network Scenario
+# Tests multi-hop routing and network partitioning in a mesh topology
+
+[metadata]
+name = "Mesh Network Routing"
+description = "Tests message routing through a mesh network with multiple hops and dynamic partitions"
+version = "1.0"
+tags = ["mesh", "routing", "multi-hop", "partitioning"]
+duration_seconds = 120
+author = "Sam"
+
+[network]
+[network.profile]
+type = "MeshNetwork"
+hop_latency_ms = 20
+max_hops = 4
+partition_chance = 0.001
+
+[network.topology]
+type = "Custom"
+[network.topology.adjacency]
+node1 = ["node2", "node3"]
+node2 = ["node1", "node4"]
+node3 = ["node1", "node5"]
+node4 = ["node2", "node5", "node6"]
+node5 = ["node3", "node4"]
+node6 = ["node4"]
+
+# Simulate network partition
+[[network.changes]]
+at_time_seconds = 40.0
+action = "PartitionPeers"
+peer1 = "node1"
+peer2 = "node6"
+
+# Heal partition
+[[network.changes]]
+at_time_seconds = 80.0
+action = "HealPartition"
+peer1 = "node1"
+peer2 = "node6"
+
+[network.logging]
+enable_packet_logging = true
+enable_stats_logging = true
+stats_interval_seconds = 15
+
+[[peers]]
+name = "node1"
+[peers.behavior]
+auto_discovery = true
+auto_connect = true
+
+[[peers]]
+name = "node2"
+[peers.behavior]
+auto_discovery = true
+auto_connect = true
+
+[[peers]]
+name = "node3"
+[peers.behavior]
+auto_discovery = true
+auto_connect = true
+
+[[peers]]
+name = "node4"
+[peers.behavior]
+auto_discovery = true
+auto_connect = true
+
+[[peers]]
+name = "node5"
+[peers.behavior]
+auto_discovery = true
+auto_connect = true
+
+[[peers]]
+name = "node6"
+[peers.behavior]
+auto_discovery = true
+auto_connect = true
+
+[[sequence]]
+name = "node1_to_node6_direct"
+at_time_seconds = 10.0
+action = "SendMessage"
+from = "node1"
+to = "node6"
+content = "Direct message before partition"
+
+[[sequence]]
+name = "start_continuous_messaging"
+at_time_seconds = 15.0
+action = "LogCheckpoint"
+message = "Starting continuous messaging across mesh"
+
+[[sequence]]
+name = "node1_periodic_broadcast"
+at_time_seconds = 20.0
+action = "SendBroadcast"
+from = "node1"
+content = "Broadcast from node1 at 20s"
+
+[[sequence]]
+name = "partition_checkpoint"
+at_time_seconds = 40.0
+action = "LogCheckpoint"
+message = "Creating network partition between node1 and node6"
+
+[[sequence]]
+name = "test_partition_messaging"
+at_time_seconds = 50.0
+action = "SendMessage"
+from = "node1"
+to = "node6"
+content = "Message during partition - should fail or route around"
+
+[[sequence]]
+name = "heal_checkpoint"
+at_time_seconds = 80.0
+action = "LogCheckpoint"
+message = "Healing network partition"
+
+[[sequence]]
+name = "test_healed_messaging"
+at_time_seconds = 90.0
+action = "SendMessage"
+from = "node1"
+to = "node6"
+content = "Message after healing - should succeed"
+
+[[sequence]]
+name = "final_broadcast"
+at_time_seconds = 110.0
+action = "SendBroadcast"
+from = "node6"
+content = "Final broadcast to test full connectivity"
+
+[validation]
+[[validation.continuous_checks]]
+interval_seconds = 20.0
+start_at_seconds = 20.0
+[validation.continuous_checks.check]
+type = "NetworkStats"
+max_avg_latency_ms = 200  # Allow for multi-hop latency
+
+# Verify all nodes are connected to the mesh
+[[validation.final_checks]]
+type = "PeerCount"
+peer = "node1"
+expected_count = 5  # Should see all other nodes
+
+[[validation.final_checks]]
+type = "PeerCount"
+peer = "node6"
+expected_count = 5  # Should see all other nodes
+
+# Verify routing worked
+[[validation.final_checks]]
+type = "MessageDelivered"
+from = "node1"
+to = "node6"
+content = "Message after healing - should succeed"
+
+[performance]
+max_latency_ms = 300  # Higher due to multi-hop routing
+max_packet_loss = 0.05  # Allow some loss due to mesh complexity
+expected_throughput = 0.8

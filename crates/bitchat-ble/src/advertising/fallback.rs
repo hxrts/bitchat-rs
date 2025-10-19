@@ -1,7 +1,7 @@
 //! Fallback advertising implementation for unsupported platforms
 
-use bitchat_core::{PeerId, Result as BitchatResult};
 use bitchat_core::internal::IdentityKeyPair;
+use bitchat_core::{PeerId, Result as BitchatResult};
 use tracing::warn;
 
 use crate::config::BleTransportConfig;

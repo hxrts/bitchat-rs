@@ -198,13 +198,13 @@ cfg_if::cfg_if! {
             #[error("{message}")]
             Generic { message: String },
         }
-        
+
         impl From<String> for PacketError {
             fn from(message: String) -> Self {
                 PacketError::Generic { message }
             }
         }
-        
+
         impl From<&str> for PacketError {
             fn from(message: &str) -> Self {
                 PacketError::Generic {
@@ -227,13 +227,13 @@ cfg_if::cfg_if! {
             DuplicateFragment,
             Generic { message: String },
         }
-        
+
         impl From<String> for PacketError {
             fn from(message: String) -> Self {
                 PacketError::Generic { message }
             }
         }
-        
+
         impl From<&str> for PacketError {
             fn from(message: &str) -> Self {
                 PacketError::Generic {
@@ -305,49 +305,49 @@ cfg_if::cfg_if! {
             Configuration { reason: String },
             RateLimited { reason: String },
         }
-        
+
         impl From<bincode::Error> for BitchatError {
             fn from(err: bincode::Error) -> Self {
                 BitchatError::Serialization(err)
             }
         }
-        
+
         impl From<snow::Error> for BitchatError {
             fn from(err: snow::Error) -> Self {
                 BitchatError::Noise(err)
             }
         }
-        
+
         impl From<CryptographicError> for BitchatError {
             fn from(err: CryptographicError) -> Self {
                 BitchatError::Crypto(err)
             }
         }
-        
+
         impl From<PacketError> for BitchatError {
             fn from(err: PacketError) -> Self {
                 BitchatError::InvalidPacket(err)
             }
         }
-        
+
         impl From<TransportError> for BitchatError {
             fn from(err: TransportError) -> Self {
                 BitchatError::Transport(err)
             }
         }
-        
+
         impl From<SessionError> for BitchatError {
             fn from(err: SessionError) -> Self {
                 BitchatError::Session(err)
             }
         }
-        
+
         impl From<FragmentationError> for BitchatError {
             fn from(err: FragmentationError) -> Self {
                 BitchatError::Fragmentation(err)
             }
         }
-        
+
         impl From<crate::protocol::StateTransitionError> for BitchatError {
             fn from(err: crate::protocol::StateTransitionError) -> Self {
                 BitchatError::StateTransition(err)
@@ -355,7 +355,6 @@ cfg_if::cfg_if! {
         }
     }
 }
-
 
 // ----------------------------------------------------------------------------
 // Convenience Error Constructors

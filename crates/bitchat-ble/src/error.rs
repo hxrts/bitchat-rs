@@ -1,7 +1,7 @@
 //! Error types for BLE transport
 
-use bitchat_core::BitchatError;
 use bitchat_core::internal::TransportError;
+use bitchat_core::BitchatError;
 use thiserror::Error;
 
 // ----------------------------------------------------------------------------
@@ -65,10 +65,8 @@ pub enum BleTransportError {
 
 impl From<BleTransportError> for BitchatError {
     fn from(err: BleTransportError) -> Self {
-        BitchatError::Transport(
-            TransportError::InvalidConfiguration {
-                reason: err.to_string(),
-            }
-        )
+        BitchatError::Transport(TransportError::InvalidConfiguration {
+            reason: err.to_string(),
+        })
     }
 }

@@ -3,8 +3,8 @@
 //! Provides type-safe connection lifecycle management that eliminates invalid
 //! state transitions through linear type enforcement.
 
-use crate::{PeerId, channel::Effect, types::Timestamp};
 use crate::channel::ChannelTransportType;
+use crate::{channel::Effect, types::Timestamp, PeerId};
 use serde::{Deserialize, Serialize};
 cfg_if::cfg_if! {
     if #[cfg(feature = "std")] {
@@ -101,9 +101,7 @@ pub struct SessionParams {
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub enum ConnectionEvent {
     /// Start discovering peer via transports
-    StartDiscovery {
-        timeout_seconds: Option<u64>,
-    },
+    StartDiscovery { timeout_seconds: Option<u64> },
     /// Peer discovered via specific transport
     PeerDiscovered {
         transport: ChannelTransportType,
@@ -115,17 +113,11 @@ pub enum ConnectionEvent {
         session_params: SessionParams,
     },
     /// Connection established successfully
-    ConnectionEstablished {
-        session_id: String,
-    },
+    ConnectionEstablished { session_id: String },
     /// Connection failed with error
-    ConnectionFailed {
-        reason: String,
-    },
+    ConnectionFailed { reason: String },
     /// Connection lost during operation
-    ConnectionLost {
-        reason: String,
-    },
+    ConnectionLost { reason: String },
     /// Activity detected on connection
     ActivityDetected,
     /// Timeout occurred
@@ -199,14 +191,20 @@ impl ConnectionState {
     }
 
     /// Process an event and transition to new state (consumes self)
-    pub fn transition(self, event: ConnectionEvent) -> Result<StateTransition, StateTransitionError> {
+    pub fn transition(
+        self,
+        event: ConnectionEvent,
+    ) -> Result<StateTransition, StateTransitionError> {
         let peer_id = self.peer_id();
         let from_state = self.state_name().to_string();
         let event_name = format!("{:?}", event);
-        
+
         let (new_state, effects) = match (self, event) {
             // From Disconnected
-            (ConnectionState::Disconnected(state), ConnectionEvent::StartDiscovery { timeout_seconds }) => {
+            (
+                ConnectionState::Disconnected(state),
+                ConnectionEvent::StartDiscovery { timeout_seconds },
+            ) => {
                 let timeout = timeout_seconds.map(|secs| current_timestamp() + secs);
                 let new_state = ConnectionState::Discovering(DiscoveringState {
                     peer_id: state.peer_id,
@@ -215,21 +213,34 @@ impl ConnectionState {
                     discovery_timeout: timeout,
                 });
                 let effects = vec![
-                    Effect::StartTransportDiscovery { transport: ChannelTransportType::Ble },
-                    Effect::StartTransportDiscovery { transport: ChannelTransportType::Nostr },
+                    Effect::StartTransportDiscovery {
+                        transport: ChannelTransportType::Ble,
+                    },
+                    Effect::StartTransportDiscovery {
+                        transport: ChannelTransportType::Nostr,
+                    },
                 ];
                 (new_state, effects)
-            },
+            }
 
             // From Discovering
-            (ConnectionState::Discovering(mut state), ConnectionEvent::PeerDiscovered { transport, .. }) => {
+            (
+                ConnectionState::Discovering(mut state),
+                ConnectionEvent::PeerDiscovered { transport, .. },
+            ) => {
                 if !state.discovered_transports.contains(&transport) {
                     state.discovered_transports.push(transport);
                 }
                 (ConnectionState::Discovering(state), Vec::new())
-            },
+            }
 
-            (ConnectionState::Discovering(state), ConnectionEvent::InitiateConnection { transport, session_params }) => {
+            (
+                ConnectionState::Discovering(state),
+                ConnectionEvent::InitiateConnection {
+                    transport,
+                    session_params,
+                },
+            ) => {
                 let timeout = current_timestamp() + session_params.timeout_seconds;
                 let new_state = ConnectionState::Connecting(ConnectingState {
                     peer_id: state.peer_id,
@@ -238,9 +249,12 @@ impl ConnectionState {
                     connection_timeout: timeout,
                     session_params: Some(session_params),
                 });
-                let effects = vec![Effect::InitiateConnection { peer_id: state.peer_id, transport }];
+                let effects = vec![Effect::InitiateConnection {
+                    peer_id: state.peer_id,
+                    transport,
+                }];
                 (new_state, effects)
-            },
+            }
 
             (ConnectionState::Discovering(_), ConnectionEvent::Timeout) => {
                 let new_state = ConnectionState::Failed(FailedState {
@@ -251,10 +265,13 @@ impl ConnectionState {
                     retry_after: Some(current_timestamp() + 60), // Retry after 1 minute
                 });
                 (new_state, Vec::new())
-            },
+            }
 
             // From Connecting
-            (ConnectionState::Connecting(state), ConnectionEvent::ConnectionEstablished { session_id }) => {
+            (
+                ConnectionState::Connecting(state),
+                ConnectionEvent::ConnectionEstablished { session_id },
+            ) => {
                 let new_state = ConnectionState::Connected(ConnectedState {
                     peer_id: state.peer_id,
                     transport: state.transport,
@@ -264,7 +281,7 @@ impl ConnectionState {
                     message_count: 0,
                 });
                 (new_state, Vec::new())
-            },
+            }
 
             (ConnectionState::Connecting(state), ConnectionEvent::ConnectionFailed { reason }) => {
                 let new_state = ConnectionState::Failed(FailedState {
@@ -275,7 +292,7 @@ impl ConnectionState {
                     retry_after: Some(current_timestamp() + 30), // Retry after 30 seconds
                 });
                 (new_state, Vec::new())
-            },
+            }
 
             (ConnectionState::Connecting(_), ConnectionEvent::Timeout) => {
                 let new_state = ConnectionState::Failed(FailedState {
@@ -286,14 +303,14 @@ impl ConnectionState {
                     retry_after: Some(current_timestamp() + 60),
                 });
                 (new_state, Vec::new())
-            },
+            }
 
             // From Connected
             (ConnectionState::Connected(mut state), ConnectionEvent::ActivityDetected) => {
                 state.last_activity = current_timestamp();
                 state.message_count += 1;
                 (ConnectionState::Connected(state), Vec::new())
-            },
+            }
 
             (ConnectionState::Connected(state), ConnectionEvent::ConnectionLost { reason }) => {
                 let new_state = ConnectionState::Failed(FailedState {
@@ -304,7 +321,7 @@ impl ConnectionState {
                     retry_after: Some(current_timestamp() + 10), // Quick retry for lost connections
                 });
                 (new_state, Vec::new())
-            },
+            }
 
             (ConnectionState::Connected(_), ConnectionEvent::Disconnect) => {
                 let new_state = ConnectionState::Disconnected(DisconnectedState {
@@ -313,7 +330,7 @@ impl ConnectionState {
                     failed_attempts: 0,
                 });
                 (new_state, Vec::new())
-            },
+            }
 
             // From Failed
             (ConnectionState::Failed(state), ConnectionEvent::Retry) => {
@@ -323,7 +340,7 @@ impl ConnectionState {
                     failed_attempts: 0, // Reset attempt counter on manual retry
                 });
                 (new_state, Vec::new())
-            },
+            }
 
             // Universal transitions
             (_, ConnectionEvent::Disconnect) => {
@@ -333,7 +350,7 @@ impl ConnectionState {
                     failed_attempts: 0,
                 });
                 (new_state, Vec::new())
-            },
+            }
 
             // Invalid transitions
             (_state, event) => {
@@ -381,8 +398,14 @@ impl ConnectionState {
         match self {
             ConnectionState::Connected(state) => {
                 let age = current_timestamp() - state.last_activity;
-                if age < 10 { 100 } else if age < 60 { 80 } else { 60 }
-            },
+                if age < 10 {
+                    100
+                } else if age < 60 {
+                    80
+                } else {
+                    60
+                }
+            }
             ConnectionState::Connecting(_) => 30,
             ConnectionState::Discovering(_) => 20,
             ConnectionState::Failed(_) => 0,
@@ -405,21 +428,26 @@ pub enum StateTransitionError {
         reason: String,
     },
     /// State corruption detected
-    StateCorruption {
-        peer_id: PeerId,
-        details: String,
-    },
+    StateCorruption { peer_id: PeerId, details: String },
 }
 
 impl fmt::Display for StateTransitionError {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
-            StateTransitionError::InvalidTransition { from_state, event, reason } => {
-                write!(f, "Invalid transition from {} on event {}: {}", from_state, event, reason)
-            },
+            StateTransitionError::InvalidTransition {
+                from_state,
+                event,
+                reason,
+            } => {
+                write!(
+                    f,
+                    "Invalid transition from {} on event {}: {}",
+                    from_state, event, reason
+                )
+            }
             StateTransitionError::StateCorruption { peer_id, details } => {
                 write!(f, "State corruption for peer {}: {}", peer_id, details)
-            },
+            }
         }
     }
 }
@@ -466,7 +494,7 @@ mod tests {
     fn test_initial_state() {
         let peer_id = create_test_peer_id(1);
         let state = ConnectionState::new_disconnected(peer_id);
-        
+
         assert_eq!(state.peer_id(), peer_id);
         assert_eq!(state.state_name(), "Disconnected");
         assert!(!state.can_send_messages());
@@ -477,9 +505,13 @@ mod tests {
     fn test_discovery_transition() {
         let peer_id = create_test_peer_id(1);
         let state = ConnectionState::new_disconnected(peer_id);
-        
-        let transition = state.transition(ConnectionEvent::StartDiscovery { timeout_seconds: Some(60) }).unwrap();
-        
+
+        let transition = state
+            .transition(ConnectionEvent::StartDiscovery {
+                timeout_seconds: Some(60),
+            })
+            .unwrap();
+
         assert_eq!(transition.new_state.state_name(), "Discovering");
         assert_eq!(transition.effects.len(), 2); // Start discovery for both transports
         assert_eq!(transition.audit_entry.from_state, "Disconnected");
@@ -490,34 +522,44 @@ mod tests {
     fn test_connection_flow() {
         let peer_id = create_test_peer_id(1);
         let state = ConnectionState::new_disconnected(peer_id);
-        
+
         // Start discovery
-        let transition = state.transition(ConnectionEvent::StartDiscovery { timeout_seconds: None }).unwrap();
+        let transition = state
+            .transition(ConnectionEvent::StartDiscovery {
+                timeout_seconds: None,
+            })
+            .unwrap();
         let state = transition.new_state;
-        
+
         // Peer discovered
-        let transition = state.transition(ConnectionEvent::PeerDiscovered { 
-            transport: ChannelTransportType::Ble,
-            signal_strength: Some(-50),
-        }).unwrap();
+        let transition = state
+            .transition(ConnectionEvent::PeerDiscovered {
+                transport: ChannelTransportType::Ble,
+                signal_strength: Some(-50),
+            })
+            .unwrap();
         let state = transition.new_state;
-        
+
         // Initiate connection
-        let transition = state.transition(ConnectionEvent::InitiateConnection {
-            transport: ChannelTransportType::Ble,
-            session_params: create_test_session_params(),
-        }).unwrap();
+        let transition = state
+            .transition(ConnectionEvent::InitiateConnection {
+                transport: ChannelTransportType::Ble,
+                session_params: create_test_session_params(),
+            })
+            .unwrap();
         let state = transition.new_state;
-        
+
         assert_eq!(state.state_name(), "Connecting");
         assert_eq!(transition.effects.len(), 1); // InitiateConnection effect
-        
+
         // Connection established
-        let transition = state.transition(ConnectionEvent::ConnectionEstablished {
-            session_id: "test-session".to_string(),
-        }).unwrap();
+        let transition = state
+            .transition(ConnectionEvent::ConnectionEstablished {
+                session_id: "test-session".to_string(),
+            })
+            .unwrap();
         let state = transition.new_state;
-        
+
         assert_eq!(state.state_name(), "Connected");
         assert!(state.can_send_messages());
         assert!(state.quality_score() > 0);
@@ -527,17 +569,17 @@ mod tests {
     fn test_invalid_transition() {
         let peer_id = create_test_peer_id(1);
         let state = ConnectionState::new_disconnected(peer_id);
-        
+
         // Try to establish connection without discovering first
         let result = state.transition(ConnectionEvent::ConnectionEstablished {
             session_id: "test".to_string(),
         });
-        
+
         assert!(result.is_err());
         match result.unwrap_err() {
             StateTransitionError::InvalidTransition { from_state, .. } => {
                 assert_eq!(from_state, "Disconnected");
-            },
+            }
             _ => panic!("Expected InvalidTransition error"),
         }
     }
@@ -546,26 +588,36 @@ mod tests {
     fn test_connection_failure_and_retry() {
         let peer_id = create_test_peer_id(1);
         let state = ConnectionState::new_disconnected(peer_id);
-        
+
         // Go through discovery to connecting
-        let state = state.transition(ConnectionEvent::StartDiscovery { timeout_seconds: None }).unwrap().new_state;
-        let state = state.transition(ConnectionEvent::InitiateConnection {
-            transport: ChannelTransportType::Ble,
-            session_params: create_test_session_params(),
-        }).unwrap().new_state;
-        
+        let state = state
+            .transition(ConnectionEvent::StartDiscovery {
+                timeout_seconds: None,
+            })
+            .unwrap()
+            .new_state;
+        let state = state
+            .transition(ConnectionEvent::InitiateConnection {
+                transport: ChannelTransportType::Ble,
+                session_params: create_test_session_params(),
+            })
+            .unwrap()
+            .new_state;
+
         // Connection fails
-        let transition = state.transition(ConnectionEvent::ConnectionFailed {
-            reason: "Network error".to_string(),
-        }).unwrap();
+        let transition = state
+            .transition(ConnectionEvent::ConnectionFailed {
+                reason: "Network error".to_string(),
+            })
+            .unwrap();
         let state = transition.new_state;
-        
+
         assert_eq!(state.state_name(), "Failed");
-        
+
         // Retry
         let transition = state.transition(ConnectionEvent::Retry).unwrap();
         let state = transition.new_state;
-        
+
         assert_eq!(state.state_name(), "Disconnected");
     }
 
@@ -573,11 +625,16 @@ mod tests {
     fn test_universal_disconnect() {
         let peer_id = create_test_peer_id(1);
         let state = ConnectionState::new_disconnected(peer_id);
-        
+
         // From any state, disconnect should work
-        let state = state.transition(ConnectionEvent::StartDiscovery { timeout_seconds: None }).unwrap().new_state;
+        let state = state
+            .transition(ConnectionEvent::StartDiscovery {
+                timeout_seconds: None,
+            })
+            .unwrap()
+            .new_state;
         let transition = state.transition(ConnectionEvent::Disconnect).unwrap();
-        
+
         assert_eq!(transition.new_state.state_name(), "Disconnected");
     }
 }

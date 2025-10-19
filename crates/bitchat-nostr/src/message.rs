@@ -29,11 +29,7 @@ pub struct BitchatNostrMessage {
 
 impl BitchatNostrMessage {
     /// Create a new BitChat Nostr message from raw data
-    pub fn new(
-        sender_peer_id: PeerId,
-        recipient_peer_id: Option<PeerId>,
-        data: Vec<u8>,
-    ) -> Self {
+    pub fn new(sender_peer_id: PeerId, recipient_peer_id: Option<PeerId>, data: Vec<u8>) -> Self {
         let data_base64 = general_purpose::STANDARD.encode(data);
 
         Self {

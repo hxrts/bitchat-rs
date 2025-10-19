@@ -8,16 +8,16 @@
 //! as production runtimes but with stub transport implementations for deterministic testing.
 
 use bitchat_core::{
-    PeerId, Command, AppEvent, BitchatResult, ChannelTransportType,
-    Event, Effect,
     internal::{
-        ChannelConfig, create_command_channel, create_event_channel, create_effect_channel, create_app_event_channel,
-        SessionConfig, DeliveryConfig, RateLimitConfig
+        create_app_event_channel, create_command_channel, create_effect_channel,
+        create_event_channel, ChannelConfig, DeliveryConfig, RateLimitConfig, SessionConfig,
     },
+    AppEvent, BitchatResult, ChannelTransportType, Command, Effect, Event, PeerId,
 };
+use bitchat_harness::TransportBuilder;
 use bitchat_runtime::{
-    logic::{LoggerWrapper, CoreLogicTask},
-    BitchatRuntime
+    logic::{CoreLogicTask, LoggerWrapper},
+    BitchatRuntime,
 };
 use std::time::Duration;
 use tokio::time::timeout;
@@ -55,7 +55,8 @@ async fn test_command_channel_communication() -> BitchatResult<()> {
     let test_command = Command::StartDiscovery;
     sender.send(test_command).await.unwrap();
 
-    let received = timeout(Duration::from_millis(100), receiver.recv()).await
+    let received = timeout(Duration::from_millis(100), receiver.recv())
+        .await
         .expect("Command should be received within timeout")
         .expect("Command should not be None");
 
@@ -77,11 +78,17 @@ async fn test_event_channel_communication() -> BitchatResult<()> {
 
     sender.send(test_event).await.unwrap();
 
-    let received = timeout(Duration::from_millis(100), receiver.recv()).await
+    let received = timeout(Duration::from_millis(100), receiver.recv())
+        .await
         .expect("Event should be received within timeout")
         .expect("Event should not be None");
 
-    if let Event::PeerDiscovered { peer_id: received_peer, transport, signal_strength } = received {
+    if let Event::PeerDiscovered {
+        peer_id: received_peer,
+        transport,
+        signal_strength,
+    } = received
+    {
         assert_eq!(received_peer, peer_id);
         assert_eq!(transport, ChannelTransportType::Ble);
         assert_eq!(signal_strength, Some(-50));
@@ -106,11 +113,17 @@ async fn test_effect_channel_communication() -> BitchatResult<()> {
 
     sender.send(test_effect).unwrap();
 
-    let received = timeout(Duration::from_millis(100), receiver.recv()).await
+    let received = timeout(Duration::from_millis(100), receiver.recv())
+        .await
         .expect("Effect should be received within timeout")
         .expect("Effect should not be None");
 
-    if let Effect::SendPacket { peer_id: received_peer, data, transport } = received {
+    if let Effect::SendPacket {
+        peer_id: received_peer,
+        data,
+        transport,
+    } = received
+    {
         assert_eq!(received_peer, peer_id);
         assert_eq!(data, b"test data");
         assert_eq!(transport, ChannelTransportType::Nostr);
@@ -135,11 +148,17 @@ async fn test_app_event_channel_communication() -> BitchatResult<()> {
 
     sender.send(test_app_event).await.unwrap();
 
-    let received = timeout(Duration::from_millis(100), receiver.recv()).await
+    let received = timeout(Duration::from_millis(100), receiver.recv())
+        .await
         .expect("AppEvent should be received within timeout")
         .expect("AppEvent should not be None");
 
-    if let AppEvent::MessageReceived { from, content, timestamp } = received {
+    if let AppEvent::MessageReceived {
+        from,
+        content,
+        timestamp,
+    } = received
+    {
         assert_eq!(from, peer_id);
         assert_eq!(content, "Test message");
         assert_eq!(timestamp, 12345);
@@ -170,8 +189,12 @@ async fn test_channel_backpressure_command() -> BitchatResult<()> {
     sender.send(Command::StopDiscovery).await.unwrap();
 
     // The next send should be handled gracefully (not panic)
-    let result = timeout(Duration::from_millis(50), sender.send(Command::StartDiscovery)).await;
-    
+    let result = timeout(
+        Duration::from_millis(50),
+        sender.send(Command::StartDiscovery),
+    )
+    .await;
+
     // The send might timeout due to backpressure, which is expected behavior
     match result {
         Ok(Ok(())) => {
@@ -218,14 +241,14 @@ async fn test_try_send_behavior() -> BitchatResult<()> {
 async fn test_runtime_lifecycle() -> BitchatResult<()> {
     let peer_id = create_test_peer_id(1);
     let runtime = BitchatRuntime::for_testing(peer_id);
-    
+
     assert!(!runtime.is_running());
-    
+
     // Note: Runtime needs actual transport tasks registered to start
     // For this test, we just verify lifecycle management
     assert_eq!(runtime.peer_id(), peer_id);
     assert_eq!(runtime.transport_types().len(), 0);
-    
+
     Ok(())
 }
 
@@ -233,11 +256,11 @@ async fn test_runtime_lifecycle() -> BitchatResult<()> {
 async fn test_app_event_receiver() -> BitchatResult<()> {
     let peer_id = create_test_peer_id(1);
     let mut runtime = BitchatRuntime::for_testing(peer_id);
-    
+
     // Verify we can get the app event receiver (before starting)
     let app_event_receiver = runtime.take_app_event_receiver();
     assert!(app_event_receiver.is_none()); // Should be None before start
-    
+
     Ok(())
 }
 
@@ -285,16 +308,14 @@ async fn test_graceful_shutdown_communication() -> BitchatResult<()> {
     )?;
 
     // Start task
-    let handle = tokio::spawn(async move {
-        core_logic.run().await
-    });
+    let handle = tokio::spawn(async move { core_logic.run().await });
 
     // Send shutdown command
     command_sender.send(Command::Shutdown).await.unwrap();
 
     // Wait for graceful shutdown
     let result = timeout(Duration::from_millis(500), handle).await;
-    
+
     match result {
         Ok(task_result) => {
             // Task completed gracefully
@@ -339,17 +360,58 @@ async fn test_channel_behavior_consistency() -> BitchatResult<()> {
 
     for config in configs {
         let (sender, mut receiver) = create_command_channel(&config);
-        
+
         // Send a command
         sender.send(Command::StartDiscovery).await.unwrap();
-        
+
         // Receive the command
-        let received = timeout(Duration::from_millis(100), receiver.recv()).await
+        let received = timeout(Duration::from_millis(100), receiver.recv())
+            .await
             .expect("Should receive command")
             .expect("Command should not be None");
-        
+
         assert!(matches!(received, Command::StartDiscovery));
     }
+
+    Ok(())
+}
+
+// ----------------------------------------------------------------------------
+// Transport Builder Tests
+// ----------------------------------------------------------------------------
+
+#[tokio::test]
+async fn test_transport_builder_channel_creation() -> BitchatResult<()> {
+    let config = create_test_channel_config();
+    let (event_sender, _event_receiver) = create_event_channel(&config);
+
+    // Use TransportBuilder to create message processor
+    let builder = TransportBuilder::new(ChannelTransportType::Ble);
+    let processor = builder.build_message_processor(event_sender.clone());
+
+    // Test that processor was created successfully
+    assert_eq!(processor.transport_type(), ChannelTransportType::Ble);
+
+    Ok(())
+}
+
+#[tokio::test]
+async fn test_transport_builder_with_configuration() -> BitchatResult<()> {
+    let config = create_test_channel_config();
+    let (event_sender, _event_receiver) = create_event_channel(&config);
+
+    // Use TransportBuilder with reconnect and heartbeat configurations
+    let builder = TransportBuilder::new(ChannelTransportType::Nostr)
+        .with_reconnect(bitchat_harness::ReconnectConfig::default())
+        .with_heartbeat(bitchat_harness::HeartbeatConfig::default());
+
+    let _processor = builder.build_message_processor(event_sender);
+    let reconnect_manager = builder.build_reconnect_manager();
+    let heartbeat_manager = builder.build_heartbeat_manager();
+
+    // Verify managers were created based on configuration
+    assert!(reconnect_manager.is_some());
+    assert!(heartbeat_manager.is_some());
 
     Ok(())
 }
