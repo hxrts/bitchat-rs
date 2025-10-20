@@ -5,7 +5,9 @@
 
 use alloc::vec::Vec;
 use serde::{Deserialize, Serialize};
+use sha2::{Digest, Sha256};
 
+use crate::protocol::crypto::IdentityKeyPair;
 use crate::types::{PeerId, Timestamp, Ttl};
 use crate::{BitchatError, Result};
 
@@ -39,7 +41,7 @@ pub const MAX_PAYLOAD_SIZE_V2: usize = u32::MAX as usize;
 // ----------------------------------------------------------------------------
 
 /// Message types for the wire protocol
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
 #[repr(u8)]
 pub enum MessageType {
     /// Peer presence broadcast
@@ -365,8 +367,8 @@ pub struct BitchatPacket {
 }
 
 impl BitchatPacket {
-    /// Create a new packet
-    pub fn new(message_type: MessageType, sender_id: PeerId, payload: Vec<u8>) -> Self {
+    /// Create a simple new packet (legacy method)
+    pub fn new_simple(message_type: MessageType, sender_id: PeerId, payload: Vec<u8>) -> Self {
         let flags = PacketFlags::NONE;
         let header = PacketHeader::new(
             message_type,
@@ -453,6 +455,120 @@ impl BitchatPacket {
 
         Ok(())
     }
+
+    /// Create a new packet with explicit flags and optional recipient
+    pub fn new(
+        message_type: MessageType,
+        sender_id: PeerId,
+        recipient_id: Option<PeerId>,
+        timestamp: Timestamp,
+        payload: Vec<u8>,
+        flags: PacketFlags,
+    ) -> Result<Self> {
+        let mut final_flags = flags;
+        
+        // Ensure flags are consistent with optional fields
+        if recipient_id.is_some() {
+            final_flags = final_flags.with_recipient();
+        }
+
+        let header = PacketHeader::new(
+            message_type,
+            Ttl::DEFAULT,
+            timestamp,
+            final_flags,
+            payload.len() as u32,
+        );
+
+        let packet = Self {
+            header,
+            sender_id,
+            recipient_id,
+            route: None,
+            payload,
+            signature: None,
+        };
+
+        Ok(packet)
+    }
+
+    /// Sign the packet using an Ed25519 identity keypair
+    pub fn sign(&mut self, identity_keypair: &IdentityKeyPair) -> Result<()> {
+        // Create canonical bytes for signing (excluding signature and TTL)
+        let canonical_bytes = self.canonical_bytes_for_signing()?;
+        
+        // Sign the canonical bytes
+        let signature = identity_keypair.sign(&canonical_bytes);
+        
+        // Store signature and update flags
+        self.signature = Some(signature);
+        self.header.flags = self.header.flags.with_signature();
+        
+        Ok(())
+    }
+
+    /// Verify the packet's signature using an Ed25519 public key
+    pub fn verify_signature(&self, public_key: &[u8; 32]) -> Result<()> {
+        let signature = self.signature.ok_or_else(|| {
+            BitchatError::invalid_packet("No signature present for verification")
+        })?;
+
+        // Recreate canonical bytes (excluding signature and TTL)
+        let canonical_bytes = self.canonical_bytes_for_signing()?;
+        
+        // Verify the signature
+        IdentityKeyPair::verify(public_key, &canonical_bytes, &signature)?;
+        
+        Ok(())
+    }
+
+    /// Create canonical bytes for signing/verification
+    /// This excludes the signature field and TTL to allow for relay operations
+    fn canonical_bytes_for_signing(&self) -> Result<Vec<u8>> {
+        
+        let mut hasher = Sha256::new();
+        
+        // Include context string
+        hasher.update(b"bitchat-packet-v1");
+        
+        // Include packet fields (excluding signature and TTL)
+        hasher.update(&[self.header.version]);
+        hasher.update(&[self.header.message_type.as_u8()]);
+        hasher.update(&self.header.timestamp.as_millis().to_be_bytes());
+        
+        // Include sender ID
+        hasher.update(self.sender_id.as_bytes());
+        
+        // Include recipient ID if present
+        if let Some(recipient_id) = &self.recipient_id {
+            hasher.update(recipient_id.as_bytes());
+        }
+        
+        // Include payload
+        hasher.update(&self.payload);
+        
+        Ok(hasher.finalize().to_vec())
+    }
+
+    /// Get the message type
+    pub fn message_type(&self) -> MessageType {
+        self.header.message_type
+    }
+
+    /// Get the sender ID
+    pub fn sender_id(&self) -> PeerId {
+        self.sender_id
+    }
+
+    /// Get the recipient ID
+    pub fn recipient_id(&self) -> Option<PeerId> {
+        self.recipient_id
+    }
+
+    /// Get the payload
+    pub fn payload(&self) -> &[u8] {
+        &self.payload
+    }
 }
 
 // ----------------------------------------------------------------------------
@@ -503,7 +619,7 @@ mod tests {
         let recipient = PeerId::new([8, 7, 6, 5, 4, 3, 2, 1]);
         let payload = b"Hello, BitChat!".to_vec();
 
-        let packet = BitchatPacket::new(MessageType::Message, sender, payload.clone())
+        let packet = BitchatPacket::new_simple(MessageType::Message, sender, payload.clone())
             .with_recipient(recipient);
 
         assert_eq!(packet.sender_id, sender);
@@ -521,7 +637,7 @@ mod tests {
         let sender = PeerId::new([1, 2, 3, 4, 5, 6, 7, 8]);
         let payload = b"Broadcast message".to_vec();
 
-        let packet = BitchatPacket::new(MessageType::Announce, sender, payload);
+        let packet = BitchatPacket::new_simple(MessageType::Announce, sender, payload);
 
         assert!(packet.is_broadcast());
         assert!(!packet.is_private());
@@ -536,6 +652,7 @@ mod tests {
 // ----------------------------------------------------------------------------
 
 mod signature_serde {
+    use alloc::vec::Vec;
     use serde::{Deserializer, Serializer};
 
     pub fn serialize<S>(value: &Option<[u8; 64]>, serializer: S) -> Result<S::Ok, S::Error>

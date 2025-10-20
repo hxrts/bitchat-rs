@@ -130,6 +130,7 @@ impl<T: TimeSource> NoiseSessionManager<T> {
             match session.state() {
                 SessionState::Handshaking => handshaking += 1,
                 SessionState::Established => established += 1,
+                SessionState::Rekeying => handshaking += 1, // Count rekeying as handshaking
                 SessionState::Failed => failed += 1,
             }
         }
@@ -146,6 +147,7 @@ impl<T: TimeSource> NoiseSessionManager<T> {
                 let timeout = match session.state() {
                     SessionState::Handshaking => self.timeouts.handshake_timeout,
                     SessionState::Established => self.timeouts.idle_timeout,
+                    SessionState::Rekeying => self.timeouts.idle_timeout, // Use idle timeout during rekeying
                     SessionState::Failed => Duration::from_secs(1), // Remove failed immediately
                 };
 

@@ -460,11 +460,18 @@ mod tests {
 
     #[test]
     fn test_nip17_content_creation() {
-        use bitchat_core::protocol::{BitchatPacket, MessageType};
-        use bitchat_core::types::PeerId;
+        use bitchat_core::protocol::{BitchatPacket, MessageType, PacketFlags};
+        use bitchat_core::types::{PeerId, Timestamp};
 
         let sender = PeerId::new([1, 2, 3, 4, 5, 6, 7, 8]);
-        let packet = BitchatPacket::new(MessageType::Message, sender, b"Test message".to_vec());
+        let packet = BitchatPacket::new(
+            MessageType::Message,
+            sender,
+            None, // No specific recipient
+            Timestamp::now(),
+            b"Test message".to_vec(),
+            PacketFlags::NONE,
+        ).unwrap();
 
         let content = Nip17Content::from_bitchat_packet(&packet).unwrap();
         assert!(content.content.starts_with(BITCHAT_NIP17_PREFIX));

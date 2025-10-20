@@ -3,7 +3,7 @@
 //! This module implements the file transfer protocol allowing users to send files
 //! securely through the BitChat network using chunked, encrypted transfer.
 
-use alloc::{string::String, vec::Vec};
+use alloc::{string::{String, ToString}, vec, vec::Vec};
 use serde::{Deserialize, Serialize};
 use sha2::{Digest, Sha256};
 

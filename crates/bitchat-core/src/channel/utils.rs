@@ -8,12 +8,6 @@ use crate::channel::communication::{AppEvent, Command, Effect, Event};
 use crate::config::ChannelConfig;
 
 cfg_if::cfg_if! {
-    if #[cfg(feature = "wasm")] {
-        use futures_channel::mpsc;
-    }
-}
-
-cfg_if::cfg_if! {
     if #[cfg(feature = "std")] {
         use std::fmt;
     } else {
@@ -54,14 +48,14 @@ cfg_if::cfg_if! {
         pub type AppEventSender = tokio::sync::mpsc::Sender<AppEvent>;
         pub type AppEventReceiver = tokio::sync::mpsc::Receiver<AppEvent>;
     } else if #[cfg(feature = "wasm")] {
-        pub type CommandSender = futures_channel::mpsc::Sender<Command>;
-        pub type CommandReceiver = futures_channel::mpsc::Receiver<Command>;
-        pub type EventSender = futures_channel::mpsc::Sender<Event>;
-        pub type EventReceiver = futures_channel::mpsc::Receiver<Event>;
+        pub type CommandSender = async_channel::Sender<Command>;
+        pub type CommandReceiver = async_channel::Receiver<Command>;
+        pub type EventSender = async_channel::Sender<Event>;
+        pub type EventReceiver = async_channel::Receiver<Event>;
         pub type EffectSender = async_broadcast::Sender<Effect>;
         pub type EffectReceiver = async_broadcast::Receiver<Effect>;
-        pub type AppEventSender = futures_channel::mpsc::Sender<AppEvent>;
-        pub type AppEventReceiver = futures_channel::mpsc::Receiver<AppEvent>;
+        pub type AppEventSender = async_channel::Sender<AppEvent>;
+        pub type AppEventReceiver = async_channel::Receiver<AppEvent>;
     } else {
         // Fallback for alloc-only builds (no channels available)
         pub type CommandSender = ();
@@ -85,7 +79,7 @@ pub fn create_command_channel(config: &ChannelConfig) -> (CommandSender, Command
         if #[cfg(feature = "std")] {
             tokio::sync::mpsc::channel(config.command_buffer_size)
         } else if #[cfg(feature = "wasm")] {
-            futures_channel::mpsc::channel(config.command_buffer_size)
+            async_channel::bounded(config.command_buffer_size)
         } else {
             let _ = config; // Suppress unused parameter warning
             ((), ()) // Fallback for alloc-only builds
@@ -99,7 +93,7 @@ pub fn create_event_channel(config: &ChannelConfig) -> (EventSender, EventReceiv
         if #[cfg(feature = "std")] {
             tokio::sync::mpsc::channel(config.event_buffer_size)
         } else if #[cfg(feature = "wasm")] {
-            futures_channel::mpsc::channel(config.event_buffer_size)
+            async_channel::bounded(config.event_buffer_size)
         } else {
             let _ = config; // Suppress unused parameter warning
             ((), ()) // Fallback for alloc-only builds
@@ -114,7 +108,7 @@ pub fn create_effect_channel(config: &ChannelConfig) -> (EffectSender, EffectRec
         if #[cfg(feature = "std")] {
             tokio::sync::broadcast::channel(config.effect_buffer_size)
         } else if #[cfg(feature = "wasm")] {
-            let (sender, receiver) = async_broadcast::channel(config.effect_buffer_size);
+            let (mut sender, receiver) = async_broadcast::broadcast(config.effect_buffer_size);
             // Match tokio broadcast behaviour by dropping oldest messages on overflow
             sender.set_overflow(true);
             (sender, receiver)
@@ -146,7 +140,7 @@ pub fn create_app_event_channel(config: &ChannelConfig) -> (AppEventSender, AppE
         if #[cfg(feature = "std")] {
             tokio::sync::mpsc::channel(config.app_event_buffer_size)
         } else if #[cfg(feature = "wasm")] {
-            futures_channel::mpsc::channel(config.app_event_buffer_size)
+            async_channel::bounded(config.app_event_buffer_size)
         } else {
             let _ = config; // Suppress unused parameter warning
             ((), ()) // Fallback for alloc-only builds
@@ -186,10 +180,9 @@ cfg_if::cfg_if! {
         impl NonBlockingSend<Command> for CommandSender {
             fn try_send_non_blocking(&mut self, command: Command) -> Result<(), ChannelError> {
                 self.try_send(command).map_err(|e| {
-                    if e.is_full() {
-                        ChannelError::ChannelFull
-                    } else {
-                        ChannelError::ChannelClosed
+                    match e {
+                        async_channel::TrySendError::Full(_) => ChannelError::ChannelFull,
+                        async_channel::TrySendError::Closed(_) => ChannelError::ChannelClosed,
                     }
                 })
             }
@@ -198,10 +191,9 @@ cfg_if::cfg_if! {
         impl NonBlockingSend<AppEvent> for AppEventSender {
             fn try_send_non_blocking(&mut self, event: AppEvent) -> Result<(), ChannelError> {
                 self.try_send(event).map_err(|e| {
-                    if e.is_full() {
-                        ChannelError::ChannelFull
-                    } else {
-                        ChannelError::ChannelClosed
+                    match e {
+                        async_channel::TrySendError::Full(_) => ChannelError::ChannelFull,
+                        async_channel::TrySendError::Closed(_) => ChannelError::ChannelClosed,
                     }
                 })
             }
@@ -407,7 +399,3 @@ mod tests {
         }
     }
 }
-#[cfg(all(feature = "std", feature = "wasm"))]
-compile_error!(
-    "`std` and `wasm` features are mutually exclusive. Enable only one channel backend at a time."
-);

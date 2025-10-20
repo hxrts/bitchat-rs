@@ -87,7 +87,7 @@ impl Default for TestConfig {
             ios: IosConfig {
                 device_type: "iPhone 15 Pro".to_string(),
                 runtime: "iOS-17-0".to_string(),
-                app_bundle_id: "tech.permissionless.bitchat".to_string(),
+                app_bundle_id: "chat.bitchat".to_string(),
                 app_source: "./ios-app-result/BitChat.app".to_string(),
                 url_scheme: "bitchat://".to_string(),
             },

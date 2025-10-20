@@ -2,7 +2,8 @@
 
 use std::time::{Duration, Instant};
 
-use bitchat_core::PeerId;
+use bitchat_core::{PeerId, BitchatResult, BitchatError};
+use bitchat_core::protocol::DiscoveredPeer;
 use btleplug::api::Peripheral;
 use btleplug::platform::Peripheral as PlatformPeripheral;
 
@@ -94,6 +95,30 @@ impl BlePeer {
     /// Get peripheral ID for comparison
     pub fn peripheral_id(&self) -> btleplug::platform::PeripheralId {
         self.peripheral.id()
+    }
+
+    /// Update peer information from an announce packet
+    pub fn update_from_announce(&mut self, discovered_peer: &DiscoveredPeer) -> BitchatResult<()> {
+        // Verify the peer IDs match
+        if self.peer_id != discovered_peer.peer_id {
+            return Err(BitchatError::invalid_packet("Peer ID mismatch in announce update"));
+        }
+
+        // Update the nickname if it's different
+        // For now, we don't store the full announce information in BlePeer
+        // In a full implementation, we might want to store noise keys, signatures, etc.
+        
+        Ok(())
+    }
+
+    /// Create a BlePeer from a DiscoveredPeer (for peers discovered via announce packets)
+    pub fn from_discovered_peer(_discovered_peer: DiscoveredPeer) -> BitchatResult<Self> {
+        // Note: This is a placeholder implementation since we don't have a real peripheral
+        // In a real implementation, we would need to create a mock peripheral or
+        // refactor BlePeer to optionally have a peripheral
+        Err(BitchatError::invalid_packet(
+            "Cannot create BlePeer from DiscoveredPeer without BLE peripheral"
+        ))
     }
 }
 

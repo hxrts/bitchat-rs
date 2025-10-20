@@ -1,0 +1,249 @@
+# Network Analysis Validation Test Scenario
+# Tests network statistics, packet analysis, and protocol compliance checking
+
+[metadata]
+name = "Network Analysis Validation"
+description = "Test network analysis capabilities including packet statistics, latency monitoring, and protocol compliance"
+version = "1.0"
+tags = ["network", "analysis", "statistics", "monitoring"]
+duration_seconds = 90
+author = "BitChat Team"
+
+[network]
+[network.profile]
+type = "SlowWifi"
+latency_ms = 100
+jitter_ms = 30
+
+[network.topology]
+type = "FullyConnected"
+
+[network.logging]
+enable_packet_logging = true
+enable_stats_logging = true
+stats_interval_seconds = 5
+
+# Create 3 peers for analysis
+[[peers]]
+name = "alice"
+[peers.behavior]
+auto_discovery = true
+auto_connect = true
+
+[[peers]]
+name = "bob"
+[peers.behavior]
+auto_discovery = true
+auto_connect = true
+
+[[peers]]
+name = "charlie"
+[peers.behavior]
+auto_discovery = true
+auto_connect = true
+
+# Phase 1: Establish baseline metrics
+[[sequence]]
+name = "start_analysis"
+at_time_seconds = 5.0
+action = "LogCheckpoint"
+message = "Starting network analysis validation"
+
+[[sequence]]
+name = "establish_connections"
+at_time_seconds = 10.0
+action = "ValidateState"
+[sequence.validation]
+type = "PeerCount"
+peer = "alice"
+expected_count = 2
+
+# Phase 2: Test network statistics collection
+[[sequence]]
+name = "baseline_stats"
+at_time_seconds = 15.0
+action = "ValidateState"
+[sequence.validation]
+type = "NetworkStats"
+max_packet_loss = 0.0
+min_delivery_rate = 1.0
+
+# Phase 3: Generate controlled traffic for analysis
+[[sequence]]
+name = "test_message_1"
+at_time_seconds = 20.0
+action = "SendMessage"
+from = "alice"
+to = "bob"
+content = "Network analysis test message 1"
+
+[[sequence]]
+name = "test_message_2"
+at_time_seconds = 25.0
+action = "SendMessage"
+from = "bob"
+to = "charlie"
+content = "Network analysis test message 2"
+
+[[sequence]]
+name = "test_broadcast"
+at_time_seconds = 30.0
+action = "SendBroadcast"
+from = "charlie"
+content = "Network analysis broadcast test"
+
+# Phase 4: Monitor packet delivery statistics
+[[sequence]]
+name = "check_delivery_stats"
+at_time_seconds = 35.0
+action = "ValidateState"
+[sequence.validation]
+type = "NetworkStats"
+max_packet_loss = 0.1
+min_delivery_rate = 0.9
+
+# Phase 5: Test rapid messaging for throughput analysis
+[[sequence]]
+name = "rapid_message_1"
+at_time_seconds = 40.0
+action = "SendMessage"
+from = "alice"
+to = "charlie"
+content = "Rapid test 1"
+
+[[sequence]]
+name = "rapid_message_2"
+at_time_seconds = 41.0
+action = "SendMessage"
+from = "bob"
+to = "alice"
+content = "Rapid test 2"
+
+[[sequence]]
+name = "rapid_message_3"
+at_time_seconds = 42.0
+action = "SendMessage"
+from = "charlie"
+to = "bob"
+content = "Rapid test 3"
+
+# Phase 6: Test under network stress
+[[sequence]]
+name = "stress_test_start"
+at_time_seconds = 50.0
+action = "LogCheckpoint"
+message = "Starting network stress test for analysis"
+
+[[sequence]]
+name = "stress_message_1"
+at_time_seconds = 52.0
+action = "SendMessage"
+from = "alice"
+to = "bob"
+content = "Stress test message 1 - larger content for bandwidth testing and analysis"
+
+[[sequence]]
+name = "stress_message_2"
+at_time_seconds = 53.0
+action = "SendMessage"
+from = "bob"
+to = "charlie"
+content = "Stress test message 2 - larger content for bandwidth testing and analysis"
+
+[[sequence]]
+name = "stress_broadcast"
+at_time_seconds = 54.0
+action = "SendBroadcast"
+from = "charlie"
+content = "Stress broadcast - larger content for bandwidth testing and analysis"
+
+# Phase 7: Validate network performance under stress
+[[sequence]]
+name = "stress_performance_check"
+at_time_seconds = 60.0
+action = "ValidateState"
+[sequence.validation]
+type = "NetworkStats"
+max_packet_loss = 0.2
+min_delivery_rate = 0.8
+
+# Phase 8: Recovery and final statistics
+[[sequence]]
+name = "recovery_period"
+at_time_seconds = 70.0
+action = "LogCheckpoint"
+message = "Recovery period - allowing network to stabilize"
+
+[[sequence]]
+name = "final_stats_check"
+at_time_seconds = 80.0
+action = "ValidateState"
+[sequence.validation]
+type = "NetworkStats"
+max_packet_loss = 0.1
+min_delivery_rate = 0.9
+
+[validation]
+# Continuous network monitoring
+[[validation.continuous_checks]]
+interval_seconds = 10.0
+start_at_seconds = 15.0
+[validation.continuous_checks.check]
+type = "NetworkStats"
+max_packet_loss = 0.3
+min_delivery_rate = 0.7
+
+# Final validation checks
+[[validation.final_checks]]
+type = "PeerConnected"
+peer1 = "alice"
+peer2 = "bob"
+
+[[validation.final_checks]]
+type = "PeerConnected"
+peer1 = "bob"
+peer2 = "charlie"
+
+[[validation.final_checks]]
+type = "PeerConnected"
+peer1 = "alice"
+peer2 = "charlie"
+
+[[validation.final_checks]]
+type = "MessageCount"
+peer = "alice"
+expected_min = 3
+
+[[validation.final_checks]]
+type = "MessageCount"
+peer = "bob"
+expected_min = 3
+
+[[validation.final_checks]]
+type = "MessageCount"
+peer = "charlie"
+expected_min = 3
+
+# Final network statistics validation
+[[validation.final_checks]]
+type = "NetworkStats"
+max_packet_loss = 0.15
+min_delivery_rate = 0.85
+
+[validation.timeouts]
+message_delivery_seconds = 30.0
+connection_establishment_seconds = 20.0
+peer_discovery_seconds = 15.0
+
+[performance]
+expected_throughput = 1.0
+max_latency_ms = 500
+max_packet_loss = 0.2
+
+[performance.memory_limits]
+max_per_peer_mb = 100
+max_total_mb = 300
+
+[performance.cpu_limits]
+max_per_peer_percent = 25.0
+max_total_percent = 75.0

@@ -3,7 +3,7 @@
 //! This module provides efficient duplicate detection for mesh networking
 //! using probabilistic Bloom filters to prevent message forwarding loops.
 
-use alloc::vec::Vec;
+use alloc::{vec, vec::Vec};
 use core::hash::Hash;
 use serde::{Deserialize, Serialize};
 use sha2::{Digest, Sha256};

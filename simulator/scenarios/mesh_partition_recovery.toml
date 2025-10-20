@@ -1,0 +1,251 @@
+# Mesh Partition Recovery Test Scenario
+# Tests network partition healing and message routing recovery
+
+[metadata]
+name = "Mesh Partition Recovery"
+description = "Test mesh network partition healing and message routing recovery"
+version = "1.0"
+tags = ["mesh", "partition", "recovery", "routing"]
+duration_seconds = 120
+author = "BitChat Team"
+
+[network]
+[network.profile]
+type = "Perfect"
+
+[network.topology]
+type = "FullyConnected"
+
+[network.logging]
+enable_packet_logging = true
+enable_stats_logging = true
+stats_interval_seconds = 10
+
+# Create a 4-node mesh network
+[[peers]]
+name = "alice"
+[peers.behavior]
+auto_discovery = true
+auto_connect = true
+
+[[peers]]
+name = "bob"
+[peers.behavior]
+auto_discovery = true
+auto_connect = true
+
+[[peers]]
+name = "charlie"
+[peers.behavior]
+auto_discovery = true
+auto_connect = true
+
+[[peers]]
+name = "diana"
+[peers.behavior]
+auto_discovery = true
+auto_connect = true
+
+# Phase 1: Establish full mesh connectivity
+[[sequence]]
+name = "establish_mesh"
+at_time_seconds = 5.0
+action = "LogCheckpoint"
+message = "Establishing 4-node mesh network"
+
+[[sequence]]
+name = "test_initial_connectivity"
+at_time_seconds = 10.0
+action = "SendMessage"
+from = "alice"
+to = "diana"
+content = "Initial connectivity test"
+
+[[sequence]]
+name = "validate_mesh_established"
+at_time_seconds = 15.0
+action = "ValidateState"
+[sequence.validation]
+type = "PeerCount"
+peer = "alice"
+expected_count = 3
+
+# Phase 2: Create network partition (disconnect alice from charlie and diana)
+[[sequence]]
+name = "create_partition_1"
+at_time_seconds = 25.0
+action = "PartitionNetwork"
+peer1 = "alice"
+peer2 = "charlie"
+
+[[sequence]]
+name = "create_partition_2"
+at_time_seconds = 26.0
+action = "PartitionNetwork"
+peer1 = "alice"
+peer2 = "diana"
+
+[[sequence]]
+name = "create_partition_3"
+at_time_seconds = 27.0
+action = "PartitionNetwork"
+peer1 = "bob"
+peer2 = "charlie"
+
+[[sequence]]
+name = "create_partition_4"
+at_time_seconds = 28.0
+action = "PartitionNetwork"
+peer1 = "bob"
+peer2 = "diana"
+
+[[sequence]]
+name = "log_partition_created"
+at_time_seconds = 30.0
+action = "LogCheckpoint"
+message = "Network partition created: [alice,bob] vs [charlie,diana]"
+
+# Phase 3: Test intra-partition communication
+[[sequence]]
+name = "test_partition_a_communication"
+at_time_seconds = 35.0
+action = "SendMessage"
+from = "alice"
+to = "bob"
+content = "Partition A internal message"
+
+[[sequence]]
+name = "test_partition_b_communication"
+at_time_seconds = 40.0
+action = "SendMessage"
+from = "charlie"
+to = "diana"
+content = "Partition B internal message"
+
+# Phase 4: Attempt cross-partition communication (should fail)
+[[sequence]]
+name = "test_cross_partition_failure"
+at_time_seconds = 50.0
+action = "SendMessage"
+from = "alice"
+to = "charlie"
+content = "This should not reach charlie during partition"
+
+# Phase 5: Heal network partition
+[[sequence]]
+name = "heal_partition_1"
+at_time_seconds = 65.0
+action = "HealPartition"
+peer1 = "alice"
+peer2 = "charlie"
+
+[[sequence]]
+name = "heal_partition_2"
+at_time_seconds = 66.0
+action = "HealPartition"
+peer1 = "alice"
+peer2 = "diana"
+
+[[sequence]]
+name = "heal_partition_3"
+at_time_seconds = 67.0
+action = "HealPartition"
+peer1 = "bob"
+peer2 = "charlie"
+
+[[sequence]]
+name = "heal_partition_4"
+at_time_seconds = 68.0
+action = "HealPartition"
+peer1 = "bob"
+peer2 = "diana"
+
+[[sequence]]
+name = "log_partition_healed"
+at_time_seconds = 70.0
+action = "LogCheckpoint"
+message = "Network partition healed - reconnecting mesh"
+
+# Phase 6: Test message routing recovery
+[[sequence]]
+name = "test_routing_recovery"
+at_time_seconds = 80.0
+action = "SendMessage"
+from = "alice"
+to = "charlie"
+content = "Post-partition recovery message"
+
+[[sequence]]
+name = "test_broadcast_recovery"
+at_time_seconds = 85.0
+action = "SendBroadcast"
+from = "diana"
+content = "Broadcast after partition recovery"
+
+# Phase 7: Validate full mesh recovery
+[[sequence]]
+name = "validate_full_recovery"
+at_time_seconds = 95.0
+action = "ValidateState"
+[sequence.validation]
+type = "PeerCount"
+peer = "alice"
+expected_count = 3
+
+[[sequence]]
+name = "final_connectivity_test"
+at_time_seconds = 100.0
+action = "SendMessage"
+from = "bob"
+to = "diana"
+content = "Final mesh connectivity verification"
+
+[validation]
+# Continuous monitoring during partition
+[[validation.continuous_checks]]
+interval_seconds = 20.0
+start_at_seconds = 30.0
+[validation.continuous_checks.check]
+type = "NetworkStats"
+max_packet_loss = 0.5  # Allow higher loss during partition
+min_delivery_rate = 0.5
+
+# Final validation
+[[validation.final_checks]]
+type = "PeerConnected"
+peer1 = "alice"
+peer2 = "bob"
+
+[[validation.final_checks]]
+type = "PeerConnected"
+peer1 = "charlie"
+peer2 = "diana"
+
+[[validation.final_checks]]
+type = "PeerConnected"
+peer1 = "alice"
+peer2 = "charlie"
+
+[[validation.final_checks]]
+type = "MessageCount"
+peer = "alice"
+expected_min = 1
+
+[[validation.final_checks]]
+type = "MessageCount"
+peer = "charlie"
+expected_min = 1
+
+[validation.timeouts]
+message_delivery_seconds = 30.0
+connection_establishment_seconds = 15.0
+peer_discovery_seconds = 10.0
+
+[performance]
+expected_throughput = 0.5  # Lower during partition recovery
+max_latency_ms = 1000
+max_packet_loss = 0.3
+
+[performance.memory_limits]
+max_per_peer_mb = 100
+max_total_mb = 400

@@ -6,8 +6,8 @@ description = "Core protocol implementation for the BitChat P2P messaging protoc
 license = "MIT OR Apache-2.0"
 
 [features]
-# Three mutually exclusive features as per refactor plan
-default = ["std"]
+# Default feature depends on target platform
+default = []
 
 # Standard library environments (CLI, server, native)
 std = [
@@ -16,21 +16,22 @@ std = [
     "sha2/std",
     "uuid/std",
     "tokio",
-    "futures-channel/std",
     "tracing",
     "instant",
     "geohash",
     "task-logging",
-    "monitoring"
+    "monitoring",
+    "flate2"
 ]
 
 # WebAssembly browser environments  
 wasm = [
-    "futures-channel", 
+    "async-channel",
     "wasm-bindgen-futures", 
     "async-broadcast",
     "instant", 
-    "js-sys"
+    "js-sys",
+    "flate2"
 ]
 
 # Testing environments with additional utilities
@@ -59,6 +60,7 @@ curve25519-dalek = { workspace = true }
 ed25519-dalek = { workspace = true }
 x25519-dalek = { workspace = true }
 chacha20poly1305 = { workspace = true }
+aes-gcm = { version = "0.10", default-features = false, features = ["alloc"] }
 sha2 = { workspace = true }
 
 # Utilities
@@ -69,11 +71,12 @@ crc32fast = { workspace = true }
 async-trait = { version = "0.1", default-features = false }
 async-broadcast = { version = "0.5", optional = true }
 cfg-if = "1.0"
-flate2 = { version = "1.0", default-features = false, features = ["zlib"] }
+flate2 = { version = "1.0", default-features = false, features = ["rust_backend"], optional = true }
 
 # Async runtime and channels (feature-gated)
 tokio = { version = "1.0", features = ["sync", "time", "rt", "macros"], optional = true }
-futures-channel = { version = "0.3", features = ["std"], optional = true }
+futures-channel = { version = "0.3", optional = true, default-features = false, features = ["alloc", "sink"] }
+async-channel = { version = "2.3", optional = true, default-features = false }
 
 # Logging (always available, but tracing is feature-gated)
 log = { version = "0.4", default-features = false }
@@ -81,6 +84,10 @@ tracing = { version = "0.1", default-features = false, optional = true }
 
 # Core futures support (always available)
 futures = { version = "0.3", default-features = false, features = ["alloc"] }
+
+# WASM-specific dependencies (optional, enabled by wasm feature)
+wasm-bindgen-futures = { version = "0.4", optional = true }
+js-sys = { version = "0.3", optional = true }
 
 # Performance optimizations
 hex = { workspace = true }
@@ -93,9 +100,6 @@ geohash = { workspace = true, optional = true }
 
 [target.'cfg(target_arch = "wasm32")'.dependencies]
 getrandom = { workspace = true }
-wasm-bindgen-futures = { version = "0.4", optional = true }
-futures-channel = { version = "0.3", optional = true }
-js-sys = { version = "0.3", optional = true }
 
 [dev-dependencies]
 tokio = { version = "1.0", features = ["full"] }

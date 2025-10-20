@@ -162,23 +162,11 @@
 extern crate alloc;
 
 // ----------------------------------------------------------------------------
-// Compile-time Feature Guards
+// Compile-time Feature Configuration
 // ----------------------------------------------------------------------------
-// Ensures that only one of the three mutually exclusive features
-// (std, wasm, testing) is enabled at build time.
-
-// Ensure mutually exclusive features are not enabled together
-#[cfg(all(feature = "std", feature = "wasm"))]
-compile_error!("Features 'std' and 'wasm' are mutually exclusive. Enable only one.");
-
-// Note: 'testing' feature includes 'std' automatically, so they can coexist
-
-#[cfg(all(feature = "wasm", feature = "testing"))]
-compile_error!("Features 'wasm' and 'testing' are mutually exclusive. Enable only one.");
-
-// Ensure at least one feature is enabled (since testing includes std)
-#[cfg(not(any(feature = "std", feature = "wasm", feature = "testing")))]
-compile_error!("At least one of 'std', 'wasm', or 'testing' features must be enabled.");
+// The 'std', 'wasm', and 'testing' features are independent and can be
+// combined as needed. Use #[cfg(feature = "...")] and #[cfg(all(...))] 
+// to control behavior when features are enabled.
 
 // Feature documentation for users
 #[cfg(feature = "std")]
@@ -217,6 +205,7 @@ BitChat Core compiled with 'testing' feature:
 
 pub mod errors;
 pub mod types;
+pub mod identity;
 
 #[cfg(feature = "task-logging")]
 pub mod task_logging;
@@ -244,6 +233,7 @@ pub use config::{BitchatConfig, SharedBitchatConfig};
 pub use errors::{BitchatError, BitchatResult, Result};
 pub use transport_task::TransportTask;
 pub use types::{Fingerprint, PeerId, Timestamp};
+pub use identity::{TrustLevel, HandshakeState, SecureIdentityStateManager};
 
 #[cfg(feature = "std")]
 pub use geohash::{
@@ -316,6 +306,11 @@ pub mod internal {
         MessageId, MessageStore, MessageStoreStats, NoiseHandshake, NoiseKeyPair, NoiseSession,
         NoiseTransport, SessionParams, SessionState, StateTransition, StateTransitionError,
         TrackedMessage,
+    };
+    pub use crate::identity::{
+        EphemeralIdentity, CryptographicIdentity, SocialIdentity, IdentityCache,
+        IdentityCacheStats, HandshakeState, TrustLevel, SecureIdentityStateManager,
+        storage::{SecureStorage, StorageConfig, create_default_storage, create_test_storage},
     };
     #[cfg(feature = "task-logging")]
     pub use crate::task_logging::{

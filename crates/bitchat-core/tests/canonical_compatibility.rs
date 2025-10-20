@@ -79,7 +79,7 @@ fn test_canonical_fragment_format() {
 fn test_canonical_wire_format_compatibility() {
     let sender = PeerId::new([1, 2, 3, 4, 5, 6, 7, 8]);
     let payload = b"Hello, BitChat!".to_vec();
-    let packet = BitchatPacket::new(MessageType::Message, sender, payload);
+    let packet = BitchatPacket::new_simple(MessageType::Message, sender, payload);
 
     // Test encoding/decoding works correctly
     let encoded = WireFormat::encode(&packet).unwrap();
@@ -110,7 +110,7 @@ fn test_max_payload_size_v1() {
     // Version 1 should support max 255 bytes payload
     let sender = PeerId::new([1, 2, 3, 4, 5, 6, 7, 8]);
     let max_payload = vec![0u8; 255];
-    let packet = BitchatPacket::new(MessageType::Message, sender, max_payload);
+    let packet = BitchatPacket::new_simple(MessageType::Message, sender, max_payload);
 
     // Should encode successfully
     let encoded = WireFormat::encode(&packet).unwrap();
@@ -119,7 +119,7 @@ fn test_max_payload_size_v1() {
 
     // Payload larger than 255 should fail for v1
     let oversized_payload = vec![0u8; 256];
-    let oversized_packet = BitchatPacket::new(MessageType::Message, sender, oversized_payload);
+    let oversized_packet = BitchatPacket::new_simple(MessageType::Message, sender, oversized_payload);
     assert!(
         WireFormat::encode(&oversized_packet).is_err(),
         "v1 should reject payloads > 255 bytes"

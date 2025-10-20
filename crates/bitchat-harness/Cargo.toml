@@ -13,7 +13,7 @@ wasm = ["bitchat-core/wasm"]
 testing = ["bitchat-core/testing", "async-trait", "tokio", "fastrand", "tracing"]
 
 [dependencies]
-bitchat-core = { path = "../bitchat-core" }
+bitchat-core = { path = "../bitchat-core", default-features = false, features = ["std"] }
 # bitchat-runtime dependency removed to avoid circular dependency
 sha2 = { workspace = true }
 serde = { workspace = true }

@@ -14,7 +14,7 @@ testing = ["bitchat-core/testing", "bitchat-harness/testing", "std"]
 
 [dependencies]
 # Core BitChat protocol
-bitchat-core = { path = "../bitchat-core" }
+bitchat-core = { path = "../bitchat-core", default-features = false, features = ["std"] }
 bitchat-harness = { path = "../bitchat-harness" }
 
 # Nostr dependencies (only for native targets, not WASM)

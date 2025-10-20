@@ -297,7 +297,7 @@ impl AppiumController {
                 let payload = json!({
                     "script": "mobile: launchApp",
                     "args": [{
-                        "bundleId": "tech.permissionless.bitchat",
+                        "bundleId": "chat.bitchat",
                         "arguments": ["-url", url]
                     }]
                 });
@@ -320,7 +320,7 @@ impl AppiumController {
                     "script": "mobile: deepLink",
                     "args": [{
                         "url": url,
-                        "package": "tech.permissionless.bitchat"
+                        "package": "com.bitchat.droid"
                     }]
                 });
 
@@ -398,7 +398,7 @@ impl Default for AppiumCapabilities {
             device_name: "iPhone Simulator".to_string(),
             app_package: None,
             app_activity: None,
-            bundle_id: Some("tech.permissionless.bitchat".to_string()),
+            bundle_id: Some("chat.bitchat".to_string()),
             automation_name: "XCUITest".to_string(),
             no_reset: true,
             additional: HashMap::new(),

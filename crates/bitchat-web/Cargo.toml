@@ -9,12 +9,19 @@ license = "MIT OR Apache-2.0"
 crate-type = ["cdylib"]
 
 [features]
+# Default is no features - WASM-only
+default = []
+
+# Std feature for workspace builds (not used for actual WASM)
+std = ["bitchat-core/std"]
+
 # Experimental features for advanced functionality
 experimental = ["bitchat-core/experimental"]
 
 [dependencies]
-# Core BitChat protocol - headless and platform-agnostic
-bitchat-core = { path = "../bitchat-core" }
+# Core BitChat protocol - headless and platform-agnostic  
+bitchat-core = { path = "../bitchat-core", default-features = false, features = ["wasm", "flate2"] }
+cfg-if = "1.0"
 
 # Nostr transport for WebAssembly (temporarily disabled for WASM compilation)
 # bitchat-nostr = { path = "../bitchat-nostr", default-features = false, features = ["wasm"] }
@@ -35,6 +42,7 @@ serde = { workspace = true, features = ["derive"] }
 serde_json = { workspace = true }
 serde-wasm-bindgen = "0.6"
 hex = { workspace = true }
+futures = { workspace = true }
 
 # Logging for WASM
 tracing = { workspace = true }

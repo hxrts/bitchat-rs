@@ -287,6 +287,28 @@ cfg_if::cfg_if! {
             /// Rate limiting error
             #[error("Rate limited: {reason}")]
             RateLimited { reason: String },
+
+            /// TLV encoding/decoding errors
+            #[error("Invalid TLV type: {0}")]
+            InvalidTlvType(u8),
+
+            #[error("TLV value too large: {0} bytes")]
+            TlvValueTooLarge(usize),
+
+            #[error("Invalid UTF-8 encoding")]
+            InvalidUtf8,
+
+            #[error("Invalid key length: {0} bytes (expected 32)")]
+            InvalidKeyLength(usize),
+
+            #[error("Invalid data length: {0} bytes")]
+            InvalidDataLength(usize),
+
+            #[error("Insufficient data: {0} bytes available")]
+            InsufficientData(usize),
+
+            #[error("Missing required TLV type: {0}")]
+            MissingRequiredTlv(u8),
         }
     } else {
         /// Core error types for the BitChat protocol (no_std version)
@@ -304,6 +326,13 @@ cfg_if::cfg_if! {
             Channel { message: String },
             Configuration { reason: String },
             RateLimited { reason: String },
+            InvalidTlvType(u8),
+            TlvValueTooLarge(usize),
+            InvalidUtf8,
+            InvalidKeyLength(usize),
+            InvalidDataLength(usize),
+            InsufficientData(usize),
+            MissingRequiredTlv(u8),
         }
 
         impl From<bincode::Error> for BitchatError {
@@ -424,10 +453,41 @@ impl BitchatError {
         })
     }
 
+    /// Create a serialization error with a message
+    pub fn serialization_error_with_message<T: Into<String>>(message: T) -> Self {
+        BitchatError::InvalidPacket(PacketError::Generic {
+            message: alloc::format!("Serialization error: {}", message.into()),
+        })
+    }
+
     /// Create a deserialization error from any deserialization failure
     pub fn deserialization_error() -> Self {
         BitchatError::InvalidPacket(PacketError::Generic {
             message: "Deserialization failed".into(),
+        })
+    }
+
+    /// Create a storage error with a message
+    pub fn storage_error<T: Into<String>>(message: T) -> Self {
+        BitchatError::InvalidPacket(PacketError::Generic {
+            message: alloc::format!("Storage error: {}", message.into()),
+        })
+    }
+
+    /// Create an encryption error with a message
+    pub fn encryption_error<T: Into<String>>(_message: T) -> Self {
+        BitchatError::Crypto(CryptographicError::EncryptionFailed)
+    }
+
+    /// Create a decryption error with a message
+    pub fn decryption_error<T: Into<String>>(_message: T) -> Self {
+        BitchatError::Crypto(CryptographicError::DecryptionFailed)
+    }
+
+    /// Create an invalid peer ID error
+    pub fn invalid_peer_id<T: Into<String>>(message: T) -> Self {
+        BitchatError::InvalidPacket(PacketError::Generic {
+            message: alloc::format!("Invalid peer ID: {}", message.into()),
         })
     }
 }

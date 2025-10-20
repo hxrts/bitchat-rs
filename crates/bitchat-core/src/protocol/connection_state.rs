@@ -12,7 +12,7 @@ cfg_if::cfg_if! {
     } else {
         use core::fmt;
         use alloc::string::{String, ToString};
-        use alloc::vec::{Vec, vec};
+        use alloc::{vec, vec::Vec};
         use alloc::format;
         use alloc::boxed::Box;
     }

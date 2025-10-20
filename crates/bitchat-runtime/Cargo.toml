@@ -8,7 +8,7 @@ keywords = ["p2p", "messaging", "encryption", "mesh", "runtime"]
 categories = ["network-programming", "cryptography"]
 
 [dependencies]
-bitchat-core = { path = "../bitchat-core" }
+bitchat-core = { path = "../bitchat-core", default-features = false, features = ["std"] }
 bitchat-harness = { path = "../bitchat-harness" }
 sha2 = { workspace = true }
 

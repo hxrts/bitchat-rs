@@ -15,6 +15,7 @@ use bitchat_core::{
 };
 use bitchat_runtime::logic::{CoreLogicTask, LoggerWrapper};
 use tokio::task::JoinHandle;
+use std::collections::HashMap;
 
 // ----------------------------------------------------------------------------
 // CLI Application Orchestrator
@@ -83,7 +84,9 @@ pub struct CliAppOrchestrator {
     /// Core Logic task handle
     core_logic_handle: Option<JoinHandle<BitchatResult<()>>>,
     /// Transport task handles
-    transport_handles: Vec<JoinHandle<BitchatResult<()>>>,
+    transport_handles: HashMap<ChannelTransportType, JoinHandle<BitchatResult<()>>>,
+    /// Paused transport configuration
+    paused_transports: HashMap<ChannelTransportType, bool>,
     /// Terminal interface for external interaction
     terminal_interface: Option<TerminalInterfaceTask>,
     /// Running state
@@ -114,7 +117,8 @@ impl CliAppOrchestrator {
             transport_config,
             verbose,
             core_logic_handle: None,
-            transport_handles: Vec::new(),
+            transport_handles: HashMap::new(),
+            paused_transports: HashMap::new(),
             terminal_interface: None,
             running: false,
         }
@@ -137,7 +141,8 @@ impl CliAppOrchestrator {
             transport_config,
             verbose,
             core_logic_handle: None,
-            transport_handles: Vec::new(),
+            transport_handles: HashMap::new(),
+            paused_transports: HashMap::new(),
             terminal_interface: None,
             running: false,
         }
@@ -224,9 +229,10 @@ impl CliAppOrchestrator {
         self.terminal_interface = None;
 
         // Stop all transport tasks
-        for handle in self.transport_handles.drain(..) {
+        for (_, handle) in self.transport_handles.drain() {
             handle.abort();
         }
+        self.paused_transports.clear();
 
         // Stop core logic task
         if let Some(handle) = self.core_logic_handle.take() {
@@ -249,6 +255,81 @@ impl CliAppOrchestrator {
     /// Get peer ID
     pub fn peer_id(&self) -> PeerId {
         self.peer_id
+    }
+
+    /// Pause a specific transport
+    pub async fn pause_transport(&mut self, transport_type: ChannelTransportType) -> BitchatResult<()> {
+        if !self.running {
+            return Err(BitchatError::Transport(
+                TransportError::InvalidConfiguration {
+                    reason: "Application not running".to_string(),
+                },
+            ));
+        }
+
+        if let Some(is_paused) = self.paused_transports.get_mut(&transport_type) {
+            if *is_paused {
+                return Ok(()); // Already paused
+            }
+
+            // Stop the transport task
+            if let Some(handle) = self.transport_handles.remove(&transport_type) {
+                handle.abort();
+                *is_paused = true;
+            }
+        }
+
+        Ok(())
+    }
+
+    /// Resume a specific transport
+    pub async fn resume_transport(&mut self, transport_type: ChannelTransportType) -> BitchatResult<()> {
+        if !self.running {
+            return Err(BitchatError::Transport(
+                TransportError::InvalidConfiguration {
+                    reason: "Application not running".to_string(),
+                },
+            ));
+        }
+
+        if let Some(is_paused) = self.paused_transports.get_mut(&transport_type) {
+            if !*is_paused {
+                return Ok(()); // Already running
+            }
+
+            // Restart the transport task
+            match transport_type {
+                ChannelTransportType::Ble if self.transport_config.ble_enabled => {
+                    // We need to recreate channels for this transport
+                    // For simplicity, we'll mark it as resumed but actual restart would need channel recreation
+                    *is_paused = false;
+                    // TODO: Implement actual transport restart with new channels
+                }
+                ChannelTransportType::Nostr if self.transport_config.nostr_enabled => {
+                    *is_paused = false;
+                    // TODO: Implement Nostr transport restart
+                }
+                _ => {
+                    return Err(BitchatError::Transport(
+                        TransportError::InvalidConfiguration {
+                            reason: format!("Transport {:?} not supported for resume", transport_type),
+                        },
+                    ));
+                }
+            }
+        }
+
+        Ok(())
+    }
+
+    /// Check if a transport is paused
+    pub fn is_transport_paused(&self, transport_type: ChannelTransportType) -> bool {
+        self.paused_transports.get(&transport_type).copied().unwrap_or(false)
+    }
+
+    /// Get list of available transports
+    pub fn available_transports(&self) -> Vec<ChannelTransportType> {
+        self.transport_config.enabled_transports.clone()
     }
 
     /// Start configured transport tasks
@@ -277,7 +358,8 @@ impl CliAppOrchestrator {
                             logger.clone(),
                         )
                         .await?;
-                    self.transport_handles.push(handle);
+                    self.transport_handles.insert(ChannelTransportType::Ble, handle);
+                    self.paused_transports.insert(ChannelTransportType::Ble, false);
                 }
                 ChannelTransportType::Nostr if self.transport_config.nostr_enabled => {
                     // Note: Nostr transport would be started here

@@ -41,6 +41,13 @@ impl PeerId {
         &self.0
     }
 
+    /// Create PeerId from a Noise public key (takes first 8 bytes)
+    pub fn from_noise_key(noise_key: &[u8; 32]) -> Self {
+        let mut id = [0u8; 8];
+        id.copy_from_slice(&noise_key[..8]);
+        Self(id)
+    }
+
     /// Special broadcast peer ID (all 0xFF)
     pub const BROADCAST: Self = Self([0xFF; 8]);
 }
@@ -96,7 +103,7 @@ impl Deref for PeerId {
 // ----------------------------------------------------------------------------
 
 /// SHA-256 fingerprint of a peer's static public key
-#[derive(Debug, Clone, PartialEq, Eq, Hash, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Eq, Hash, PartialOrd, Ord, Serialize, Deserialize)]
 pub struct Fingerprint([u8; 32]);
 
 impl Fingerprint {

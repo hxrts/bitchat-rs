@@ -1,5 +1,7 @@
 //! BitChat Scenario Runner
 //!
+//! Unified testing framework that bridges scenario-runner and emulator-rig
+//!
 //! A comprehensive testing framework for BitChat protocols that supports:
 //!
 //! - **Data-driven scenario configuration** via YAML/TOML files
@@ -83,7 +85,10 @@
 pub mod scenario_config;
 pub mod scenario_runner;
 pub mod network_router;
+pub mod network_analysis;
 pub mod event_orchestrator;
+pub mod client_bridge;
+pub mod cross_framework_orchestrator;
 
 // Re-export main types for convenience
 pub use scenario_config::{
@@ -95,6 +100,14 @@ pub use network_router::{
     NetworkRouter, NetworkRouterConfig, NetworkProfile, NetworkPacket,
     MockNetworkHandle, NetworkStats
 };
+pub use network_analysis::{
+    NetworkAnalyzer, AnalyzerConfig, NetworkMetrics, CapturedPacket,
+    ComplianceStatus, AnalysisReport, CaptureSummary
+};
+pub use client_bridge::{
+    UnifiedClientType, ClientPair, TestingFramework, TestingStrategy, ClientTypeBridgeError
+};
+pub use cross_framework_orchestrator::CrossFrameworkOrchestrator;
 
 /// Version of the scenario runner
 pub const VERSION: &str = env!("CARGO_PKG_VERSION");

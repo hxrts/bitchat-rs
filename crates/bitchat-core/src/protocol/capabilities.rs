@@ -4,7 +4,8 @@
 //! graceful interoperability with different BitChat implementations that may support
 //! different feature sets.
 
-use alloc::{collections::BTreeSet, string::String, vec::Vec};
+use alloc::{collections::BTreeSet, string::{String, ToString}, vec::Vec, vec};
+use hashbrown::{HashMap, HashSet};
 use serde::{Deserialize, Serialize};
 
 use crate::protocol::message::NoisePayloadType;
@@ -416,13 +417,13 @@ pub struct CapabilityManager {
     /// Our implementation info
     implementation: ImplementationInfo,
     /// Negotiated capabilities with each peer
-    peer_capabilities: std::collections::HashMap<PeerId, Vec<Capability>>,
+    peer_capabilities: HashMap<PeerId, Vec<Capability>>,
     /// Negotiated protocol versions with each peer
-    peer_versions: std::collections::HashMap<PeerId, ProtocolVersion>,
+    peer_versions: HashMap<PeerId, ProtocolVersion>,
     /// Peers that don't support capability negotiation (canonical implementation)
-    legacy_peers: std::collections::HashSet<PeerId>,
+    legacy_peers: HashSet<PeerId>,
     /// Timeout tracking for version hello messages
-    hello_timeouts: std::collections::HashMap<PeerId, Timestamp>,
+    hello_timeouts: HashMap<PeerId, Timestamp>,
 }
 
 impl CapabilityManager {
@@ -434,10 +435,10 @@ impl CapabilityManager {
             local_peer_id,
             local_capabilities: hello.capabilities,
             implementation: hello.implementation,
-            peer_capabilities: std::collections::HashMap::new(),
-            peer_versions: std::collections::HashMap::new(),
-            legacy_peers: std::collections::HashSet::new(),
-            hello_timeouts: std::collections::HashMap::new(),
+            peer_capabilities: HashMap::new(),
+            peer_versions: HashMap::new(),
+            legacy_peers: HashSet::new(),
+            hello_timeouts: HashMap::new(),
         })
     }
 

@@ -18,6 +18,7 @@ use crate::scenario_config::{
     AutoMessagePattern
 };
 use crate::network_router::{NetworkRouter, NetworkRouterConfig};
+use crate::network_analysis::{NetworkAnalyzer, AnalyzerConfig};
 
 // ----------------------------------------------------------------------------
 // Scenario Execution Context
@@ -33,6 +34,8 @@ pub struct ScenarioRunner {
     harnesses: HashMap<String, TestHarness>,
     /// Network router for packet simulation
     network_router: Option<Arc<Mutex<NetworkRouter>>>,
+    /// Network analyzer for protocol validation and metrics
+    network_analyzer: Option<Arc<Mutex<NetworkAnalyzer>>>,
     /// Execution state
     state: Arc<RwLock<ExecutionState>>,
     /// Event channel for coordination
@@ -146,6 +149,7 @@ impl ScenarioRunner {
             peer_mapping,
             harnesses: HashMap::new(),
             network_router: None,
+            network_analyzer: None,
             state,
             _event_tx: event_tx,
             event_rx,
@@ -167,6 +171,26 @@ impl ScenarioRunner {
             
             let (router, _outgoing_tx) = NetworkRouter::new(router_config);
             self.network_router = Some(Arc::new(Mutex::new(router)));
+        }
+
+        // Create network analyzer for protocol validation and metrics
+        if self.config.network.logging.enable_packet_logging || self.config.network.logging.enable_stats_logging {
+            let analyzer_config = AnalyzerConfig {
+                enable_capture: self.config.network.logging.enable_packet_logging,
+                enable_compliance_checking: true,
+                enable_metrics: self.config.network.logging.enable_stats_logging,
+                metrics_window_seconds: self.config.network.logging.stats_interval_seconds as u64,
+                max_latency_samples: 1000,
+                enable_detailed_logging: false,
+                export_results: true,
+                export_path: Some(format!("network_analysis_{}.json", self.config.metadata.name)),
+            };
+            
+            let mut analyzer = NetworkAnalyzer::new(analyzer_config);
+            analyzer.start().await.map_err(|e| anyhow::anyhow!("Failed to start network analyzer: {}", e))?;
+            self.network_analyzer = Some(Arc::new(Mutex::new(analyzer)));
+            
+            info!("Network analyzer initialized and started");
         }
 
         // Initialize test harnesses for each peer

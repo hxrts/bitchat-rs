@@ -34,8 +34,24 @@ This testing rig treats real BitChat applications as black boxes and tests them 
 - **Nix**: Package manager for reproducible environments
 - **macOS**: Required for iOS Simulator testing
 - **Xcode**: Required for iOS Simulator and app installation
-- **Android SDK**: Required for Android emulator testing
+- **Android Studio**: Required for Android SDK and emulator testing
+- **Android SDK Command-line Tools**: Install via Android Studio SDK Manager
 - **Node.js**: Required for Appium automation server
+
+### Android SDK Setup
+
+1. Install Android Studio from https://developer.android.com/studio
+2. Open Android Studio and go to **Tools** → **SDK Manager**
+3. In the **SDK Tools** tab, check and install:
+   - **Android SDK Command-line Tools (latest)**
+   - **Android Emulator**
+   - **Android SDK Platform-Tools**
+4. Set environment variables:
+   ```bash
+   export ANDROID_HOME=~/Library/Android/sdk
+   export JAVA_HOME="/Applications/Android Studio.app/Contents/jbr/Contents/Home"
+   export PATH=$PATH:$ANDROID_HOME/cmdline-tools/latest/bin:$ANDROID_HOME/platform-tools:$ANDROID_HOME/emulator:$JAVA_HOME/bin
+   ```
 
 ## Real App Sources
 

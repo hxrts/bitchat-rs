@@ -3,7 +3,7 @@
 //! This module implements synchronization of session state and message history
 //! across multiple devices belonging to the same BitChat identity.
 
-use alloc::{collections::BTreeMap, string::String, vec::Vec};
+use alloc::{collections::BTreeMap, string::{String, ToString}, vec::Vec};
 use serde::{Deserialize, Serialize};
 
 use crate::protocol::message::NoisePayloadType;

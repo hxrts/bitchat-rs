@@ -1,0 +1,288 @@
+# Peer Discovery Scaling Test Scenario
+# Tests peer discovery performance with increasing number of peers
+
+[metadata]
+name = "Peer Discovery Scaling"
+description = "Test peer discovery performance and announce packet handling with 6+ peers"
+version = "1.0"
+tags = ["discovery", "scaling", "announce", "performance"]
+duration_seconds = 150
+author = "BitChat Team"
+
+[network]
+[network.profile]
+type = "SlowWifi"
+latency_ms = 50
+jitter_ms = 20
+
+[network.topology]
+type = "FullyConnected"
+
+[network.logging]
+enable_packet_logging = true
+enable_stats_logging = true
+stats_interval_seconds = 15
+
+# Create 6 peers to test scaling
+[[peers]]
+name = "alice"
+[peers.behavior]
+auto_discovery = true
+auto_connect = true
+
+[[peers]]
+name = "bob"
+[peers.behavior]
+auto_discovery = true
+auto_connect = true
+
+[[peers]]
+name = "charlie"
+[peers.behavior]
+auto_discovery = true
+auto_connect = true
+
+[[peers]]
+name = "diana"
+[peers.behavior]
+auto_discovery = true
+auto_connect = true
+
+[[peers]]
+name = "eve"
+[peers.behavior]
+auto_discovery = true
+auto_connect = true
+
+[[peers]]
+name = "frank"
+[peers.behavior]
+auto_discovery = true
+auto_connect = true
+
+# Phase 1: Gradual peer introduction
+[[sequence]]
+name = "start_discovery_phase"
+at_time_seconds = 5.0
+action = "LogCheckpoint"
+message = "Starting 6-peer discovery scaling test"
+
+[[sequence]]
+name = "alice_discovers"
+at_time_seconds = 10.0
+action = "StartDiscovery"
+peer = "alice"
+
+[[sequence]]
+name = "bob_discovers"
+at_time_seconds = 15.0
+action = "StartDiscovery"
+peer = "bob"
+
+[[sequence]]
+name = "charlie_discovers"
+at_time_seconds = 20.0
+action = "StartDiscovery"
+peer = "charlie"
+
+# Phase 2: Validate 3-peer mesh
+[[sequence]]
+name = "validate_3_peer_mesh"
+at_time_seconds = 30.0
+action = "ValidateState"
+[sequence.validation]
+type = "PeerCount"
+peer = "alice"
+expected_count = 2
+
+# Phase 3: Add remaining peers
+[[sequence]]
+name = "diana_discovers"
+at_time_seconds = 35.0
+action = "StartDiscovery"
+peer = "diana"
+
+[[sequence]]
+name = "eve_discovers"
+at_time_seconds = 40.0
+action = "StartDiscovery"
+peer = "eve"
+
+[[sequence]]
+name = "frank_discovers"
+at_time_seconds = 45.0
+action = "StartDiscovery"
+peer = "frank"
+
+# Phase 4: Test announce packet load
+[[sequence]]
+name = "test_announce_load"
+at_time_seconds = 60.0
+action = "LogCheckpoint"
+message = "All 6 peers online - testing announce packet handling"
+
+# Phase 5: Validate full 6-peer mesh
+[[sequence]]
+name = "validate_full_mesh"
+at_time_seconds = 70.0
+action = "ValidateState"
+[sequence.validation]
+type = "PeerCount"
+peer = "alice"
+expected_count = 5
+
+[[sequence]]
+name = "validate_bob_mesh"
+at_time_seconds = 72.0
+action = "ValidateState"
+[sequence.validation]
+type = "PeerCount"
+peer = "bob"
+expected_count = 5
+
+[[sequence]]
+name = "validate_charlie_mesh"
+at_time_seconds = 74.0
+action = "ValidateState"
+[sequence.validation]
+type = "PeerCount"
+peer = "charlie"
+expected_count = 5
+
+# Phase 6: Test messaging load across mesh
+[[sequence]]
+name = "test_mesh_messaging_load"
+at_time_seconds = 80.0
+action = "SendMessage"
+from = "alice"
+to = "frank"
+content = "Message across full 6-peer mesh"
+
+[[sequence]]
+name = "test_broadcast_scaling"
+at_time_seconds = 85.0
+action = "SendBroadcast"
+from = "charlie"
+content = "Broadcast to 5 peers"
+
+[[sequence]]
+name = "test_simultaneous_messaging"
+at_time_seconds = 90.0
+action = "SendMessage"
+from = "bob"
+to = "eve"
+content = "Simultaneous message 1"
+
+[[sequence]]
+name = "test_simultaneous_messaging_2"
+at_time_seconds = 90.5
+action = "SendMessage"
+from = "diana"
+to = "alice"
+content = "Simultaneous message 2"
+
+# Phase 7: Performance validation
+[[sequence]]
+name = "final_performance_check"
+at_time_seconds = 110.0
+action = "ValidateState"
+[sequence.validation]
+type = "NetworkStats"
+max_packet_loss = 0.1
+min_delivery_rate = 0.9
+
+# Phase 8: Stress test with rapid messaging
+[[sequence]]
+name = "stress_test_start"
+at_time_seconds = 120.0
+action = "LogCheckpoint"
+message = "Starting stress test with rapid messaging"
+
+[[sequence]]
+name = "rapid_message_1"
+at_time_seconds = 125.0
+action = "SendMessage"
+from = "alice"
+to = "bob"
+content = "Rapid message 1"
+
+[[sequence]]
+name = "rapid_message_2"
+at_time_seconds = 126.0
+action = "SendMessage"
+from = "bob"
+to = "charlie"
+content = "Rapid message 2"
+
+[[sequence]]
+name = "rapid_message_3"
+at_time_seconds = 127.0
+action = "SendMessage"
+from = "charlie"
+to = "diana"
+content = "Rapid message 3"
+
+[[sequence]]
+name = "rapid_message_4"
+at_time_seconds = 128.0
+action = "SendMessage"
+from = "diana"
+to = "eve"
+content = "Rapid message 4"
+
+[[sequence]]
+name = "rapid_message_5"
+at_time_seconds = 129.0
+action = "SendMessage"
+from = "eve"
+to = "frank"
+content = "Rapid message 5"
+
+[validation]
+# Continuous performance monitoring
+[[validation.continuous_checks]]
+interval_seconds = 30.0
+start_at_seconds = 60.0
+[validation.continuous_checks.check]
+type = "NetworkStats"
+max_packet_loss = 0.2
+min_delivery_rate = 0.8
+
+# Final mesh validation
+[[validation.final_checks]]
+type = "PeerCount"
+peer = "alice"
+expected_count = 5
+
+[[validation.final_checks]]
+type = "PeerCount"
+peer = "frank"
+expected_count = 5
+
+[[validation.final_checks]]
+type = "MessageCount"
+peer = "alice"
+expected_min = 2
+
+[[validation.final_checks]]
+type = "MessageCount"
+peer = "frank"
+expected_min = 1
+
+[validation.timeouts]
+message_delivery_seconds = 45.0
+connection_establishment_seconds = 30.0
+peer_discovery_seconds = 20.0
+
+[performance]
+expected_throughput = 1.5
+max_latency_ms = 2000  # Higher latency allowed with 6 peers
+max_packet_loss = 0.15
+
+[performance.memory_limits]
+max_per_peer_mb = 150
+max_total_mb = 900
+
+[performance.cpu_limits]
+max_per_peer_percent = 15.0
+max_total_percent = 90.0

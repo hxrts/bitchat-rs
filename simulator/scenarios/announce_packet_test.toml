@@ -1,0 +1,133 @@
+# Announce Packet Test Scenario
+# Tests the new TLV-encoded announce packet implementation
+
+[metadata]
+name = "Announce Packet Test"
+description = "Test announce packet creation, signing, verification, and peer discovery using our new TLV-encoded implementation"
+version = "1.0"
+tags = ["announce", "peer-discovery", "tlv", "cryptography"]
+duration_seconds = 60
+author = "BitChat Team"
+
+[network]
+[network.profile]
+type = "Perfect"
+
+[network.topology]
+type = "FullyConnected"
+
+[network.logging]
+enable_packet_logging = true
+enable_stats_logging = true
+stats_interval_seconds = 5
+
+[[peers]]
+name = "alice"
+[peers.behavior]
+auto_discovery = true
+auto_connect = true
+
+[[peers]]
+name = "bob"
+[peers.behavior]
+auto_discovery = true
+auto_connect = true
+
+# Test announce packet creation and peer discovery
+[[sequence]]
+name = "alice_discovers_peers"
+at_time_seconds = 1.0
+action = "StartDiscovery"
+peer = "alice"
+
+[[sequence]]
+name = "bob_discovers_peers" 
+at_time_seconds = 1.0
+action = "StartDiscovery"
+peer = "bob"
+
+# Test that peer discovery works (announce packets are sent automatically)
+[[sequence]]
+name = "alice_waits_for_discovery"
+at_time_seconds = 2.0
+action = "WaitForEvent"
+peer = "alice"
+event_type = "PeerDiscovered"
+timeout_seconds = 5.0
+
+[[sequence]]
+name = "bob_waits_for_discovery"
+at_time_seconds = 2.0
+action = "WaitForEvent"
+peer = "bob"
+event_type = "PeerDiscovered"
+timeout_seconds = 5.0
+
+# Test messaging after announce
+[[sequence]]
+name = "alice_sends_message"
+at_time_seconds = 5.0
+action = "SendMessage"
+from = "alice"
+to = "bob"
+content = "Hello from Alice via announce discovery!"
+
+[[sequence]]
+name = "bob_responds"
+at_time_seconds = 7.0
+action = "SendMessage"
+from = "bob"
+to = "alice"
+content = "Hello back from Bob!"
+
+# Validate announce packet functionality
+[[sequence]]
+name = "validate_peer_count"
+at_time_seconds = 10.0
+action = "ValidateState"
+[sequence.validation]
+type = "PeerCount"
+peer = "alice"
+expected_count = 1
+
+[[sequence]]
+name = "validate_message_count"
+at_time_seconds = 10.0
+action = "ValidateState"
+[sequence.validation]
+type = "MessageCount"
+peer = "bob"
+expected_min = 1
+
+[validation]
+[[validation.final_checks]]
+type = "PeerConnected"
+peer1 = "alice"
+peer2 = "bob"
+
+[[validation.final_checks]]
+type = "PeerCount"
+peer = "alice"
+expected_count = 1
+
+[[validation.final_checks]]
+type = "PeerCount"
+peer = "bob"
+expected_count = 1
+
+[[validation.final_checks]]
+type = "MessageCount"
+peer = "alice"
+expected_min = 1
+expected_max = 1
+
+[[validation.final_checks]]
+type = "MessageCount"
+peer = "bob"
+expected_min = 1
+expected_max = 1
+
+[performance]
+max_latency_ms = 500
+max_packet_loss = 0.0
+expected_throughput = 1.0

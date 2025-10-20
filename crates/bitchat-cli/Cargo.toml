@@ -13,7 +13,7 @@ name = "bitchat-cli"
 path = "src/main.rs"
 
 [dependencies]
-bitchat-core = { path = "../bitchat-core" }
+bitchat-core = { path = "../bitchat-core", default-features = false, features = ["std"] }
 bitchat-runtime = { path = "../bitchat-runtime" }
 bitchat-ble = { path = "../bitchat-ble" }
 bitchat-nostr = { path = "../bitchat-nostr" }
@@ -26,3 +26,4 @@ serde_json = { workspace = true }
 toml = "0.8"
 thiserror = { workspace = true }
 tracing = "0.1"
+rand = "0.8"

@@ -4,26 +4,68 @@ Cross-platform testing framework for the BitChat protocol with real mobile app t
 
 ## Overview
 
-The BitChat simulator provides three testing approaches:
+The BitChat simulator provides two complementary testing frameworks:
 
-1. **Real Mobile App Testing** - Android and iOS apps in emulators with network analysis
-2. **Data-Driven Scenario Testing** - TOML-configured scenarios with mock simulation  
-3. **Cross-Implementation Testing** - CLI client compatibility validation
+### 1. emulator-rig - Real Mobile App Testing
+Black-box testing of actual BitChat mobile applications:
+- **iOS (Swift)** - Native Swift implementation in `vendored/bitchat-ios/`
+- **Android (Kotlin)** - Native Kotlin implementation in `vendored/bitchat-android/`
+- Runs apps in iOS Simulator and Android Emulator with Appium automation
+- Network analysis and protocol compliance validation
+
+### 2. scenario-runner - Simulation-Based Protocol Testing
+Event-driven protocol testing with mock simulation:
+- **CLI (Rust)** - Native Rust command-line client
+- **Web (WASM)** - Browser-based WebAssembly client *(WASM build fixed 2025-01-20)*
+- TOML-configured scenarios with network condition simulation
+- Deterministic, reproducible test execution
+- Cross-implementation testing (CLI ↔ Web)
+- **Unified Client Bridge** - Bridges to emulator-rig for cross-framework testing *(New 2025-01-20)*
 
 ## Quick Start
+
+### iOS Setup
+
+1. **Install Xcode**: Download from the [Mac App Store](https://apps.apple.com/us/app/xcode/id497799835)
+2. **Install Command Line Tools**:
+   ```bash
+   xcode-select --install
+   ```
+3. **Configure Signing** (for simulator testing, automatic signing works):
+   - Open Xcode → Settings → Accounts
+   - Add your Apple ID (free account works for simulator testing)
+   - Xcode will automatically manage certificates and provisioning profiles
+
+> **Note**: For simulator-only testing (no physical device), you don't need a paid Apple Developer account.
+
+### Android Setup
+
+1. **Install Android Studio**: Download from [developer.android.com/studio](https://developer.android.com/studio)
+2. **Install Android SDK** (via Android Studio):
+   - Open Android Studio → Settings → Appearance & Behavior → System Settings → Android SDK
+   - Install the latest SDK Platform and SDK Build Tools
+3. **Set Environment Variable**:
+   ```bash
+   export ANDROID_HOME="$HOME/Library/Android/sdk"  # macOS
+   # Or for Linux:
+   # export ANDROID_HOME="$HOME/Android/Sdk"
+   ```
+   Add this to your `~/.zshrc` or `~/.bashrc` to make it permanent.
+
+> **Tip**: Verify setup with `$ANDROID_HOME/platform-tools/adb --version`
 
 ### Real Mobile App Testing
 ```bash
 # Set ANDROID_HOME if you have Android Studio installed
 export ANDROID_HOME="/Users/username/Library/Android/sdk"  # macOS location
 
-# Enter hybrid environment with automatic tool detection
-cd emulator-rig && nix develop
+# Enter Nix environment with hybrid system tools support
+cd emulator-rig && ANDROID_HOME="$ANDROID_HOME" nix develop
 
 # All tools automatically available - iOS, Android, and Nix tools integrated
-cargo run -- ios-to-ios
-cargo run -- android-to-android
-cargo run -- test --client1 ios --client2 android
+cargo run -- test --client1 ios --client2 ios          # iOS ↔ iOS testing
+cargo run -- test --client1 android --client2 android  # Android ↔ Android testing
+cargo run -- test --client1 ios --client2 android      # Cross-platform testing
 ```
 
 ### Data-Driven Scenario Testing
@@ -31,7 +73,7 @@ cargo run -- test --client1 ios --client2 android
 cd scenario-runner && nix develop
 
 # Run TOML scenario with Android emulator integration
-cargo run -- run-android ../scenarios/android_to_android.toml
+ANDROID_HOME="/path/to/android/sdk" cargo run -- run-android ../scenarios/android_to_android.toml
 
 # Run TOML scenario with mock simulation
 cargo run -- run-file ../scenarios/android_to_android.toml
@@ -44,11 +86,30 @@ cargo run -- validate ../scenarios/android_to_android.toml
 
 ```
 simulator/
-├── scenario-runner/           # Data-driven TOML scenario execution engine
-├── emulator-rig/              # Android/iOS emulator automation framework  
-├── scenarios/                 # Pre-configured test scenarios (TOML)
-└── Justfile                   # Build and test automation commands
+├── emulator-rig/                      # Real mobile app testing framework
+│   ├── src/                           # Emulator orchestration and Appium automation
+│   └── vendored/
+│       ├── bitchat-ios/               # Swift implementation (canonical)
+│       └── bitchat-android/           # Kotlin implementation  
+├── scenario-runner/                   # Simulation-based protocol testing
+│   ├── src/                           # Event orchestration and mock networking
+│   └── scenarios/                     # Protocol test scenarios (Rust code)
+├── scenarios/                         # Data-driven test scenarios (TOML files)
+└── Justfile                           # Build and test automation commands
 ```
+
+### Client Type Mapping
+
+| Client Type | Language | Framework | Unified Type | Framework-Specific Type |
+|-------------|----------|-----------|--------------|------------------------|
+| **iOS** | Swift | emulator-rig | `UnifiedClientType::Ios` | `bitchat_emulator_harness::ClientType::Ios` |
+| **Android** | Kotlin | emulator-rig | `UnifiedClientType::Android` | `bitchat_emulator_harness::ClientType::Android` |
+| **CLI** | Rust | scenario-runner | `UnifiedClientType::Cli` | `EventOrchestrator::ClientType::Cli` |
+| **Web** | Rust (WASM) | scenario-runner | `UnifiedClientType::Web` | `EventOrchestrator::ClientType::Web` |
+
+**Note**: The `UnifiedClientType` enum (added 2025-01-20) bridges both frameworks, enabling:
+- Same-framework testing: CLI↔Web, iOS↔Android
+- Cross-framework testing: CLI↔iOS, CLI↔Android, Web↔iOS, Web↔Android (orchestration needed)
 
 ## Available Test Scenarios
 
@@ -95,45 +156,126 @@ just test-emulator-matrix
 ```bash
 cd scenario-runner && nix develop
 
-# Run scenarios
-cargo run -- run-android ../scenarios/android_to_android.toml
+# Run scenarios with Android environment
+ANDROID_HOME="/path/to/android/sdk" cargo run -- run-android ../scenarios/android_to_android.toml
 cargo run -- run-file ../scenarios/basic_messaging.toml
 cargo run -- validate ../scenarios/mesh_network.toml
 cargo run -- list
 ```
 
-### CLI Client Testing
+### CLI/Web Client Testing (scenario-runner)
 ```bash
-# Test specific client implementations
-cargo run -- --client-type rust-cli scenario deterministic-messaging
-cargo run -- --client-type native scenario deterministic-messaging
-cargo run -- --client-type wasm scenario transport-failover
+cd scenario-runner && nix develop
+
+# Test with CLI client (default)
+cargo run -- scenario deterministic-messaging
+cargo run -- scenario transport-failover
+
+# Test with Web (WASM) client
+cargo run -- --client-type web scenario deterministic-messaging
 cargo run -- --client-type web scenario transport-failover
 
-# Cross-implementation testing with new client types
-cargo run -- cross-implementation-test --client1 native --client2 web
-cargo run -- cross-implementation-test --client1 rust-cli --client2 wasm
+# Cross-implementation testing (CLI ↔ Web)
+cargo run -- cross-implementation-test --client1 cli --client2 web
+
+# Run all scenarios
+cargo run -- all-scenarios
+
+# List available scenarios
+cargo run -- list
+```
+
+### Cross-Framework Testing (Using Client Bridge)
+```bash
+cd scenario-runner && nix develop
+
+# The UnifiedClientType enum enables testing across frameworks
+# Currently supports: cli, web, ios, android
+
+# Check client pair compatibility (in Rust code)
+use scenario_runner::{UnifiedClientType, ClientPair};
+
+let pair = ClientPair::new(UnifiedClientType::Cli, UnifiedClientType::Ios);
+println!("Requires bridging: {}", pair.requires_bridging());  // true
+println!("Strategy: {:?}", pair.testing_strategy());
+
+// Same-framework pairs (ready to use)
+// - CLI ↔ Web (scenario-runner)
+// - iOS ↔ Android (emulator-rig)
+
+// Cross-framework pairs (bridge implemented, orchestration needed)
+// - CLI ↔ iOS
+// - CLI ↔ Android  
+// - Web ↔ iOS
+// - Web ↔ Android
 ```
 
 ## Platform Support
 
-| Platform | Implementation | Automation | Status |
-|----------|---------------|------------|--------|
-| **Android** | BitChat Android APK | Appium + UiAutomator2 | [OK] Ready |
-| **iOS** | BitChat iOS App | Appium + XCUITest | [OK] Ready |
-| **Rust CLI** | Native binary | JSON events | [OK] Working |
-| **Native** | Rust native (alias) | JSON events | [OK] Working |
-| **WASM Client** | Browser runtime | JSON events | [OK] Working |
-| **Web** | WASM web (alias) | JSON events | [OK] Working |
-| **Kotlin CLI** | JVM binary | JSON events | [OK] Working |
-| **Swift CLI** | Native binary | JSON events | [OK] Working |
+| Client | Language | Framework | Implementation Path | Automation | Status |
+|--------|----------|-----------|---------------------|------------|--------|
+| **iOS** | Swift | emulator-rig | `vendored/bitchat-ios/` | Appium + XCUITest | ✅ Ready |
+| **Android** | Kotlin | emulator-rig | `vendored/bitchat-android/` | Appium + UiAutomator2 | ✅ Ready |
+| **CLI** | Rust | scenario-runner | `../../crates/bitchat-cli/` | JSON events | ✅ Working |
+| **Web** | Rust (WASM) | scenario-runner | `../../crates/bitchat-web/` | JSON events | ✅ **Fixed 2025-01-20** |
+
+### Implementation Details
+
+- **iOS (Swift)**: Canonical iOS implementation with full feature parity, includes Noise protocol, BLE mesh, Nostr relay support, and Tor integration
+- **Android (Kotlin)**: Canonical Android implementation with full feature parity, includes all protocol features and transport layers
+- **CLI (Rust)**: Reference Rust implementation for testing and development
+- **Web (WASM)**: Browser-based Rust implementation compiled to WebAssembly
+  - **Note**: WASM build fixed 2025-01-20 by making `std` and `wasm` features independent
+  - Uses `async-channel` for no_std compatibility instead of `futures-channel::mpsc`
+  - Feature flags now composable: can enable `std`, `wasm`, or both together
 
 ## Key Features
 
-- **Real Device Testing** - Tests actual BitChat mobile applications with UI automation
-- **Data-Driven Testing** - TOML configuration for complex scenarios with validation rules
-- **Multi-Level Testing** - Mock simulation → CLI clients → Real mobile apps → Network analysis
-- **Hybrid Nix Environment** - Automatic detection and integration of system development tools
-- **Cross-Platform Validation** - Android ↔ Android, iOS ↔ iOS, Android ↔ iOS testing
-- **Event-Driven Architecture** - JSON automation protocol across all implementations
-- **Fallback Mechanisms** - Automatic mock simulation when real environment unavailable
+### emulator-rig Framework
+- **Real Mobile App Testing** - Black-box testing of actual Swift (iOS) and Kotlin (Android) implementations
+- **Appium Integration** - UI automation for iOS Simulator and Android Emulator
+- **Network Analysis** - mitmproxy integration for protocol validation
+- **Cross-Platform Testing** - iOS ↔ iOS, Android ↔ Android, and iOS ↔ Android scenarios
+- **Hybrid Nix Environment** - Automatic detection of system development tools (Xcode, Android SDK)
+
+### scenario-runner Framework
+- **Simulation-Based Testing** - Mock network environment with configurable conditions
+- **Protocol Scenarios** - Comprehensive protocol testing (handshake, rekey, byzantine fault, etc.)
+- **Event-Driven Orchestration** - Deterministic, reproducible test execution
+- **Data-Driven Configuration** - TOML scenario files with validation rules
+- **CLI & WASM Support** - Tests Rust CLI and browser-based WASM clients *(WASM fixed 2025-01-20)*
+- **Cross-Implementation Testing** - Validates CLI ↔ Web compatibility
+- **Independent Feature Flags** - `std` and `wasm` features can be used independently or together
+- **Client Type Bridge** - Unified client type system for cross-framework testing *(New 2025-01-20)*
+
+### Integration & Client Bridge (New 2025-01-20)
+- **Unified Client Types** - `UnifiedClientType` enum supports all 4 implementations (CLI, Web, iOS, Android)
+- **Framework Bridging** - Automatic conversion between scenario-runner and emulator-rig client types
+- **Client Pair Validation** - Validates compatibility and determines testing strategy
+- **Testing Strategies**:
+  - **Single Framework**: CLI↔Web (scenario-runner), iOS↔Android (emulator-rig)
+  - **Cross Framework**: CLI↔iOS, CLI↔Android, Web↔iOS, Web↔Android (bridge ready, orchestration needed)
+- **Fallback Mechanisms** - Automatic mock simulation when emulators unavailable
+- **Comprehensive Coverage** - From protocol-level simulation to real app black-box testing
+
+### Client Bridge API
+```rust
+use scenario_runner::{UnifiedClientType, ClientPair, TestingFramework};
+
+// Create unified client types
+let cli = UnifiedClientType::Cli;
+let ios = UnifiedClientType::Ios;
+
+// Check framework requirements
+assert!(cli.supports_scenario_runner());
+assert!(ios.requires_emulator_rig());
+
+// Validate client pairs
+let pair = ClientPair::new(cli, ios);
+assert!(pair.requires_bridging());  // Cross-framework testing
+
+// Convert between framework-specific types
+use std::convert::TryFrom;
+let scenario_cli = scenario_runner::event_orchestrator::ClientType::try_from(cli).unwrap();
+let emulator_ios = bitchat_emulator_harness::ClientType::try_from(ios).unwrap();
+```

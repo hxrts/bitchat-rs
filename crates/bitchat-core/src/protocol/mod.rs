@@ -15,7 +15,10 @@
 //! - `group_messaging`: Group chat functionality with member management
 //! - `session_sync`: Multi-device session synchronization
 //! - `capabilities`: Capability detection and version negotiation
+//! - `announce`: Peer discovery announce packets with TLV encoding
+//! - `tlv`: Type-Length-Value encoding for structured data
 
+pub mod announce;
 pub mod connection_state;
 pub mod crypto;
 pub mod deduplication;
@@ -25,6 +28,7 @@ pub mod message;
 pub mod message_store;
 pub mod packet;
 pub mod session;
+pub mod tlv;
 pub mod wire;
 
 // Experimental features (not in canonical implementation)
@@ -70,6 +74,12 @@ pub use message::{BitchatMessage, MessageFlags, NoisePayload, NoisePayloadType};
 
 // Re-export wire format types
 pub use wire::{Compression, Padding, WireFormat};
+
+// Re-export TLV types
+pub use tlv::{TlvCodec, TlvEntry, TlvType};
+
+// Re-export announce types
+pub use announce::{AnnouncePayload, DiscoveredPeer};
 
 // Re-export fragmentation types
 pub use fragmentation::{Fragment, FragmentHeader, MessageFragmenter, MessageReassembler};

@@ -47,6 +47,9 @@
             pkg-config
             just
             
+            # WASM linker for web builds
+            lld
+            
             # Development tools
             git
             

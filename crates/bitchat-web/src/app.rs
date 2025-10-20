@@ -292,7 +292,24 @@ impl BitchatWebApp {
         if let Some(callback) = &self.ui_callback {
             let callback_clone = callback.clone();
             spawn_local(async move {
-                while let Some(app_event) = app_event_receiver.recv().await {
+                loop {
+                    // Handle both tokio (returns Option) and async-channel (returns Result)
+                    //  In workspace builds, bitchat-core gets std feature from other crates
+                    cfg_if::cfg_if! {
+                        if #[cfg(all(not(target_arch = "wasm32"), not(target_os = "unknown")))] {
+                            // Native/workspace build uses tokio (Option)
+                            let app_event = match app_event_receiver.recv().await {
+                                Some(event) => event,
+                                None => break,
+                            };
+                        } else {
+                            // WASM build uses async-channel (Result)
+                            let app_event = match app_event_receiver.recv().await {
+                                Ok(event) => event,
+                                Err(_) => break,
+                            };
+                        }
+                    }
                     let js_event = JsAppEvent::from(app_event);
 
                     // Create a simple object to pass to JavaScript
@@ -342,11 +359,11 @@ impl BitchatWebApp {
 
         if let Some(sender) = &self.command_sender {
             sender
-                .send(Command::SendMessage {
+                .clone()
+                .try_send(Command::SendMessage {
                     recipient,
                     content: content.to_string(),
                 })
-                .await
                 .map_err(|_| JsValue::from_str("Failed to send command"))?;
             Ok(())
         } else {
@@ -356,11 +373,11 @@ impl BitchatWebApp {
 
     /// Start peer discovery
     #[wasm_bindgen]
-    pub async fn start_discovery(&self) -> Result<(), JsValue> {
+    pub fn start_discovery(&self) -> Result<(), JsValue> {
         if let Some(sender) = &self.command_sender {
             sender
-                .send(Command::StartDiscovery)
-                .await
+                .clone()
+                .try_send(Command::StartDiscovery)
                 .map_err(|_| JsValue::from_str("Failed to send command"))?;
             Ok(())
         } else {
@@ -370,11 +387,11 @@ impl BitchatWebApp {
 
     /// Stop peer discovery
     #[wasm_bindgen]
-    pub async fn stop_discovery(&self) -> Result<(), JsValue> {
+    pub fn stop_discovery(&self) -> Result<(), JsValue> {
         if let Some(sender) = &self.command_sender {
             sender
-                .send(Command::StopDiscovery)
-                .await
+                .clone()
+                .try_send(Command::StopDiscovery)
                 .map_err(|_| JsValue::from_str("Failed to send command"))?;
             Ok(())
         } else {
@@ -384,7 +401,7 @@ impl BitchatWebApp {
 
     /// Connect to a specific peer
     #[wasm_bindgen]
-    pub async fn connect_to_peer(&self, peer_id_str: &str) -> Result<(), JsValue> {
+    pub fn connect_to_peer(&self, peer_id_str: &str) -> Result<(), JsValue> {
         let peer_id = hex::decode(peer_id_str)
             .map_err(|e| JsValue::from_str(&format!("Invalid hex peer ID: {}", e)))
             .and_then(|bytes| {
@@ -397,8 +414,8 @@ impl BitchatWebApp {
 
         if let Some(sender) = &self.command_sender {
             sender
-                .send(Command::ConnectToPeer { peer_id })
-                .await
+                .clone()
+                .try_send(Command::ConnectToPeer { peer_id })
                 .map_err(|_| JsValue::from_str("Failed to send command"))?;
             Ok(())
         } else {
@@ -408,7 +425,7 @@ impl BitchatWebApp {
 
     /// Disconnect from a specific peer
     #[wasm_bindgen]
-    pub async fn disconnect_from_peer(&self, peer_id_str: &str) -> Result<(), JsValue> {
+    pub fn disconnect_from_peer(&self, peer_id_str: &str) -> Result<(), JsValue> {
         let peer_id = hex::decode(peer_id_str)
             .map_err(|e| JsValue::from_str(&format!("Invalid hex peer ID: {}", e)))
             .and_then(|bytes| {
@@ -421,8 +438,8 @@ impl BitchatWebApp {
 
         if let Some(sender) = &self.command_sender {
             sender
-                .send(Command::DisconnectFromPeer { peer_id })
-                .await
+                .clone()
+                .try_send(Command::DisconnectFromPeer { peer_id })
                 .map_err(|_| JsValue::from_str("Failed to send command"))?;
             Ok(())
         } else {

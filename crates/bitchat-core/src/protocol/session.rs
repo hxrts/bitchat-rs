@@ -10,6 +10,7 @@ use core::time::Duration;
 cfg_if::cfg_if! {
     if #[cfg(not(feature = "std"))] {
         use alloc::string::ToString;
+        use alloc::format;
     }
 }
 
@@ -28,6 +29,8 @@ pub enum SessionState {
     Handshaking,
     /// Handshake complete, ready for encrypted communication
     Established,
+    /// Session is being rekeyed
+    Rekeying,
     /// Session failed or terminated
     Failed,
 }
@@ -53,6 +56,14 @@ pub struct NoiseSession {
     created_at: Timestamp,
     /// Last activity timestamp
     last_activity: Timestamp,
+    /// Message count for this session
+    message_count: u64,
+    /// Rekey threshold (number of messages before automatic rekey)
+    rekey_threshold: u64,
+    /// Time-based rekey interval in seconds
+    rekey_interval_secs: u64,
+    /// Timestamp of last rekey operation
+    last_rekey: Timestamp,
 }
 
 impl NoiseSession {
@@ -73,6 +84,10 @@ impl NoiseSession {
             transport: None,
             created_at: now,
             last_activity: now,
+            message_count: 0,
+            rekey_threshold: 1_000_000_000, // Default: rekey after 1 billion messages (matches canonical spec)
+            rekey_interval_secs: 86400, // Default: rekey after 24 hours (matches canonical spec)
+            last_rekey: now,
         })
     }
 
@@ -93,6 +108,10 @@ impl NoiseSession {
             transport: None,
             created_at: now,
             last_activity: now,
+            message_count: 0,
+            rekey_threshold: 1_000_000_000, // Default: rekey after 1 billion messages (matches canonical spec)
+            rekey_interval_secs: 86400, // Default: rekey after 24 hours (matches canonical spec)
+            last_rekey: now,
         })
     }
 
@@ -257,7 +276,10 @@ impl NoiseSession {
             transport.encrypt(plaintext)
         };
 
+        // Increment message count and update activity
+        self.message_count += 1;
         self.update_activity(time_source);
+        
         result
     }
 
@@ -284,8 +306,124 @@ impl NoiseSession {
             transport.decrypt(ciphertext)
         };
 
+        // Increment message count and update activity
+        self.message_count += 1;
         self.update_activity(time_source);
+        
         result
+    }
+
+    /// Check if session needs rekeying based on message count or time
+    /// Uses 90% threshold for message count as per canonical implementation
+    pub fn needs_rekey<T: TimeSource>(&self, time_source: &T) -> bool {
+        if self.state != SessionState::Established {
+            return false;
+        }
+
+        // Check message count threshold (90% of max as per canonical spec)
+        let rekey_message_threshold = (self.rekey_threshold * 90) / 100;
+        if self.message_count >= rekey_message_threshold {
+            return true;
+        }
+
+        // Check time-based threshold (session timeout from last activity)
+        let now = time_source.now();
+        let time_since_activity = now.as_millis().saturating_sub(self.last_activity.as_millis());
+        let session_timeout_ms = self.rekey_interval_secs * 1000;
+        
+        time_since_activity >= session_timeout_ms
+    }
+
+    /// Initialize rekey process - returns to handshaking state with new keys
+    pub fn start_rekey<T: TimeSource>(&mut self, local_key: &NoiseKeyPair, time_source: &T) -> Result<()> {
+        if self.state != SessionState::Established {
+            return Err(BitchatError::Session(SessionError::InvalidState {
+                peer_id: self.peer_id.to_string(),
+                expected: "Established".to_string(),
+                actual: format!("{:?}", self.state),
+            }));
+        }
+
+        // Transition to rekeying state
+        self.state = SessionState::Rekeying;
+        
+        // Create new handshake for rekey
+        let handshake = NoiseHandshake::initiator(local_key)?;
+        self.handshake = Some(handshake);
+        self.transport = None; // Clear old transport
+        
+        // Reset counters
+        self.message_count = 0;
+        self.last_rekey = time_source.now();
+        self.update_activity(time_source);
+        
+        Ok(())
+    }
+
+    /// Complete rekey process and return to established state
+    pub fn complete_rekey<T: TimeSource>(&mut self, time_source: &T) -> Result<()> {
+        if self.state != SessionState::Rekeying {
+            return Err(BitchatError::Session(SessionError::InvalidState {
+                peer_id: self.peer_id.to_string(),
+                expected: "Rekeying".to_string(),
+                actual: format!("{:?}", self.state),
+            }));
+        }
+
+        // Verify we have a completed handshake
+        let handshake = self.handshake.as_ref().ok_or_else(|| {
+            BitchatError::Session(SessionError::InvalidState {
+                peer_id: self.peer_id.to_string(),
+                expected: "Rekeying with handshake".to_string(),
+                actual: "No handshake state".to_string(),
+            })
+        })?;
+
+        if !handshake.is_handshake_finished() {
+            return Err(BitchatError::Session(SessionError::InvalidState {
+                peer_id: self.peer_id.to_string(),
+                expected: "Completed handshake".to_string(),
+                actual: "Handshake not finished".to_string(),
+            }));
+        }
+
+        // Convert to transport mode
+        let handshake = self.handshake.take().unwrap();
+        self.transport = Some(handshake.into_transport_mode()?);
+        self.state = SessionState::Established;
+        self.update_activity(time_source);
+        
+        Ok(())
+    }
+
+    /// Get current message count
+    pub fn message_count(&self) -> u64 {
+        self.message_count
+    }
+
+    /// Get rekey threshold
+    pub fn rekey_threshold(&self) -> u64 {
+        self.rekey_threshold
+    }
+
+    /// Set rekey threshold
+    pub fn set_rekey_threshold(&mut self, threshold: u64) {
+        self.rekey_threshold = threshold;
+    }
+
+    /// Get rekey interval in seconds
+    pub fn rekey_interval_secs(&self) -> u64 {
+        self.rekey_interval_secs
+    }
+
+    /// Set rekey interval in seconds
+    pub fn set_rekey_interval_secs(&mut self, interval_secs: u64) {
+        self.rekey_interval_secs = interval_secs;
+    }
+
+    /// Check if session is rekeying
+    pub fn is_rekeying(&self) -> bool {
+        self.state == SessionState::Rekeying
     }
 
     /// Mark session as failed

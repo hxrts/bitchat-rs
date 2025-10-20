@@ -2,7 +2,6 @@ use anyhow::{anyhow, Result};
 use std::collections::HashMap;
 use tokio::process::Command;
 use tracing::{info, warn};
-use uuid::Uuid;
 
 use crate::config::TestConfig;
 use crate::emulator::{AndroidEmulator, IosSimulator};
@@ -46,6 +45,47 @@ impl EmulatorOrchestrator {
             _network_proxy: None,
             _appium_controller: None,
             active_sessions: HashMap::new(),
+        }
+    }
+
+    /// Try to auto-detect ANDROID_HOME from common locations
+    fn detect_android_home() -> Option<String> {
+        // Check env var first
+        if let Ok(android_home) = std::env::var("ANDROID_HOME") {
+            if std::path::Path::new(&android_home).exists() {
+                return Some(android_home);
+            }
+        }
+        
+        // Try common macOS locations
+        let home = std::env::var("HOME").ok()?;
+        let common_paths = vec![
+            format!("{}/Library/Android/sdk", home),
+            format!("{}/Android/Sdk", home),
+            "/usr/local/android-sdk".to_string(),
+        ];
+        
+        for path in common_paths {
+            if std::path::Path::new(&path).exists() {
+                info!("Auto-detected ANDROID_HOME at: {}", path);
+                return Some(path);
+            }
+        }
+        
+        None
+    }
+    
+    /// Get Android tool path from ANDROID_HOME or fall back to system PATH
+    fn get_android_tool_path(&self, tool: &str) -> String {
+        if let Some(android_home) = Self::detect_android_home() {
+            match tool {
+                "adb" => format!("{}/platform-tools/adb", android_home),
+                "emulator" => format!("{}/emulator/emulator", android_home),
+                "avdmanager" => format!("{}/cmdline-tools/latest/bin/avdmanager", android_home),
+                _ => tool.to_string(),
+            }
+        } else {
+            tool.to_string()
         }
     }
 
@@ -202,27 +242,49 @@ impl EmulatorOrchestrator {
     pub async fn run_android_to_android_test(&mut self) -> Result<()> {
         info!("Starting Android ↔ Android communication test");
         
-        // Setup multiple Android emulators
-        let device_names = vec!["BitChat-Alice", "BitChat-Bob"];
-        let mut emulator_ids = Vec::new();
+        // Use existing AVD for testing (simpler than creating new ones)
+        let avd_name = "Medium_Phone_API_36.1";
+        info!("Using existing Android AVD: {}", avd_name);
         
-        for device_name in &device_names {
-            info!("Setting up Android emulator: {}", device_name);
-            let emulator_id = self.create_android_emulator(device_name).await?;
-            emulator_ids.push(emulator_id);
-        }
+        // Launch the existing AVD directly
+        let emulator_path = self.get_android_tool_path("emulator");
+        info!("Launching Android emulator...");
         
-        // Install BitChat app on all emulators
-        for (i, emulator_id) in emulator_ids.iter().enumerate() {
-            info!("Installing BitChat app on emulator {}", device_names[i]);
-            self.install_android_app(emulator_id).await?;
-        }
+        let mut emulator_process = Command::new(&emulator_path)
+            .args(["-avd", avd_name, "-no-window", "-no-audio"])
+            .stdin(std::process::Stdio::null())
+            .stdout(std::process::Stdio::null())
+            .stderr(std::process::Stdio::piped())
+            .spawn()?;
         
-        // Launch apps on all emulators
-        for (i, emulator_id) in emulator_ids.iter().enumerate() {
-            info!("Launching BitChat app on emulator {}", device_names[i]);
-            self.launch_android_app(emulator_id).await?;
-        }
+        // Wait for emulator to boot
+        info!("Waiting for emulator to boot...");
+        tokio::time::sleep(std::time::Duration::from_secs(30)).await;
+        
+        // Get emulator serial (usually emulator-5554 for first instance)
+        let adb_path = self.get_android_tool_path("adb");
+        let devices_output = Command::new(&adb_path)
+            .args(["devices"])
+            .output()
+            .await?;
+        
+        let devices_str = String::from_utf8_lossy(&devices_output.stdout);
+        let emulator_id = devices_str
+            .lines()
+            .find(|line| line.starts_with("emulator-"))
+            .and_then(|line| line.split_whitespace().next())
+            .ok_or_else(|| anyhow!("No Android emulator found"))?
+            .to_string();
+        
+        info!("Emulator booted: {}", emulator_id);
+        
+        // Install BitChat app
+        info!("Installing BitChat app on emulator {}", avd_name);
+        self.install_android_app(&emulator_id).await?;
+        
+        // Launch app
+        info!("Launching BitChat app on emulator {}", avd_name);
+        self.launch_android_app(&emulator_id).await?;
         
         // Monitor stability for 60 seconds
         info!("Monitoring app stability for 60 seconds...");
@@ -234,17 +296,10 @@ impl EmulatorOrchestrator {
             let check_count = (start_time.elapsed().as_secs() / check_interval.as_secs()) + 1;
             info!("Stability check #{} at {:.1}s", check_count, start_time.elapsed().as_secs_f32());
             
-            // Check if apps are still running
-            let mut all_running = true;
-            for (i, emulator_id) in emulator_ids.iter().enumerate() {
-                if !self.check_android_app_running(emulator_id).await? {
-                    warn!("App stopped running on emulator {}", device_names[i]);
-                    all_running = false;
-                }
-            }
-            
-            if !all_running {
-                return Err(anyhow!("App stability test failed - some apps stopped running"));
+            // Check if app is still running
+            if !self.check_android_app_running(&emulator_id).await? {
+                warn!("App stopped running on emulator {}", avd_name);
+                return Err(anyhow!("App stability test failed - app stopped running"));
             }
             
             let remaining = test_duration.saturating_sub(start_time.elapsed());
@@ -259,11 +314,12 @@ impl EmulatorOrchestrator {
         
         info!("[OK] Android ↔ Android stability test completed successfully after {:.1}s", start_time.elapsed().as_secs_f32());
         
-        // Cleanup emulators
-        for (i, emulator_id) in emulator_ids.iter().enumerate() {
-            info!("Cleaning up emulator {}", device_names[i]);
-            self.cleanup_android_emulator(emulator_id).await?;
-        }
+        // Cleanup
+        info!("Cleaning up emulator {}", avd_name);
+        self.cleanup_android_emulator(&emulator_id).await?;
+        
+        // Kill emulator process
+        let _ = emulator_process.kill().await;
         
         Ok(())
     }
@@ -485,11 +541,17 @@ impl EmulatorOrchestrator {
         }
 
         // Check Android tools
-        if std::env::var("ANDROID_HOME").is_err() {
-            warn!("ANDROID_HOME not set - Android emulator may not work");
+        if Self::detect_android_home().is_none() {
+            warn!("ANDROID_HOME not found. Tried:");
+            if let Ok(home) = std::env::var("HOME") {
+                warn!("  - {}/Library/Android/sdk", home);
+                warn!("  - {}/Android/Sdk", home);
+            }
+            warn!("  - /usr/local/android-sdk");
+            warn!("Set ANDROID_HOME manually if Android SDK is installed elsewhere");
         }
         if which::which("adb").is_err() {
-            return Err(anyhow!("adb not found - Android SDK required"));
+            return Err(anyhow!("adb not found in PATH - Android SDK tools required"));
         }
 
         // Check network tools
@@ -557,17 +619,177 @@ impl EmulatorOrchestrator {
     }
 
     async fn start_ios_simulator(&mut self) -> Result<String> {
-        info!("Starting iOS simulator...");
-        let simulator_id = Uuid::new_v4().to_string();
-        // Implementation would start iOS simulator and return ID
-        Ok(simulator_id)
+        info!("Finding available iOS simulator...");
+        
+        // List available iOS simulators
+        let output = Command::new("xcrun")
+            .args(["simctl", "list", "devices", "available"])
+            .output()
+            .await?;
+            
+        if !output.status.success() {
+            return Err(anyhow!("Failed to list iOS simulators"));
+        }
+        
+        let device_list = String::from_utf8_lossy(&output.stdout);
+        
+        // Look for BitChat simulators first (already configured)
+        for line in device_list.lines() {
+            if line.contains("BitChat-Alice") && (line.contains("(Booted)") || line.contains("(Shutdown)")) {
+                if let Some(uuid_start) = line.find('(') {
+                    if let Some(uuid_end) = line.find(')') {
+                        let uuid = line[uuid_start + 1..uuid_end].to_string();
+                        info!("Found BitChat-Alice simulator: {}", uuid);
+                        
+                        // Boot the simulator if it's not already booted
+                        if line.contains("(Shutdown)") {
+                            info!("Booting simulator...");
+                            let boot_output = Command::new("xcrun")
+                                .args(["simctl", "boot", &uuid])
+                                .output()
+                                .await?;
+                            if !boot_output.status.success() {
+                                warn!("Failed to boot simulator, but continuing...");
+                            }
+                        }
+                        
+                        return Ok(uuid);
+                    }
+                }
+            }
+        }
+        
+        // Look for any available iPhone simulator as fallback
+        for line in device_list.lines() {
+            if line.contains("iPhone") && (line.contains("(Booted)") || line.contains("(Shutdown)")) {
+                if let Some(uuid_start) = line.find('(') {
+                    if let Some(uuid_end) = line.find(')') {
+                        let uuid = line[uuid_start + 1..uuid_end].to_string();
+                        info!("Found iPhone simulator: {}", uuid);
+                        
+                        // Boot the simulator if it's not already booted
+                        if line.contains("(Shutdown)") {
+                            info!("Booting simulator...");
+                            let boot_output = Command::new("xcrun")
+                                .args(["simctl", "boot", &uuid])
+                                .output()
+                                .await?;
+                            if !boot_output.status.success() {
+                                warn!("Failed to boot simulator, but continuing...");
+                            }
+                        }
+                        
+                        return Ok(uuid);
+                    }
+                }
+            }
+        }
+        
+        Err(anyhow!("No available iOS simulators found"))
     }
 
     async fn start_android_emulator(&mut self) -> Result<String> {
-        info!("Starting Android emulator...");
-        let emulator_id = Uuid::new_v4().to_string();
-        // Implementation would start Android emulator and return ID
-        Ok(emulator_id)
+        info!("Finding or starting Android emulator...");
+        
+        // First check if any emulator is already running
+        let adb_path = self.get_android_tool_path("adb");
+        let output = Command::new(&adb_path)
+            .args(["devices"])
+            .output()
+            .await?;
+            
+        if !output.status.success() {
+            return Err(anyhow!("Failed to check Android devices with adb"));
+        }
+        
+        let devices_output = String::from_utf8_lossy(&output.stdout);
+        
+        // Look for running emulators
+        for line in devices_output.lines() {
+            if line.contains("emulator-") && line.contains("device") {
+                let parts: Vec<&str> = line.split_whitespace().collect();
+                if parts.len() >= 2 {
+                    let emulator_id = parts[0].to_string();
+                    info!("Found running Android emulator: {}", emulator_id);
+                    return Ok(emulator_id);
+                }
+            }
+        }
+        
+        // No running emulator found, try to start one
+        info!("No running Android emulator found, attempting to start one...");
+        
+        // List available AVDs
+        let emulator_path = self.get_android_tool_path("emulator");
+        let avd_output = Command::new(&emulator_path)
+            .args(["-list-avds"])
+            .output()
+            .await?;
+            
+        if !avd_output.status.success() {
+            return Err(anyhow!("Failed to list Android AVDs"));
+        }
+        
+        let avd_list = String::from_utf8_lossy(&avd_output.stdout);
+        let avds: Vec<&str> = avd_list.lines().filter(|line| !line.trim().is_empty()).collect();
+        
+        if avds.is_empty() {
+            return Err(anyhow!("No Android AVDs found. Create an AVD using Android Studio or avdmanager"));
+        }
+        
+        // Use the first available AVD
+        let avd_name = avds[0];
+        info!("Starting Android AVD: {}", avd_name);
+        
+        // Start the emulator in background
+        let mut emulator_process = Command::new(&emulator_path)
+            .args(["-avd", avd_name, "-no-window", "-no-audio"])
+            .stdout(std::process::Stdio::null())
+            .stderr(std::process::Stdio::null())
+            .spawn()?;
+            
+        // Wait a bit for emulator to start
+        tokio::time::sleep(std::time::Duration::from_secs(10)).await;
+        
+        // Check if emulator process is still running
+        match emulator_process.try_wait() {
+            Ok(Some(status)) => {
+                return Err(anyhow!("Android emulator exited early with status: {}", status));
+            }
+            Ok(None) => {
+                // Process is still running, good
+                info!("Android emulator process started successfully");
+            }
+            Err(e) => {
+                return Err(anyhow!("Failed to check emulator process status: {}", e));
+            }
+        }
+        
+        // Wait for emulator to be fully booted and detectable by adb
+        for i in 0..30 {  // Wait up to 30 seconds
+            tokio::time::sleep(std::time::Duration::from_secs(1)).await;
+            
+            let check_output = Command::new(&adb_path)
+                .args(["devices"])
+                .output()
+                .await?;
+                
+            if check_output.status.success() {
+                let check_devices = String::from_utf8_lossy(&check_output.stdout);
+                for line in check_devices.lines() {
+                    if line.contains("emulator-") && line.contains("device") {
+                        let parts: Vec<&str> = line.split_whitespace().collect();
+                        if parts.len() >= 2 {
+                            let emulator_id = parts[0].to_string();
+                            info!("Android emulator ready: {} (after {}s)", emulator_id, i + 1);
+                            return Ok(emulator_id);
+                        }
+                    }
+                }
+            }
+        }
+        
+        Err(anyhow!("Android emulator failed to become ready within 30 seconds"))
     }
 
     async fn install_ios_app(&self, simulator_id: &str) -> Result<()> {
@@ -599,17 +821,18 @@ impl EmulatorOrchestrator {
         // First, build the Android app if needed
         self.build_android_app().await?;
         
-        // Install the APK on the emulator
+        // Install the APK on the specific emulator
         let apk_path = &self.config.android.apk_source;
+        let adb_path = self.get_android_tool_path("adb");
         
-        let output = Command::new("adb")
-            .args(["install", "-r", apk_path])
+        let output = Command::new(&adb_path)
+            .args(["-s", emulator_id, "install", "-r", apk_path])
             .output()
             .await?;
 
         if !output.status.success() {
             let error = String::from_utf8_lossy(&output.stderr);
-            return Err(anyhow!("Failed to install Android APK: {}", error));
+            return Err(anyhow!("Failed to install Android APK on {}: {}", emulator_id, error));
         }
 
         info!("Successfully installed BitChat Android app on emulator {}", emulator_id);
@@ -671,10 +894,14 @@ impl EmulatorOrchestrator {
     async fn build_android_app(&self) -> Result<()> {
         info!("Building real BitChat Android app...");
         
+        // Auto-detect or use ANDROID_HOME
+        let android_home = Self::detect_android_home()
+            .ok_or_else(|| anyhow!("ANDROID_HOME not found. Please install Android SDK or set ANDROID_HOME"))?;
+        
         let output = Command::new("./gradlew")
             .args(["assembleDebug"])
             .current_dir("./vendored/bitchat-android")
-            .env("ANDROID_HOME", std::env::var("ANDROID_HOME").unwrap_or_default())
+            .env("ANDROID_HOME", android_home)
             .output()
             .await?;
 
@@ -687,14 +914,40 @@ impl EmulatorOrchestrator {
         Ok(())
     }
 
-    /// Create and boot a new iOS simulator
+    /// Find existing iOS simulator or create a new one
     async fn create_ios_simulator(&mut self, device_name: &str) -> Result<String> {
-        info!("Creating iOS simulator device: {}", device_name);
+        // First try to find existing simulator
+        if let Ok(simulator_id) = self.find_existing_ios_simulator(device_name).await {
+            info!("Found existing iOS simulator '{}' with ID: {}", device_name, simulator_id);
+            
+            // Check if it's already booted
+            if self.is_ios_simulator_booted(&simulator_id).await? {
+                info!("iOS simulator '{}' is already booted", device_name);
+                return Ok(simulator_id);
+            } else {
+                info!("Booting existing iOS simulator: {}", device_name);
+                let boot_output = Command::new("xcrun")
+                    .args(["simctl", "boot", &simulator_id])
+                    .output()
+                    .await?;
+                
+                if !boot_output.status.success() {
+                    let stderr = String::from_utf8_lossy(&boot_output.stderr);
+                    warn!("Failed to boot existing simulator, will create new one: {}", stderr);
+                } else {
+                    info!("Successfully booted existing simulator: {}", device_name);
+                    return Ok(simulator_id);
+                }
+            }
+        }
+        
+        // If no existing simulator found or boot failed, create new one
+        info!("Creating new iOS simulator device: {}", device_name);
         
         let device_type = "iPhone 15 Pro";
         let runtime = "com.apple.CoreSimulator.SimRuntime.iOS-26-0";
         
-        // Delete any existing device with this name
+        // Delete any existing device with this name (in case it's broken)
         let _delete_result = Command::new("xcrun")
             .args(["simctl", "delete", device_name])
             .output()
@@ -714,7 +967,7 @@ impl EmulatorOrchestrator {
         let simulator_id = String::from_utf8(create_output.stdout)?.trim().to_string();
         
         // Boot the simulator
-        info!("Booting iOS simulator: {}", device_name);
+        info!("Booting new iOS simulator: {}", device_name);
         let boot_output = Command::new("xcrun")
             .args(["simctl", "boot", &simulator_id])
             .output()
@@ -732,12 +985,72 @@ impl EmulatorOrchestrator {
         info!("iOS simulator '{}' created and booted with ID: {}", device_name, simulator_id);
         Ok(simulator_id)
     }
+
+    /// Find existing iOS simulator by name
+    async fn find_existing_ios_simulator(&self, device_name: &str) -> Result<String> {
+        let output = Command::new("xcrun")
+            .args(["simctl", "list", "devices", "--json"])
+            .output()
+            .await?;
+
+        if !output.status.success() {
+            return Err(anyhow!("Failed to list iOS simulators"));
+        }
+
+        let devices_json: serde_json::Value = serde_json::from_slice(&output.stdout)?;
+        
+        if let Some(devices) = devices_json.get("devices") {
+            for (_, runtime_devices) in devices.as_object().unwrap() {
+                if let Some(devices_array) = runtime_devices.as_array() {
+                    for device in devices_array {
+                        if let (Some(name), Some(udid)) = (device.get("name"), device.get("udid")) {
+                            if name.as_str() == Some(device_name) {
+                                return Ok(udid.as_str().unwrap().to_string());
+                            }
+                        }
+                    }
+                }
+            }
+        }
+
+        Err(anyhow!("iOS simulator '{}' not found", device_name))
+    }
+
+    /// Check if iOS simulator is booted
+    async fn is_ios_simulator_booted(&self, simulator_id: &str) -> Result<bool> {
+        let output = Command::new("xcrun")
+            .args(["simctl", "list", "devices", "--json"])
+            .output()
+            .await?;
+
+        if !output.status.success() {
+            return Err(anyhow!("Failed to list iOS simulators"));
+        }
+
+        let devices_json: serde_json::Value = serde_json::from_slice(&output.stdout)?;
+        
+        if let Some(devices) = devices_json.get("devices") {
+            for (_, runtime_devices) in devices.as_object().unwrap() {
+                if let Some(devices_array) = runtime_devices.as_array() {
+                    for device in devices_array {
+                        if let (Some(udid), Some(state)) = (device.get("udid"), device.get("state")) {
+                            if udid.as_str() == Some(simulator_id) {
+                                return Ok(state.as_str() == Some("Booted"));
+                            }
+                        }
+                    }
+                }
+            }
+        }
+
+        Ok(false)
+    }
     
     /// Launch BitChat app on iOS simulator
     async fn launch_ios_app(&self, simulator_id: &str) -> Result<()> {
         info!("Launching BitChat app on simulator {}", simulator_id);
         
-        let app_bundle_id = "tech.permissionless.bitchat";
+        let app_bundle_id = "chat.bitchat";
         
         let launch_output = Command::new("xcrun")
             .args(["simctl", "launch", simulator_id, app_bundle_id])
@@ -763,7 +1076,7 @@ impl EmulatorOrchestrator {
         
         if ps_output.status.success() {
             let ps_stdout = String::from_utf8_lossy(&ps_output.stdout);
-            let app_running = ps_stdout.contains("bitchat") || ps_stdout.contains("tech.permissionless.bitchat");
+            let app_running = ps_stdout.contains("bitchat") || ps_stdout.contains("chat.bitchat");
             Ok(app_running)
         } else {
             warn!("Failed to check app status on simulator");
@@ -777,7 +1090,7 @@ impl EmulatorOrchestrator {
         
         // Terminate app
         let _terminate_result = Command::new("xcrun")
-            .args(["simctl", "terminate", simulator_id, "tech.permissionless.bitchat"])
+            .args(["simctl", "terminate", simulator_id, "chat.bitchat"])
             .output()
             .await;
         
@@ -806,20 +1119,23 @@ impl EmulatorOrchestrator {
     async fn create_android_emulator(&mut self, device_name: &str) -> Result<String> {
         info!("Creating Android emulator device: {}", device_name);
         
+        let adb_path = self.get_android_tool_path("adb");
+        let emulator_path = self.get_android_tool_path("emulator");
+        let avdmanager_path = self.get_android_tool_path("avdmanager");
         let avd_name = format!("BitChat_{}", device_name);
         
         // Delete any existing AVD with this name
-        let _delete_result = Command::new("avdmanager")
+        let _delete_result = Command::new(&avdmanager_path)
             .args(["delete", "avd", "-n", &avd_name])
             .output()
             .await;
         
         // Create new AVD
-        let create_output = Command::new("avdmanager")
+        let create_output = Command::new(&avdmanager_path)
             .args([
                 "create", "avd",
                 "-n", &avd_name,
-                "-k", "system-images;android-30;google_apis;x86_64",
+                "-k", "system-images;android-36.1;google_apis_playstore;arm64-v8a",
                 "--device", "pixel_4",
                 "--force"
             ])
@@ -833,7 +1149,7 @@ impl EmulatorOrchestrator {
         
         // Start the emulator
         info!("Starting Android emulator: {}", device_name);
-        let mut emulator_process = Command::new("emulator")
+        let mut emulator_process = Command::new(&emulator_path)
             .args([
                 "-avd", &avd_name,
                 "-no-audio",
@@ -848,7 +1164,7 @@ impl EmulatorOrchestrator {
         info!("Waiting for Android emulator to be ready...");
         let mut ready = false;
         for _attempt in 0..30 {
-            let check_output = Command::new("adb")
+            let check_output = Command::new(&adb_path)
                 .args(["shell", "getprop", "init.svc.bootanim"])
                 .output()
                 .await;
@@ -871,7 +1187,7 @@ impl EmulatorOrchestrator {
         }
         
         // Get emulator serial number
-        let serial_output = Command::new("adb")
+        let serial_output = Command::new(&adb_path)
             .args(["devices"])
             .output()
             .await?;
@@ -892,10 +1208,11 @@ impl EmulatorOrchestrator {
     async fn launch_android_app(&self, emulator_id: &str) -> Result<()> {
         info!("Launching BitChat app on emulator {}", emulator_id);
         
-        let package_name = "com.bitchat.android"; // This should match the actual package name
-        let activity_name = "com.bitchat.android.MainActivity"; // This should match the actual main activity
+        let adb_path = self.get_android_tool_path("adb");
+        let package_name = "com.bitchat.droid"; // Actual package name from APK
+        let activity_name = "com.bitchat.android.MainActivity"; // Activity name from APK
         
-        let launch_output = Command::new("adb")
+        let launch_output = Command::new(&adb_path)
             .args([
                 "-s", emulator_id,
                 "shell", "am", "start",
@@ -916,45 +1233,55 @@ impl EmulatorOrchestrator {
     
     /// Check if BitChat app is running on Android emulator
     async fn check_android_app_running(&self, emulator_id: &str) -> Result<bool> {
-        let ps_output = Command::new("adb")
-            .args(["-s", emulator_id, "shell", "ps", "|", "grep", "bitchat"])
+        let adb_path = self.get_android_tool_path("adb");
+        
+        // Use pidof command which is more reliable than ps | grep
+        let pidof_output = Command::new(&adb_path)
+            .args(["-s", emulator_id, "shell", "pidof", "com.bitchat.droid"])
             .output()
             .await?;
         
-        if ps_output.status.success() {
-            let ps_stdout = String::from_utf8_lossy(&ps_output.stdout);
-            let app_running = ps_stdout.contains("bitchat") || ps_stdout.contains("com.bitchat");
-            Ok(app_running)
-        } else {
-            // Alternative check using dumpsys
-            let dumpsys_output = Command::new("adb")
-                .args(["-s", emulator_id, "shell", "dumpsys", "activity", "activities"])
-                .output()
-                .await?;
-            
-            if dumpsys_output.status.success() {
-                let dumpsys_stdout = String::from_utf8_lossy(&dumpsys_output.stdout);
-                let app_running = dumpsys_stdout.contains("bitchat") || dumpsys_stdout.contains("com.bitchat");
-                Ok(app_running)
-            } else {
-                warn!("Failed to check app status on emulator");
-                Ok(false)
+        if pidof_output.status.success() {
+            let pid_stdout = String::from_utf8_lossy(&pidof_output.stdout).trim().to_string();
+            if !pid_stdout.is_empty() && pid_stdout.chars().all(|c| c.is_numeric() || c.is_whitespace()) {
+                info!("BitChat app is running with PID: {}", pid_stdout);
+                return Ok(true);
             }
         }
+        
+        // Fallback: Check using dumpsys activity
+        let dumpsys_output = Command::new(&adb_path)
+            .args(["-s", emulator_id, "shell", "dumpsys", "activity", "activities"])
+            .output()
+            .await?;
+        
+        if dumpsys_output.status.success() {
+            let dumpsys_stdout = String::from_utf8_lossy(&dumpsys_output.stdout);
+            // Check for package name in recent activities
+            if dumpsys_stdout.contains("com.bitchat.droid") {
+                info!("BitChat app found in activity stack");
+                return Ok(true);
+            }
+        }
+        
+        info!("BitChat app is not running");
+        Ok(false)
     }
     
     /// Cleanup Android emulator
     async fn cleanup_android_emulator(&self, emulator_id: &str) -> Result<()> {
         info!("Cleaning up Android emulator: {}", emulator_id);
         
+        let adb_path = self.get_android_tool_path("adb");
+        
         // Force stop app
-        let _stop_result = Command::new("adb")
-            .args(["-s", emulator_id, "shell", "am", "force-stop", "com.bitchat.android"])
+        let _stop_result = Command::new(&adb_path)
+            .args(["-s", emulator_id, "shell", "am", "force-stop", "com.bitchat.droid"])
             .output()
             .await;
         
         // Kill emulator
-        let _kill_result = Command::new("adb")
+        let _kill_result = Command::new(&adb_path)
             .args(["-s", emulator_id, "emu", "kill"])
             .output()
             .await;

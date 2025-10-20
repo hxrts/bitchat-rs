@@ -283,7 +283,7 @@ impl Compression {
         #[cfg(not(feature = "std"))]
         {
             // Fallback for no_std environments - return original data with a marker
-            let mut compressed = vec![0x78, 0x9C]; // zlib header
+            let mut compressed = alloc::vec![0x78, 0x9C]; // zlib header
             compressed.extend_from_slice(data);
             Ok(compressed)
         }
@@ -406,7 +406,7 @@ mod tests {
     fn create_test_packet() -> BitchatPacket {
         let sender = PeerId::new([1, 2, 3, 4, 5, 6, 7, 8]);
         let payload = b"Hello, BitChat!".to_vec();
-        BitchatPacket::new(MessageType::Message, sender, payload)
+        BitchatPacket::new_simple(MessageType::Message, sender, payload)
     }
 
     #[test]
@@ -530,7 +530,7 @@ mod tests {
         let sender = PeerId::new([1, 2, 3, 4, 5, 6, 7, 8]);
         // Create large compressible payload (within v1 255-byte limit)
         let large_payload = "BitChat is awesome! ".repeat(12).into_bytes(); // 240 bytes
-        let packet = BitchatPacket::new(MessageType::Message, sender, large_payload.clone());
+        let packet = BitchatPacket::new_simple(MessageType::Message, sender, large_payload.clone());
 
         // Encode with compression
         let encoded = WireFormat::encode_with_options(&packet, true, false).unwrap();

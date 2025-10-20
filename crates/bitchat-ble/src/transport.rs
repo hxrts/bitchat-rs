@@ -8,8 +8,8 @@ use async_trait::async_trait;
 use smallvec::SmallVec;
 
 use bitchat_core::internal::{IdentityKeyPair, TransportError};
-use bitchat_core::protocol::{BitchatPacket, WireFormat};
-use bitchat_core::{BitchatError, BitchatResult, PeerId, TransportTask};
+use bitchat_core::protocol::{BitchatPacket, WireFormat, DiscoveredPeer, MessageType};
+use bitchat_core::{BitchatError, BitchatResult, PeerId, TransportTask, Timestamp};
 use bitchat_core::{EffectReceiver, EventSender};
 use bitchat_harness::{
     messages::{ChannelTransportType, Effect, Event},
@@ -404,6 +404,14 @@ impl BleTransportTask {
             packet.header.ttl.value()
         );
 
+        // Handle announce packets specially
+        if packet.header.message_type == MessageType::Announce {
+            if let Err(e) = self.handle_announce_packet(from_peer, packet.clone()).await {
+                tracing::warn!("Failed to handle announce packet from {}: {}", from_peer, e);
+            }
+            // Don't return here - still forward announce packets to core logic
+        }
+
         // Check if packet is for us
         let is_for_us = packet.is_broadcast() || packet.recipient_id == Some(self.local_peer_id);
 
@@ -525,6 +533,83 @@ impl BleTransportTask {
     /// Check if task is running (non-blocking)
     pub fn is_active(&self) -> bool {
         self.running
+    }
+
+    /// Send an announce packet to a specific peer
+    pub async fn send_announce_to_peer(&mut self, peer_id: PeerId, nickname: String) -> BitchatResult<()> {
+        let noise_public_key = [0u8; 32]; // TODO: Get from noise session when available
+        
+        let announce_packet = BitchatPacket::create_announce(
+            self.local_peer_id,
+            nickname,
+            noise_public_key,
+            &self.identity,
+            None, // No direct neighbors for now
+            Timestamp::now(),
+        )?;
+
+        self.send_bitchat_packet_to_peer(peer_id, announce_packet).await
+    }
+
+    /// Broadcast an announce packet to all connected peers
+    pub async fn broadcast_announce(&mut self, nickname: String) -> BitchatResult<()> {
+        let noise_public_key = [0u8; 32]; // TODO: Get from noise session when available
+        
+        let announce_packet = BitchatPacket::create_announce(
+            self.local_peer_id,
+            nickname,
+            noise_public_key,
+            &self.identity,
+            None, // No direct neighbors for now
+            Timestamp::now(),
+        )?;
+
+        self.broadcast_bitchat_packet(announce_packet).await
+    }
+
+    /// Handle an incoming announce packet from a peer
+    pub async fn handle_announce_packet(&mut self, peer_id: PeerId, packet: BitchatPacket) -> BitchatResult<()> {
+        if packet.message_type() != MessageType::Announce {
+            return Err(BitchatError::invalid_packet("Expected announce packet"));
+        }
+
+        // Parse and verify the announce packet
+        let discovered_peer = DiscoveredPeer::from_announce_packet(&packet, Timestamp::now())?;
+        
+        // Verify the sender ID matches the packet sender
+        if discovered_peer.peer_id != peer_id {
+            return Err(BitchatError::invalid_packet(
+                "Announce packet sender ID mismatch"
+            ));
+        }
+
+        // Update or add the peer to our discovered peers list
+        {
+            let mut peers = self.peers.write().await;
+            if let Some(ble_peer) = peers.get_mut(&peer_id) {
+                // Update existing peer with announce information
+                ble_peer.update_from_announce(&discovered_peer)?;
+            } else {
+                // Add new peer discovered via announce
+                let ble_peer = BlePeer::from_discovered_peer(discovered_peer)?;
+                peers.insert(peer_id, ble_peer);
+            }
+        }
+
+        // Notify the runtime about the peer discovery
+        if let Some(ref channels) = self.transport_channels {
+            let event = Event::PeerDiscovered {
+                peer_id,
+                transport: self.transport_type,
+                signal_strength: None, // BLE signal strength not available here
+            };
+            
+            if let Err(e) = channels.event_sender().send(event).await {
+                tracing::warn!("Failed to send peer discovery event: {}", e);
+            }
+        }
+
+        Ok(())
     }
 }
 
