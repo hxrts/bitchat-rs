@@ -64,33 +64,6 @@ The project includes comprehensive integration testing:
 - Integration tests for transport and runtime behavior
 - Simulator for cross-implementation testing (see `simulator/`)
 
-### Simulator Status (Updated 2025-01-20)
-
-**✅ Working:**
-- CLI ↔ CLI testing - All protocol scenarios passing
-- CLI ↔ Web testing - Node.js wrapper enables WASM client automation
-- iOS ↔ iOS testing - Real Swift app testing on simulator
-- Framework bridge implemented for future cross-framework testing
-
-**⚫ Untested but Ready:**
-- Web ↔ Web scenarios
-- Android ↔ Android (requires Android SDK installation)
-- iOS ↔ Android (requires Android SDK installation)
-
-**🎉 All Blockers Resolved!**
-- Cross-framework orchestration implemented (CLI↔iOS, Web↔Android, etc)
-- All 16 client pair combinations now supported
-
-**Fixes Completed (2025-01-20):**
-1. Fixed CLI stdout buffering (added flush() to all automation event emissions)
-2. Fixed iOS bundle ID mismatch (updated to `chat.bitchat`)
-3. Created Node.js wrapper (`simulator/wasm-runner.js`) for Web client automation
-4. Implemented Android SDK auto-detection (tries common macOS/Linux locations)
-5. Made `std` and `wasm` features independent and composable
-6. **Implemented `CrossFrameworkOrchestrator`** for CLI↔iOS, Web↔Android, etc testing
-
-See `simulator/TEST_MATRIX.md` for complete testing status and `simulator/README.md` for usage instructions.
-
 ## Reference
 
 - [bitchat](https://github.com/bitchat-dev/bitchat) - iOS/macOS (main implementation)
