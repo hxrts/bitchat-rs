@@ -1,0 +1,417 @@
+// Canonical BitChat Session Lifecycle State Machine
+// Tracks Noise session states from initialization through rekeying
+(
+    state_machine_name: "NoiseSessionLifecycle",
+    initial_state: "Uninitialized",
+    
+    states: [
+        (
+            name: "Uninitialized",
+            description: "No session exists yet",
+            allowed_transitions: ["Handshaking"],
+            
+            invariants: [
+                "no_keys_present",
+                "no_shared_secret",
+                "message_count_zero"
+            ],
+            
+            allowed_operations: [
+                "create_outbound_session",
+                "create_inbound_session"
+            ],
+            
+            forbidden_operations: [
+                "encrypt_message",
+                "decrypt_message",
+                "send_message",
+                "receive_message"
+            ]
+        ),
+        
+        (
+            name: "Handshaking",
+            description: "Noise XX handshake in progress",
+            allowed_transitions: ["Established", "Failed"],
+            
+            substates: ["Stage1", "Stage2", "Stage3"],
+            
+            invariants: [
+                "ephemeral_keys_present",
+                "not_yet_authenticated",
+                "no_transport_keys"
+            ],
+            
+            timeout: (
+                duration_ms: 30000,
+                on_timeout: "Failed"
+            ),
+            
+            allowed_operations: [
+                "write_handshake_message",
+                "read_handshake_message",
+                "check_handshake_finished"
+            ],
+            
+            forbidden_operations: [
+                "encrypt_message",
+                "decrypt_message",
+                "check_rekey_threshold"
+            ],
+            
+            completion_condition: "handshake_finished_and_transport_keys_derived"
+        ),
+        
+        (
+            name: "Established",
+            description: "Handshake complete, ready for encrypted communication",
+            allowed_transitions: ["Rekeying", "Terminating", "Failed"],
+            
+            invariants: [
+                "shared_secret_present",
+                "mutually_authenticated",
+                "transport_keys_present",
+                "can_send_and_receive"
+            ],
+            
+            allowed_operations: [
+                "encrypt_message",
+                "decrypt_message",
+                "check_rekey_threshold",
+                "update_activity_timestamp",
+                "increment_message_count"
+            ],
+            
+            forbidden_operations: [
+                "write_handshake_message",
+                "read_handshake_message"
+            ],
+            
+            rekey_triggers: [
+                (
+                    type: "MessageCount",
+                    threshold: 1_000_000_000,
+                    check_at_percent: 90,
+                    description: "Rekey after 900 million messages"
+                ),
+                (
+                    type: "TimeElapsed",
+                    duration_secs: 86400,
+                    description: "Rekey after 24 hours since last activity"
+                )
+            ],
+            
+            metrics: [
+                "message_count",
+                "last_activity_timestamp",
+                "session_age_seconds"
+            ]
+        ),
+        
+        (
+            name: "Rekeying",
+            description: "Session is being rekeyed with new ephemeral keys",
+            allowed_transitions: ["Established", "Failed"],
+            
+            invariants: [
+                "old_session_still_valid",
+                "new_handshake_in_progress",
+                "old_transport_keys_cleared"
+            ],
+            
+            timeout: (
+                duration_ms: 30000,
+                on_timeout: "Failed"
+            ),
+            
+            allowed_operations: [
+                "write_handshake_message",
+                "read_handshake_message",
+                "check_handshake_finished"
+            ],
+            
+            forbidden_operations: [
+                "encrypt_message_with_old_keys",
+                "decrypt_message_with_old_keys"
+            ],
+            
+            completion_condition: "new_handshake_finished_and_new_transport_keys_derived",
+            
+            on_success: (
+                action: "TransitionToEstablished",
+                cleanup: ["reset_message_count", "update_last_rekey_timestamp"]
+            )
+        ),
+        
+        (
+            name: "Terminating",
+            description: "Session is being gracefully terminated",
+            allowed_transitions: ["Terminated"],
+            
+            cleanup_operations: [
+                "clear_transport_keys",
+                "clear_handshake_state",
+                "close_connections"
+            ],
+            
+            allowed_operations: [
+                "send_leave_message"
+            ],
+            
+            forbidden_operations: [
+                "encrypt_message",
+                "decrypt_message",
+                "write_handshake_message"
+            ]
+        ),
+        
+        (
+            name: "Terminated",
+            description: "Session has been terminated and cleaned up",
+            allowed_transitions: [],
+            
+            invariants: [
+                "no_keys_present",
+                "no_active_connections",
+                "all_state_cleared"
+            ],
+            
+            allowed_operations: [],
+            
+            forbidden_operations: [
+                "encrypt_message",
+                "decrypt_message",
+                "write_handshake_message",
+                "read_handshake_message"
+            ],
+            
+            final_state: true
+        ),
+        
+        (
+            name: "Failed",
+            description: "Session failed due to error or timeout",
+            allowed_transitions: ["Uninitialized"],
+            
+            cleanup_operations: [
+                "clear_partial_state",
+                "clear_handshake_state",
+                "log_failure_reason"
+            ],
+            
+            allowed_operations: [
+                "retry_connection"
+            ],
+            
+            forbidden_operations: [
+                "encrypt_message",
+                "decrypt_message"
+            ]
+        )
+    ],
+    
+    operations: [
+        (
+            name: "create_outbound_session",
+            from: "Uninitialized",
+            to: "Handshaking",
+            role: "Initiator",
+            
+            preconditions: [
+                "local_keys_generated",
+                "peer_id_known"
+            ],
+            
+            postconditions: [
+                "handshake_state_created",
+                "session_state_is_handshaking"
+            ],
+            
+            side_effects: [
+                "record_creation_timestamp",
+                "initialize_message_count_to_zero"
+            ]
+        ),
+        
+        (
+            name: "create_inbound_session",
+            from: "Uninitialized",
+            to: "Handshaking",
+            role: "Responder",
+            
+            preconditions: [
+                "local_keys_generated",
+                "peer_id_known"
+            ],
+            
+            postconditions: [
+                "handshake_state_created",
+                "session_state_is_handshaking"
+            ],
+            
+            side_effects: [
+                "record_creation_timestamp",
+                "initialize_message_count_to_zero"
+            ]
+        ),
+        
+        (
+            name: "complete_handshake",
+            from: "Handshaking",
+            to: "Established",
+            
+            preconditions: [
+                "handshake_finished",
+                "transport_keys_derived",
+                "peer_fingerprint_known"
+            ],
+            
+            postconditions: [
+                "session_state_is_established",
+                "can_encrypt_and_decrypt",
+                "handshake_state_cleared"
+            ],
+            
+            side_effects: [
+                "record_establishment_timestamp",
+                "record_peer_fingerprint"
+            ]
+        ),
+        
+        (
+            name: "encrypt_message",
+            from: "Established",
+            to: "Established",
+            
+            preconditions: [
+                "transport_keys_present",
+                "message_validated"
+            ],
+            
+            postconditions: [
+                "message_count_incremented",
+                "last_activity_updated"
+            ],
+            
+            side_effects: [
+                "check_rekey_threshold"
+            ]
+        ),
+        
+        (
+            name: "decrypt_message",
+            from: "Established",
+            to: "Established",
+            
+            preconditions: [
+                "transport_keys_present",
+                "ciphertext_valid"
+            ],
+            
+            postconditions: [
+                "message_count_incremented",
+                "last_activity_updated"
+            ],
+            
+            side_effects: [
+                "check_rekey_threshold"
+            ]
+        ),
+        
+        (
+            name: "initiate_rekey",
+            from: "Established",
+            to: "Rekeying",
+            
+            preconditions: [
+                "rekey_trigger_met",
+                "session_is_established"
+            ],
+            
+            postconditions: [
+                "new_handshake_started",
+                "old_transport_keys_preserved",
+                "message_count_reset_pending"
+            ],
+            
+            side_effects: [
+                "create_new_handshake_state",
+                "record_rekey_initiation_time"
+            ]
+        ),
+        
+        (
+            name: "complete_rekey",
+            from: "Rekeying",
+            to: "Established",
+            
+            preconditions: [
+                "new_handshake_finished",
+                "new_transport_keys_derived"
+            ],
+            
+            postconditions: [
+                "message_count_reset_to_zero",
+                "last_rekey_timestamp_updated",
+                "new_transport_keys_active"
+            ],
+            
+            side_effects: [
+                "clear_old_transport_keys",
+                "clear_handshake_state"
+            ]
+        ),
+        
+        (
+            name: "terminate_session",
+            from: ["Established", "Rekeying", "Handshaking"],
+            to: "Terminating",
+            
+            preconditions: [],
+            
+            postconditions: [
+                "session_marked_for_cleanup"
+            ],
+            
+            side_effects: [
+                "send_leave_notification"
+            ]
+        ),
+        
+        (
+            name: "fail_session",
+            from: ["Handshaking", "Rekeying", "Established"],
+            to: "Failed",
+            
+            preconditions: [],
+            
+            postconditions: [
+                "failure_reason_recorded"
+            ],
+            
+            side_effects: [
+                "log_failure",
+                "clear_partial_state"
+            ]
+        )
+    ],
+    
+    // Canonical implementation parameters
+    canonical_parameters: (
+        rekey_threshold_messages: 1_000_000_000,
+        rekey_threshold_percent: 90,  // Rekey at 90% of threshold
+        rekey_interval_seconds: 86400,  // 24 hours
+        handshake_timeout_ms: 30000,
+        session_idle_timeout_ms: 60000,  // 60 seconds
+        failed_state_retry_delay_ms: 5000
+    ),
+    
+    global_invariants: [
+        "only_one_state_active_at_a_time",
+        "all_state_transitions_valid",
+        "keys_cleared_on_termination",
+        "message_count_monotonic_increasing",
+        "timestamps_monotonic_increasing"
+    ]
+)
+

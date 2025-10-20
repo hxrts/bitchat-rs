@@ -1,0 +1,264 @@
+// Canonical BitChat Noise XX Protocol Specification
+// Based on: Noise_XX_25519_ChaChaPoly_SHA256
+// Pattern: -> e, <- e ee s es, -> s se
+(
+    protocol_name: "Noise_XX_25519_ChaChaPoly_SHA256",
+    pattern: "XX",
+    
+    cryptographic_primitives: (
+        dh: "Curve25519",
+        cipher: "ChaChaPoly",
+        hash: "SHA256",
+        kdf: "HKDF-SHA256"
+    ),
+    
+    // Initiator-side handshake stages
+    initiator_stages: [
+        (
+            stage_number: 1,
+            state_name: "InitiatorStage1",
+            direction: Send,
+            pattern_tokens: ["e"],
+            
+            operations: [
+                "generate_ephemeral_keypair",
+                "send_ephemeral_public_key"
+            ],
+            
+            crypto_operations: [
+                "generate_e"
+            ],
+            
+            state_before: (
+                initiator_ephemeral: None,
+                responder_ephemeral: None,
+                shared_secret: None,
+                transport_keys: None
+            ),
+            
+            state_after: (
+                initiator_ephemeral: Some("generated"),
+                responder_ephemeral: None,
+                shared_secret: None,
+                transport_keys: None
+            ),
+            
+            message_format: (
+                encrypted: false,
+                contains_static_key: false,
+                payload_length: 32
+            ),
+            
+            invariants: [
+                "ephemeral_key_is_curve25519",
+                "ephemeral_key_is_32_bytes",
+                "no_static_keys_transmitted",
+                "message_not_encrypted"
+            ],
+            
+            possible_faults: [
+                (fault_type: "MessageLoss", description: "Message dropped in transit"),
+                (fault_type: "MessageCorruption", targets: ["ephemeral_key"]),
+                (fault_type: "InvalidKeyValue", targets: ["ephemeral_key"], description: "All-zero or low-order point"),
+                (fault_type: "Timeout", duration_ms: 30000)
+            ],
+            
+            next_state: "InitiatorStage2"
+        ),
+        
+        (
+            stage_number: 2,
+            state_name: "InitiatorStage2",
+            direction: Receive,
+            pattern_tokens: ["e", "ee", "s", "es"],
+            
+            operations: [
+                "receive_responder_ephemeral",
+                "perform_dh_ee",
+                "receive_encrypted_responder_static",
+                "perform_dh_es",
+                "derive_intermediate_keys"
+            ],
+            
+            crypto_operations: [
+                "receive_e",
+                "dh_ee",
+                "decrypt_s",
+                "dh_es"
+            ],
+            
+            state_before: (
+                initiator_ephemeral: Some("generated"),
+                responder_ephemeral: None,
+                shared_secret: None,
+                transport_keys: None
+            ),
+            
+            state_after: (
+                initiator_ephemeral: Some("generated"),
+                responder_ephemeral: Some("received"),
+                shared_secret: Some("partial"),
+                transport_keys: None
+            ),
+            
+            message_format: (
+                encrypted: true,
+                contains_static_key: true,
+                payload_length: 96  // 32 (e) + 48 (encrypted s + auth tag) + 16 (payload + tag)
+            ),
+            
+            invariants: [
+                "shared_secret_derived_from_ee",
+                "responder_static_key_encrypted",
+                "responder_authenticated",
+                "message_encrypted_with_ee_secret",
+                "auth_tag_verified"
+            ],
+            
+            possible_faults: [
+                (fault_type: "MessageLoss", description: "Response dropped"),
+                (fault_type: "FailedDH", operation: "ee", description: "Invalid ephemeral key"),
+                (fault_type: "DecryptionFailure", targets: ["static_key"], description: "Authentication failure"),
+                (fault_type: "InvalidPublicKey", targets: ["ephemeral_key", "static_key"]),
+                (fault_type: "ReplayAttack", description: "Replayed handshake message"),
+                (fault_type: "Timeout", duration_ms: 30000)
+            ),
+            
+            next_state: "InitiatorStage3"
+        ),
+        
+        (
+            stage_number: 3,
+            state_name: "InitiatorStage3",
+            direction: Send,
+            pattern_tokens: ["s", "se"],
+            
+            operations: [
+                "send_encrypted_initiator_static",
+                "perform_dh_se",
+                "derive_transport_keys",
+                "transition_to_transport_mode"
+            ],
+            
+            crypto_operations: [
+                "encrypt_s",
+                "dh_se",
+                "derive_final_keys"
+            ],
+            
+            state_before: (
+                initiator_ephemeral: Some("generated"),
+                responder_ephemeral: Some("received"),
+                shared_secret: Some("partial"),
+                transport_keys: None
+            ),
+            
+            state_after: (
+                initiator_ephemeral: Some("consumed"),
+                responder_ephemeral: Some("consumed"),
+                shared_secret: Some("complete"),
+                transport_keys: Some("derived")
+            ),
+            
+            message_format: (
+                encrypted: true,
+                contains_static_key: true,
+                payload_length: 64  // 48 (encrypted s + auth tag) + 16 (payload + tag)
+            ),
+            
+            invariants: [
+                "mutual_authentication_complete",
+                "forward_secrecy_established",
+                "transport_keys_derived",
+                "handshake_hash_finalized",
+                "initiator_static_key_encrypted",
+                "both_parties_authenticated"
+            ],
+            
+            possible_faults: [
+                (fault_type: "MessageLoss", description: "Final message dropped"),
+                (fault_type: "AuthenticationFailure", stage: "se_dh"),
+                (fault_type: "KeyDerivationFailure", description: "HKDF failure"),
+                (fault_type: "Timeout", duration_ms: 30000)
+            ],
+            
+            next_state: "Established"
+        ),
+        
+        (
+            stage_number: 4,
+            state_name: "Established",
+            direction: Bidirectional,
+            pattern_tokens: [],
+            
+            operations: [
+                "encrypt_message",
+                "decrypt_message",
+                "check_rekey_threshold"
+            ],
+            
+            crypto_operations: [
+                "chacha20poly1305_encrypt",
+                "chacha20poly1305_decrypt"
+            ],
+            
+            message_format: (
+                encrypted: true,
+                contains_static_key: false,
+                payload_length: Variable
+            ),
+            
+            invariants: [
+                "transport_mode_active",
+                "all_messages_encrypted",
+                "all_messages_authenticated",
+                "forward_secrecy_maintained"
+            ],
+            
+            rekey_triggers: [
+                (type: "MessageCount", threshold: 1_000_000_000, check_at_percent: 90),
+                (type: "TimeElapsed", duration_secs: 86400)  // 24 hours
+            ],
+            
+            next_state: "Established"  // Loops, or transitions to Rekeying
+        )
+    ],
+    
+    // Responder-side automatically generated via duality transformation
+    // (Send operations become Receive, Receive become Send)
+    responder_stages_generated_via_duality: true,
+    
+    global_invariants: [
+        "ephemeral_keys_never_reused",
+        "static_keys_never_transmitted_plaintext",
+        "shared_secret_only_derived_from_dh",
+        "no_reflection_attacks_possible",
+        "handshake_hash_includes_all_messages",
+        "forward_secrecy_via_ephemeral_keys"
+    ],
+    
+    success_conditions: [
+        "all_three_stages_completed",
+        "both_parties_have_transport_keys",
+        "keys_match_between_parties",
+        "both_parties_authenticated"
+    ],
+    
+    failure_modes: [
+        (name: "HandshakeTimeout", trigger: "no_response_30_seconds", cleanup: "abort_and_cleanup"),
+        (name: "AuthenticationFailure", trigger: "invalid_signature_or_key", cleanup: "abort_and_cleanup"),
+        (name: "ProtocolViolation", trigger: "unexpected_message_stage", cleanup: "abort_and_cleanup"),
+        (name: "CryptographicFailure", trigger: "dh_or_hash_error", cleanup: "abort_and_cleanup"),
+        (name: "InvalidKeyError", trigger: "low_order_point_or_zero", cleanup: "abort_and_cleanup")
+    ],
+    
+    // Canonical implementation values
+    canonical_parameters: (
+        handshake_timeout_ms: 30000,
+        max_handshake_size_bytes: 65536,
+        key_size_bytes: 32,
+        nonce_size_bytes: 8,
+        auth_tag_size_bytes: 16
+    )
+)
+

@@ -1,0 +1,311 @@
+// Canonical BitChat Wire Format Specification
+// Binary packet structure and encoding rules
+(
+    spec_version: "1.0",
+    description: "BitChat binary wire format for packet serialization",
+    
+    protocol_versions: [
+        (
+            version: 1,
+            header_size: 13,
+            max_payload_size: 255,
+            payload_length_size: 1,
+            description: "Original protocol version with 1-byte payload length"
+        ),
+        (
+            version: 2,
+            header_size: 15,
+            max_payload_size: 4294967295,  // u32::MAX
+            payload_length_size: 4,
+            description: "Extended protocol version with 4-byte payload length"
+        )
+    ],
+    
+    current_version: 1,
+    
+    packet_structure: (
+        // Fixed header (13 bytes for v1, 15 bytes for v2)
+        header: (
+            description: "Fixed-size packet header",
+            
+            fields: [
+                (
+                    name: "version",
+                    type: "u8",
+                    size_bytes: 1,
+                    offset: 0,
+                    encoding: "Direct",
+                    validation: "MustBe(1 or 2)",
+                    description: "Protocol version"
+                ),
+                (
+                    name: "message_type",
+                    type: "u8",
+                    size_bytes: 1,
+                    offset: 1,
+                    encoding: "Direct",
+                    validation: "ValidMessageType",
+                    description: "Message type code"
+                ),
+                (
+                    name: "ttl",
+                    type: "u8",
+                    size_bytes: 1,
+                    offset: 2,
+                    encoding: "Direct",
+                    validation: "Range(0, 255)",
+                    description: "Time-To-Live for mesh routing, decremented at each hop"
+                ),
+                (
+                    name: "timestamp",
+                    type: "u64",
+                    size_bytes: 8,
+                    offset: 3,
+                    encoding: "BigEndian",
+                    validation: "ReasonableTimestamp",
+                    description: "Milliseconds since Unix epoch"
+                ),
+                (
+                    name: "flags",
+                    type: "u8",
+                    size_bytes: 1,
+                    offset: 11,
+                    encoding: "Bitmask",
+                    bits: [
+                        (bit: 0, name: "HAS_RECIPIENT", description: "Recipient ID field is present"),
+                        (bit: 1, name: "HAS_SIGNATURE", description: "Signature field is present"),
+                        (bit: 2, name: "IS_COMPRESSED", description: "Payload is zlib compressed"),
+                        (bit: 3, name: "HAS_ROUTE", description: "Source routing information present")
+                    ],
+                    description: "Optional field flags bitmask"
+                ),
+                (
+                    name: "payload_length",
+                    type: "VariableByVersion",
+                    size_bytes_v1: 1,
+                    size_bytes_v2: 4,
+                    offset: 12,
+                    encoding: "BigEndian",
+                    validation: "MaxForVersion",
+                    description: "Length of payload field in bytes"
+                )
+            ],
+            
+            size_v1: 13,
+            size_v2: 15,
+            
+            validation: [
+                "version_is_supported",
+                "message_type_is_valid",
+                "ttl_in_range",
+                "timestamp_reasonable",
+                "payload_length_within_limits"
+            ]
+        ),
+        
+        // Variable-size fields after header
+        variable_fields: (
+            description: "Optional and variable-length fields following header",
+            
+            fields: [
+                (
+                    name: "sender_id",
+                    type: "u64",
+                    size_bytes: 8,
+                    encoding: "BigEndian",
+                    required: true,
+                    validation: "NonZero",
+                    description: "8-byte truncated peer ID of sender (first 8 bytes of fingerprint)"
+                ),
+                (
+                    name: "recipient_id",
+                    type: "Option<u64>",
+                    size_bytes: 8,
+                    encoding: "BigEndian",
+                    required: false,
+                    present_if: "flags.HAS_RECIPIENT",
+                    validation: "NonZeroOrBroadcast",
+                    description: "8-byte truncated peer ID of recipient (all 0xFF = broadcast)"
+                ),
+                (
+                    name: "route",
+                    type: "Vec<u64>",
+                    size_bytes: Variable,
+                    encoding: "LengthPrefixedList",
+                    required: false,
+                    present_if: "flags.HAS_ROUTE",
+                    format: (
+                        length_prefix: (type: "u8", encoding: "Direct"),
+                        element_size: 8,
+                        element_encoding: "BigEndian"
+                    ),
+                    validation: "RouteValid",
+                    description: "Source routing: list of peer IDs for hop-by-hop forwarding"
+                ),
+                (
+                    name: "payload",
+                    type: "Bytes",
+                    size_bytes: Variable,
+                    encoding: "Raw",
+                    required: true,
+                    length_from: "header.payload_length",
+                    validation: "LengthMatches",
+                    description: "Actual message content (may be compressed if flags.IS_COMPRESSED)"
+                ),
+                (
+                    name: "signature",
+                    type: "Option<Ed25519Signature>",
+                    size_bytes: 64,
+                    encoding: "Raw",
+                    required: false,
+                    present_if: "flags.HAS_SIGNATURE",
+                    validation: "ValidSignature",
+                    description: "Ed25519 signature of entire packet (excluding signature field itself)"
+                )
+            ],
+            
+            field_order: [
+                "sender_id",
+                "recipient_id",  // if HAS_RECIPIENT
+                "route",         // if HAS_ROUTE
+                "payload",
+                "signature"      // if HAS_SIGNATURE
+            ]
+        ),
+        
+        // Padding (optional, for traffic analysis resistance)
+        padding: (
+            description: "PKCS#7-style padding to standard block sizes",
+            enabled: false,  // Not currently used in canonical implementation
+            block_sizes: [256, 512, 1024, 2048],
+            padding_byte: "length_of_padding"
+        )
+    ),
+    
+    // Encoding rules
+    encoding_rules: (
+        byte_order: "BigEndian",  // All multi-byte integers are big-endian
+        string_encoding: "UTF8",
+        compression_algorithm: "zlib",  // When IS_COMPRESSED flag set
+        
+        special_values: [
+            (value: "0x0000000000000000", meaning: "Invalid/zero peer ID"),
+            (value: "0xFFFFFFFFFFFFFFFF", meaning: "Broadcast recipient")
+        ]
+    ),
+    
+    // Size constraints
+    size_constraints: (
+        min_packet_size: 21,  // 13 (header v1) + 8 (sender_id) = 21
+        max_packet_size_v1: 278,  // 13 + 8 + 8 (opt recipient) + 255 (payload) = 284 theoretical, but 278 practical
+        max_packet_size_v2: 4294967347,  // header + sender + recipient + max payload + signature
+        
+        ble_mtu_limit: 244,  // Conservative BLE MTU for fragments
+        recommended_max_before_fragmentation: 200
+    ),
+    
+    // Validation rules
+    validation: (
+        rules: [
+            "header_size_matches_version",
+            "payload_length_within_version_limit",
+            "required_fields_present",
+            "optional_fields_match_flags",
+            "sender_id_non_zero",
+            "timestamp_within_reasonable_bounds",
+            "ttl_not_exceeded",
+            "signature_valid_if_present",
+            "route_hops_reasonable"
+        ],
+        
+        timestamp_bounds: (
+            min_timestamp: 1577836800000,  // 2020-01-01 00:00:00 UTC
+            max_future_offset_ms: 300000   // 5 minutes into future allowed
+        ),
+        
+        ttl_limits: (
+            max_ttl: 7,
+            default_ttl: 7
+        ),
+        
+        route_limits: (
+            max_hops: 16
+        )
+    ),
+    
+    // Example packet structures
+    examples: [
+        (
+            name: "minimal_announce",
+            description: "Smallest valid announce packet",
+            hex: "01 01 07 <timestamp:8> 00 <payload_len:1> <sender_id:8> <payload>",
+            breakdown: [
+                "Version: 0x01",
+                "Type: 0x01 (Announce)",
+                "TTL: 0x07",
+                "Timestamp: 8 bytes big-endian",
+                "Flags: 0x00 (no optional fields)",
+                "PayloadLength: 1 byte",
+                "SenderID: 8 bytes",
+                "Payload: variable"
+            ]
+        ),
+        (
+            name: "private_message",
+            description: "Private message with recipient",
+            hex: "01 11 07 <timestamp:8> 01 <payload_len:1> <sender_id:8> <recipient_id:8> <encrypted_payload>",
+            breakdown: [
+                "Version: 0x01",
+                "Type: 0x11 (NoiseEncrypted)",
+                "TTL: 0x07",
+                "Timestamp: 8 bytes big-endian",
+                "Flags: 0x01 (HAS_RECIPIENT)",
+                "PayloadLength: 1 byte",
+                "SenderID: 8 bytes",
+                "RecipientID: 8 bytes (present because HAS_RECIPIENT)",
+                "Payload: encrypted content"
+            ]
+        ),
+        (
+            name: "fragment",
+            description: "Fragment packet structure",
+            hex: "01 20 07 <timestamp:8> 00 <payload_len:1> <sender_id:8> <fragment_header:13> <fragment_data>",
+            breakdown: [
+                "Version: 0x01",
+                "Type: 0x20 (Fragment)",
+                "TTL: 0x07",
+                "Timestamp: 8 bytes big-endian",
+                "Flags: 0x00",
+                "PayloadLength: 1 byte",
+                "SenderID: 8 bytes",
+                "FragmentHeader: 13 bytes (id:8, index:2, total:2, original_type:1)",
+                "FragmentData: remaining bytes"
+            ]
+        )
+    ],
+    
+    // Canonical compatibility notes
+    canonical_compatibility: (
+        notes: [
+            "All multi-byte integers MUST be big-endian",
+            "Header size MUST be exactly 13 bytes for version 1",
+            "Payload length is 1 byte for v1, 4 bytes for v2",
+            "Sender ID is ALWAYS present (not optional)",
+            "Recipient ID is 8 bytes when present (not full 32-byte fingerprint)",
+            "Broadcast packets use 0xFFFFFFFFFFFFFFFF as recipient",
+            "TTL decrements at each hop, packet dropped when TTL reaches 0",
+            "Timestamp is milliseconds since Unix epoch (not seconds)",
+            "Flags bit 0 = HAS_RECIPIENT, bit 1 = HAS_SIGNATURE, bit 2 = IS_COMPRESSED, bit 3 = HAS_ROUTE",
+            "Fragment header is 13 bytes: fragment_id(8) + index(2) + total(2) + original_type(1)"
+        ],
+        
+        common_mistakes: [
+            "Using little-endian instead of big-endian for multi-byte fields",
+            "Including 32-byte full fingerprint instead of 8-byte truncated peer ID",
+            "Not setting HAS_RECIPIENT flag when recipient_id field is present",
+            "Using seconds instead of milliseconds for timestamp",
+            "Forgetting to decrement TTL when relaying"
+        ]
+    )
+)
+

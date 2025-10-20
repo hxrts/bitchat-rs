@@ -1,0 +1,432 @@
+// Canonical BitChat Message Type Specification
+// Wire format message type codes and validation rules
+(
+    spec_version: "1.0",
+    description: "BitChat protocol message types and their wire format encodings",
+    
+    // Outer packet message types (unencrypted layer)
+    packet_message_types: [
+        (
+            name: "Announce",
+            wire_type: 0x01,
+            description: "Peer presence announcement with identity information",
+            
+            fields: [
+                (name: "peer_id", type: "PeerId", size_bytes: 8, validation: "NonZero"),
+                (name: "nickname", type: "String", max_size_bytes: 32, validation: "UTF8", required: true),
+                (name: "static_key", type: "NoisePublicKey", size_bytes: 32, validation: "ValidCurve25519"),
+                (name: "ed25519_key", type: "Ed25519PublicKey", size_bytes: 32, validation: "ValidEd25519"),
+                (name: "signature", type: "Ed25519Signature", size_bytes: 64, validation: "ValidSignature"),
+                (name: "previous_peer_id", type: "Option<PeerId>", size_bytes: 8, validation: "NonZero", required: false),
+                (name: "direct_neighbors", type: "Vec<PeerId>", max_count: 32, validation: "UniquePeerIds", required: false)
+            ],
+            
+            constraints: [
+                "signature_valid_for_peer_id",
+                "nickname_valid_utf8",
+                "static_key_non_zero",
+                "ed25519_key_on_curve"
+            ],
+            
+            valid_states: ["Established"],
+            requires_session: false,
+            can_be_broadcast: true,
+            
+            generates_events: ["PeerDiscovered", "PeerUpdated", "TopologyChanged"]
+        ),
+        
+        (
+            name: "Message",
+            wire_type: 0x02,
+            description: "Public chat message (broadcast or channel-specific)",
+            
+            fields: [
+                (name: "content", type: "String", max_size_bytes: 32768, validation: "UTF8", required: true),
+                (name: "timestamp", type: "Timestamp", size_bytes: 8, validation: "Reasonable")
+            ],
+            
+            constraints: [
+                "content_not_empty",
+                "timestamp_within_bounds"
+            ],
+            
+            valid_states: ["Established"],
+            requires_session: false,
+            can_be_broadcast: true,
+            
+            generates_events: ["MessageReceived"]
+        ),
+        
+        (
+            name: "Leave",
+            wire_type: 0x03,
+            description: "Graceful peer departure notification",
+            
+            fields: [
+                (name: "reason", type: "Option<String>", max_size_bytes: 256, validation: "UTF8", required: false)
+            ],
+            
+            constraints: [],
+            
+            valid_states: ["Established", "Terminating"],
+            requires_session: false,
+            can_be_broadcast: true,
+            
+            generates_events: ["PeerLeft"]
+        ),
+        
+        (
+            name: "NoiseHandshake",
+            wire_type: 0x10,
+            description: "Noise XX handshake message (all three stages use this type)",
+            
+            fields: [
+                (name: "handshake_data", type: "Bytes", max_size_bytes: 96, validation: "ValidNoiseMessage", required: true)
+            ],
+            
+            constraints: [
+                "handshake_data_matches_stage",
+                "handshake_not_replayed"
+            ],
+            
+            valid_states: ["Handshaking", "Rekeying"],
+            requires_session: false,
+            can_be_broadcast: false,
+            
+            generates_events: ["HandshakeProgress", "HandshakeComplete"]
+        ),
+        
+        (
+            name: "NoiseEncrypted",
+            wire_type: 0x11,
+            description: "Container for all encrypted payloads (actual content determined by inner NoisePayloadType)",
+            
+            fields: [
+                (name: "ciphertext", type: "Bytes", max_size_bytes: 65536, validation: "ValidCiphertext", required: true)
+            ],
+            
+            constraints: [
+                "ciphertext_includes_auth_tag",
+                "recipient_field_required"
+            ],
+            
+            valid_states: ["Established"],
+            requires_session: true,
+            can_be_broadcast: false,
+            
+            generates_events: ["EncryptedMessageReceived"]
+        ),
+        
+        (
+            name: "Fragment",
+            wire_type: 0x20,
+            description: "Large message fragmentation for MTU-limited transports",
+            
+            fields: [
+                (name: "fragment_id", type: "u64", size_bytes: 8, encoding: "BigEndian", validation: "NonZero"),
+                (name: "fragment_index", type: "u16", size_bytes: 2, encoding: "BigEndian"),
+                (name: "total_fragments", type: "u16", size_bytes: 2, encoding: "BigEndian", validation: "InRange(1, 256)"),
+                (name: "original_type", type: "u8", size_bytes: 1, validation: "ValidMessageType"),
+                (name: "data", type: "Bytes", max_size_bytes: 244, validation: "NotEmpty", required: true)
+            ],
+            
+            constraints: [
+                "fragment_index_less_than_total",
+                "total_fragments_in_range",
+                "original_type_is_fragmentable"
+            ],
+            
+            valid_states: ["Established"],
+            requires_session: false,
+            can_be_broadcast: true,
+            
+            generates_events: ["FragmentReceived", "MessageReassembled"]
+        ),
+        
+        (
+            name: "RequestSync",
+            wire_type: 0x21,
+            description: "Mesh state synchronization request with GCS filter",
+            
+            fields: [
+                (name: "gcs_filter", type: "Bytes", max_size_bytes: 1024, validation: "ValidGCSFilter", required: true),
+                (name: "recent_packet_count", type: "u16", size_bytes: 2, encoding: "BigEndian")
+            ],
+            
+            constraints: [
+                "gcs_filter_valid",
+                "ttl_is_zero"  // Local-only, not relayed
+            ],
+            
+            valid_states: ["Established"],
+            requires_session: false,
+            can_be_broadcast: false,
+            
+            generates_events: ["SyncRequested"]
+        ),
+        
+        (
+            name: "FileTransfer",
+            wire_type: 0x22,
+            description: "File transfer protocol messages",
+            
+            fields: [
+                (name: "transfer_data", type: "Bytes", max_size_bytes: 32768, validation: "NotEmpty", required: true)
+            ],
+            
+            constraints: [
+                "transfer_data_valid"
+            ],
+            
+            valid_states: ["Established"],
+            requires_session: true,
+            can_be_broadcast: false,
+            experimental: true,
+            
+            generates_events: ["FileTransferProgress", "FileTransferComplete"]
+        ),
+        
+        (
+            name: "VersionHello",
+            wire_type: 0x30,
+            description: "Protocol version negotiation hello",
+            
+            fields: [
+                (name: "supported_versions", type: "Vec<u8>", max_count: 16, validation: "NonEmpty", required: true)
+            ],
+            
+            constraints: [
+                "at_least_one_version_supported",
+                "versions_in_ascending_order"
+            ],
+            
+            valid_states: ["Handshaking"],
+            requires_session: false,
+            can_be_broadcast: false,
+            
+            generates_events: ["VersionNegotiation"]
+        ),
+        
+        (
+            name: "VersionAck",
+            wire_type: 0x31,
+            description: "Protocol version negotiation acknowledgment",
+            
+            fields: [
+                (name: "agreed_version", type: "u8", size_bytes: 1, validation: "NonZero", required: true)
+            ],
+            
+            constraints: [
+                "agreed_version_was_in_hello"
+            ],
+            
+            valid_states: ["Handshaking"],
+            requires_session: false,
+            can_be_broadcast: false,
+            
+            generates_events: ["VersionAgreed"]
+        )
+    ],
+    
+    // Inner encrypted payload types (inside NoiseEncrypted packets)
+    noise_payload_types: [
+        (
+            name: "PrivateMessage",
+            payload_type: 0x01,
+            description: "Private chat message content",
+            
+            fields: [
+                (name: "content", type: "String", max_size_bytes: 32768, validation: "UTF8", required: true),
+                (name: "message_id", type: "MessageId", size_bytes: 16, validation: "NonZero", required: true)
+            ],
+            
+            generates_events: ["PrivateMessageReceived"]
+        ),
+        
+        (
+            name: "ReadReceipt",
+            payload_type: 0x02,
+            description: "Message read confirmation",
+            
+            fields: [
+                (name: "message_id", type: "MessageId", size_bytes: 16, validation: "NonZero", required: true)
+            ],
+            
+            generates_events: ["MessageRead"]
+        ),
+        
+        (
+            name: "Delivered",
+            payload_type: 0x03,
+            description: "Message delivery confirmation",
+            
+            fields: [
+                (name: "message_id", type: "MessageId", size_bytes: 16, validation: "NonZero", required: true)
+            ],
+            
+            generates_events: ["MessageDelivered"]
+        ),
+        
+        (
+            name: "VerifyChallenge",
+            payload_type: 0x10,
+            description: "QR code verification challenge",
+            
+            fields: [
+                (name: "challenge", type: "Bytes", size_bytes: 32, validation: "RandomBytes", required: true)
+            ],
+            
+            generates_events: ["VerificationChallengeReceived"]
+        ),
+        
+        (
+            name: "VerifyResponse",
+            payload_type: 0x11,
+            description: "QR code verification response",
+            
+            fields: [
+                (name: "response", type: "Bytes", size_bytes: 32, validation: "ValidResponse", required: true)
+            ],
+            
+            generates_events: ["VerificationComplete"]
+        ),
+        
+        (
+            name: "FileOffer",
+            payload_type: 0x20,
+            description: "File transfer initiation",
+            experimental: true
+        ),
+        
+        (
+            name: "FileAccept",
+            payload_type: 0x21,
+            description: "File transfer acceptance",
+            experimental: true
+        ),
+        
+        (
+            name: "FileChunk",
+            payload_type: 0x22,
+            description: "File transfer chunk",
+            experimental: true
+        ),
+        
+        (
+            name: "FileComplete",
+            payload_type: 0x23,
+            description: "File transfer completion",
+            experimental: true
+        ),
+        
+        (
+            name: "GroupCreate",
+            payload_type: 0x30,
+            description: "Group creation",
+            experimental: true
+        ),
+        
+        (
+            name: "GroupInvite",
+            payload_type: 0x31,
+            description: "Group member invite",
+            experimental: true
+        ),
+        
+        (
+            name: "GroupJoin",
+            payload_type: 0x32,
+            description: "Group member join",
+            experimental: true
+        ),
+        
+        (
+            name: "GroupLeave",
+            payload_type: 0x33,
+            description: "Group member leave",
+            experimental: true
+        ),
+        
+        (
+            name: "GroupMessage",
+            payload_type: 0x34,
+            description: "Group message",
+            experimental: true
+        ),
+        
+        (
+            name: "GroupUpdate",
+            payload_type: 0x35,
+            description: "Group metadata update",
+            experimental: true
+        ),
+        
+        (
+            name: "GroupKick",
+            payload_type: 0x36,
+            description: "Group member kick/remove",
+            experimental: true
+        ),
+        
+        (
+            name: "DeviceAnnouncement",
+            payload_type: 0x40,
+            description: "Device announcement for multi-device sync",
+            experimental: true
+        ),
+        
+        (
+            name: "SessionSyncRequest",
+            payload_type: 0x41,
+            description: "Session synchronization request",
+            experimental: true
+        ),
+        
+        (
+            name: "SessionSyncResponse",
+            payload_type: 0x42,
+            description: "Session synchronization response",
+            experimental: true
+        ),
+        
+        (
+            name: "DeviceHeartbeat",
+            payload_type: 0x43,
+            description: "Device heartbeat",
+            experimental: true
+        ),
+        
+        (
+            name: "VersionHello",
+            payload_type: 0x50,
+            description: "Version hello with capability announcement",
+            experimental: true
+        ),
+        
+        (
+            name: "VersionAck",
+            payload_type: 0x51,
+            description: "Version acknowledgment with negotiated capabilities",
+            experimental: true
+        )
+    ],
+    
+    // Validation rules
+    validation_rules: (
+        max_nickname_length: 32,
+        max_message_length: 32768,
+        max_fragments_per_message: 256,
+        max_neighbors_in_announce: 32,
+        fragment_timeout_ms: 300000,  // 5 minutes
+        handshake_replay_window_ms: 30000
+    ),
+    
+    // Canonical compatibility notes
+    canonical_compatibility: (
+        noise_handshake_uses_single_type: true,  // Not split into INIT/RESP/FINAL
+        noise_encrypted_type_code: 0x11,  // Fixed from earlier 0x12
+        fragment_header_size: 13,  // 8 (id) + 2 (index) + 2 (total) + 1 (type)
+        all_multi_byte_fields_big_endian: true
+    )
+)
+
