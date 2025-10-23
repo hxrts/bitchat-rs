@@ -1,0 +1,68 @@
+# BitChat Scenario Runner - Protocol Simulation Testing
+# Fast, deterministic protocol testing with virtual time
+
+# Variables
+nix_cmd := "nix develop --no-warn-dirty --command"
+
+# ============================================================================
+# Unified Interface (NEW)
+# ============================================================================
+
+# Execute a TOML scenario file (NEW UNIFIED INTERFACE)
+execute scenario:
+    {{nix_cmd}} cargo run --release -- execute scenarios/{{scenario}}.toml
+
+# List all available scenarios
+list:
+    {{nix_cmd}} cargo run --release -- list
+
+# Run all scenarios
+all:
+    {{nix_cmd}} cargo run --release -- all
+
+# ============================================================================
+# Build & Development
+# ============================================================================
+
+# Build scenario runner in release mode
+build:
+    {{nix_cmd}} cargo build --release
+
+# Check compilation without building
+check:
+    {{nix_cmd}} cargo check
+
+# Run unit tests
+test:
+    {{nix_cmd}} cargo test
+
+# ============================================================================
+# Legacy Compatibility (DEPRECATED)
+# ============================================================================
+
+# [DEPRECATED] Run a specific scenario by name - use 'execute' instead
+scenario name:
+    @echo "DEPRECATED: Use 'just execute {{name}}' instead"
+    {{nix_cmd}} cargo run --release -- execute scenarios/{{name}}.toml
+
+# [DEPRECATED] Run all scenarios - use 'all' instead
+test-all:
+    @echo "DEPRECATED: Use 'just all' instead"
+    {{nix_cmd}} cargo run --release -- all
+
+# ============================================================================
+# Cleanup
+# ============================================================================
+
+# Clean build artifacts
+clean:
+    {{nix_cmd}} cargo clean
+    rm -rf ../builds/web/*
+    rm -rf test_results.html logs/
+
+# Clean and rebuild
+rebuild: clean build
+
+# Default target
+default:
+    @just --list

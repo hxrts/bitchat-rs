@@ -2,6 +2,7 @@
 target/
 Cargo.lock
 *.rs.bk
+*.backup
 
 # Nix
 result
@@ -40,6 +41,18 @@ simulator/clients/kotlin-cli/build/
 simulator/clients/swift-cli/.build/
 simulator/test_runner/target/
 simulator/clients/*/target/
+simulator/builds/
+simulator/*/target/
+simulator/*/builds/
+
+# Vendored dependencies (but allow build directories)
+simulator/device/vendored/bitchat-ios/
+!simulator/device/vendored/bitchat-ios/build/
+simulator/device/vendored/bitchat-android/
+!simulator/device/vendored/bitchat-android/build/
+# Build artifacts within vendored projects
+simulator/device/vendored/bitchat-ios/build/*
+simulator/device/vendored/bitchat-android/build/*
 
 # Kotlin/Gradle
 build/

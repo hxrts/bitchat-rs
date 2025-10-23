@@ -14,10 +14,9 @@ cfg_if::cfg_if! {
         use std::fmt;
     } else {
         use core::fmt;
-        use alloc::string::{String, ToString};
+        use alloc::string::String;
         use alloc::vec::Vec;
         use alloc::format;
-        use alloc::boxed::Box;
     }
 }
 use sha2::{Digest, Sha256};

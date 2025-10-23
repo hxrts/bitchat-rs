@@ -58,6 +58,8 @@ use super::config::NostrConfig;
 use super::error::NostrTransportError;
 use super::message::{BitchatNostrMessage, BITCHAT_KIND};
 use super::nip17::{Nip17GiftUnwrapper, Nip17GiftWrapper};
+use super::embedding::{EmbeddingStrategy, EmbeddingConfig, NostrEmbeddedBitChat};
+// use super::relay_manager::{NostrRelayManager, RelaySelectionStrategy};
 
 async fn forward_event(sender: &EventSender, event: Event) -> Result<(), String> {
     cfg_if::cfg_if! {
@@ -78,7 +80,7 @@ async fn forward_event(sender: &EventSender, event: Event) -> Result<(), String>
 // Nostr Transport Task
 // ----------------------------------------------------------------------------
 
-/// Nostr transport task implementation using CSP channels
+/// Nostr transport task implementation using CSP channels with canonical tunneling
 pub struct NostrTransportTask {
     /// Transport identification
     transport_type: ChannelTransportType,
@@ -96,12 +98,27 @@ pub struct NostrTransportTask {
     gift_wrapper: Option<Nip17GiftWrapper>,
     /// NIP-17 gift unwrapper for decrypting received messages
     gift_unwrapper: Option<Nip17GiftUnwrapper>,
+    /// Canonical relay manager for health monitoring and selection (TODO: Add back with proper threading)
+    // relay_manager: Option<NostrRelayManager<bitchat_core::types::SystemTimeSource>>,
+    /// Embedding strategy for BitChat messages
+    embedding_strategy: EmbeddingStrategy,
+    /// Embedding configuration for privacy features
+    embedding_config: EmbeddingConfig,
 }
 
 impl NostrTransportTask {
     /// Create new Nostr transport task
     pub fn new(config: NostrConfig) -> BitchatResult<Self> {
         let keys = config.private_key.clone().unwrap_or_else(Keys::generate);
+        
+        // TODO: Add relay manager back with proper threading support
+        // #[cfg(not(target_arch = "wasm32"))]
+        // let time_source = bitchat_core::types::SystemTimeSource;
+        // #[cfg(target_arch = "wasm32")]
+        // let time_source = bitchat_core::types::SystemTimeSource; // WASM also uses SystemTimeSource
+        // 
+        // let mut relay_manager = NostrRelayManager::new(time_source);
+        // relay_manager.load_default_relays();
 
         Ok(Self {
             transport_type: ChannelTransportType::Nostr,
@@ -112,12 +129,25 @@ impl NostrTransportTask {
             client: None,
             gift_wrapper: None,
             gift_unwrapper: None,
+            // relay_manager: Some(relay_manager),
+            embedding_strategy: EmbeddingStrategy::default(),
+            embedding_config: EmbeddingConfig::default(),
         })
     }
 
     /// Set the local peer ID (called by Core Logic during initialization)
     pub fn set_local_peer_id(&mut self, peer_id: PeerId) {
         self.local_peer_id = Some(peer_id);
+    }
+
+    /// Update embedding configuration for privacy features
+    pub fn set_embedding_config(&mut self, config: EmbeddingConfig) {
+        self.embedding_config = config;
+    }
+
+    /// Get current embedding configuration
+    pub fn embedding_config(&self) -> &EmbeddingConfig {
+        &self.embedding_config
     }
 
     /// Main task loop processing effects from Core Logic
@@ -442,60 +472,54 @@ impl NostrTransportTask {
             return Ok(()); // No unwrapper available
         }
 
-        // Check if this is a wire protocol message (bitchat1: prefix)
-        if event.content.starts_with("bitchat1:") {
-            // Decode wire protocol packet
-            let base64_data = &event.content[9..]; // Skip "bitchat1:" prefix
-            #[cfg(not(target_arch = "wasm32"))]
-            let binary_data = general_purpose::STANDARD.decode(base64_data).map_err(|e| {
-                NostrTransportError::DeserializationFailed(format!("Invalid base64: {}", e))
-            })?;
+        // Check if this is a canonical BitChat embedded message
+        if NostrEmbeddedBitChat::is_bitchat_content(&event.content) {
+            // Decode using canonical embedding
+            match NostrEmbeddedBitChat::decode_from_nostr(&event.content) {
+                Ok(Some(packet)) => {
 
-            #[cfg(target_arch = "wasm32")]
-            let binary_data = STANDARD.decode(base64_data).map_err(|e| {
-                NostrTransportError::DeserializationFailed(format!("Invalid base64: {}", e))
-            })?;
+                    // Check if message is for us
+                    let is_for_us = match local_peer_id {
+                        Some(our_peer_id) => {
+                            packet.is_broadcast() || packet.recipient_id == Some(our_peer_id)
+                        }
+                        None => packet.is_broadcast(), // Accept broadcasts if we don't know our peer ID yet
+                    };
 
-            let packet = WireFormat::decode(&binary_data).map_err(|e| {
-                NostrTransportError::DeserializationFailed(format!("Invalid wire format: {}", e))
-            })?;
+                    if !is_for_us {
+                        return Ok(());
+                    }
 
-            // Check if message is for us
-            let is_for_us = match local_peer_id {
-                Some(our_peer_id) => {
-                    packet.is_broadcast() || packet.recipient_id == Some(our_peer_id)
+                    // Send peer discovery event to Core Logic
+                    let discovery_event = bitchat_core::Event::PeerDiscovered {
+                        peer_id: packet.sender_id,
+                        transport: ChannelTransportType::Nostr,
+                        signal_strength: None, // Nostr doesn't have signal strength
+                    };
+
+                    if let Err(e) = forward_event(event_sender, discovery_event).await {
+                        warn!("Failed to send peer discovery event: {}", e);
+                    }
+
+                    // Send BitchatPacket event to Core Logic
+                    let packet_event = bitchat_core::Event::BitchatPacketReceived {
+                        from: packet.sender_id,
+                        packet,
+                        transport: ChannelTransportType::Nostr,
+                    };
+
+                    if let Err(e) = forward_event(event_sender, packet_event).await {
+                        warn!("Failed to send packet event: {}", e);
+                    }
                 }
-                None => packet.is_broadcast(), // Accept broadcasts if we don't know our peer ID yet
-            };
-
-            if !is_for_us {
-                return Ok(());
-            }
-
-            // Send peer discovery event to Core Logic
-            #[allow(unused_variables)] // Used in feature-gated code below
-            let discovery_event = bitchat_core::Event::PeerDiscovered {
-                peer_id: packet.sender_id,
-                transport: ChannelTransportType::Nostr,
-                signal_strength: None, // Nostr doesn't have signal strength
-            };
-
-            if let Err(e) = forward_event(event_sender, discovery_event).await {
-                warn!("Failed to send peer discovery event: {}", e);
-                tracing::warn!("Failed to send peer discovery event: {}", e);
-            }
-
-            // Send BitchatPacket event to Core Logic
-            #[allow(unused_variables)] // Used in feature-gated code below
-            let packet_event = bitchat_core::Event::BitchatPacketReceived {
-                from: packet.sender_id,
-                packet,
-                transport: ChannelTransportType::Nostr,
-            };
-
-            if let Err(e) = forward_event(event_sender, packet_event).await {
-                warn!("Failed to send packet event: {}", e);
-                tracing::warn!("Failed to send packet event: {}", e);
+                Ok(None) => {
+                    // Not a BitChat message, ignore
+                    return Ok(());
+                }
+                Err(e) => {
+                    debug!("Failed to decode canonical BitChat message: {}", e);
+                    return Ok(()); // Don't treat as error, might be non-BitChat content
+                }
             }
         } else {
             // Legacy format - try to parse as BitChat message
@@ -637,30 +661,26 @@ impl NostrTransportTask {
         Ok(())
     }
 
-    /// Send BitChat packet to specific peer via Nostr
+    /// Send BitChat packet to specific peer via Nostr using canonical embedding
     async fn send_bitchat_packet_to_peer(
         &self,
         peer_id: PeerId,
         packet: BitchatPacket,
     ) -> BitchatResult<()> {
-        // Serialize the packet to binary wire format
-        let data = WireFormat::encode(&packet).map_err(|e| {
-            BitchatError::Transport(TransportError::InvalidConfiguration {
-                reason: format!("Failed to encode BitChat packet: {}", e),
-            })
-        })?;
-
-        // Use existing data sending logic with "bitchat1:" prefix for wire protocol
-        #[cfg(not(target_arch = "wasm32"))]
-        let prefixed_data = format!("bitchat1:{}", general_purpose::STANDARD.encode(&data));
-        #[cfg(target_arch = "wasm32")]
-        let prefixed_data = format!("bitchat1:{}", STANDARD.encode(&data));
-        self.send_data_to_peer(peer_id, prefixed_data.into_bytes())
-            .await
-    }
-
-    /// Broadcast BitChat packet via Nostr
-    async fn broadcast_bitchat_packet(&self, packet: BitchatPacket) -> BitchatResult<()> {
+        // Apply timing jitter if configured
+        let jitter_delay = self.embedding_config.get_timing_jitter();
+        if jitter_delay.as_millis() > 0 {
+            #[cfg(feature = "std")]
+            {
+                use tokio::time::sleep;
+                sleep(jitter_delay).await;
+            }
+            #[cfg(feature = "wasm")]
+            {
+                // WASM timing jitter - use web APIs if available
+                // For now, we'll skip jitter in WASM environments
+            }
+        }
         let client = self
             .client
             .as_ref()
@@ -668,6 +688,92 @@ impl NostrTransportTask {
 
         let local_peer_id = self
             .local_peer_id
+            .ok_or_else(|| NostrTransportError::ClientNotInitialized)?;
+
+        // Use canonical embedding to create Nostr content
+        let embedded_content = {
+            // For now, encode the packet directly as binary data
+            // In a full implementation, we'd determine the payload type and use appropriate encoding
+            let data = WireFormat::encode(&packet).map_err(|e| {
+                BitchatError::Transport(TransportError::InvalidConfiguration {
+                    reason: format!("Failed to encode BitChat packet: {}", e),
+                })
+            })?;
+            
+            // Use canonical base64url encoding with bitchat1: prefix
+            cfg_if::cfg_if! {
+                if #[cfg(not(target_arch = "wasm32"))] {
+                    use ::base64::{engine::general_purpose, Engine as _};
+                    format!("bitchat1:{}", general_purpose::URL_SAFE_NO_PAD.encode(&data))
+                } else {
+                    // WASM stub
+                    format!("bitchat1:base64url_stub")
+                }
+            }
+        };
+
+        // Determine embedding strategy and send accordingly
+        match self.embedding_strategy {
+            EmbeddingStrategy::PrivateMessage => {
+                // Use NIP-17 gift wrapping for private messages
+                if let Some(gift_wrapper) = &self.gift_wrapper {
+                    let nip17_content = super::nip17::Nip17Content {
+                        content: embedded_content,
+                        expiration: None,
+                    };
+
+                    // Convert peer_id to Nostr public key
+                    let recipient_pubkey = super::nip17::peer_id_to_pubkey(&peer_id)
+                        .map_err(|e| NostrTransportError::KeyOperationFailed(e.to_string()))?;
+
+                    let mut wrapper = gift_wrapper.clone();
+                    let gift_wrapped_event = wrapper.create_gift_wrapped_message(&nip17_content, &recipient_pubkey)
+                        .map_err(|e| NostrTransportError::EncryptionFailed(e.to_string()))?;
+
+                    client
+                        .send_event(gift_wrapped_event)
+                        .await
+                        .map_err(NostrTransportError::EventSendFailed)?;
+                } else {
+                    return Err(NostrTransportError::EncryptionFailed(
+                        "NIP-17 gift wrapper not available".to_string(),
+                    ).into());
+                }
+            }
+            EmbeddingStrategy::PublicGeohash => {
+                // Send as public event for geohash/location-based messaging
+                let event = EventBuilder::new(BITCHAT_KIND, embedded_content, vec![Tag::hashtag("bitchat")])
+                    .to_event(&self.keys)
+                    .map_err(|e| NostrTransportError::DeserializationFailed(e.to_string()))?;
+
+                client
+                    .send_event(event)
+                    .await
+                    .map_err(NostrTransportError::EventSendFailed)?;
+            }
+            EmbeddingStrategy::CustomKind(kind) => {
+                // Use custom event kind
+                let custom_kind = Kind::Custom(kind);
+                let event = EventBuilder::new(custom_kind, embedded_content, vec![])
+                    .to_event(&self.keys)
+                    .map_err(|e| NostrTransportError::DeserializationFailed(e.to_string()))?;
+
+                client
+                    .send_event(event)
+                    .await
+                    .map_err(NostrTransportError::EventSendFailed)?;
+            }
+        }
+
+        debug!("Sent BitChat packet to peer {} via Nostr", peer_id);
+        Ok(())
+    }
+
+    /// Broadcast BitChat packet via Nostr using canonical embedding
+    async fn broadcast_bitchat_packet(&self, packet: BitchatPacket) -> BitchatResult<()> {
+        let client = self
+            .client
+            .as_ref()
             .ok_or_else(|| NostrTransportError::ClientNotInitialized)?;
 
         // Serialize the packet to binary wire format
@@ -686,19 +792,25 @@ impl NostrTransportTask {
             .into());
         }
 
-        // Create BitChat message for broadcast (no specific recipient)
-        #[cfg(not(target_arch = "wasm32"))]
-        let prefixed_data = format!("bitchat1:{}", general_purpose::STANDARD.encode(&data));
-        #[cfg(target_arch = "wasm32")]
-        let prefixed_data = format!("bitchat1:{}", STANDARD.encode(&data));
-        let bitchat_msg = BitchatNostrMessage::new(local_peer_id, None, prefixed_data.into_bytes());
-        let content = bitchat_msg.to_nostr_content()?;
+        // Use canonical embedding for broadcast
+        let embedded_content = {
+            cfg_if::cfg_if! {
+                if #[cfg(not(target_arch = "wasm32"))] {
+                    use ::base64::{engine::general_purpose, Engine as _};
+                    format!("bitchat1:{}", general_purpose::URL_SAFE_NO_PAD.encode(&data))
+                } else {
+                    // WASM stub
+                    format!("bitchat1:base64url_stub")
+                }
+            }
+        };
 
-        // Send as public BitChat event
-        let event = EventBuilder::new(BITCHAT_KIND, content, vec![Tag::hashtag("bitchat")])
+        // Send as public BitChat event (broadcasts are always public)
+        let event = EventBuilder::new(BITCHAT_KIND, embedded_content, vec![Tag::hashtag("bitchat")])
             .to_event(&self.keys)
             .map_err(|e| NostrTransportError::DeserializationFailed(e.to_string()))?;
 
+        // Send to all connected relays 
         client
             .send_event(event)
             .await

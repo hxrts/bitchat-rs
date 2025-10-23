@@ -1,281 +1,375 @@
-# BitChat Integration Simulator
+# BitChat Simulator
 
-Cross-platform testing framework for the BitChat protocol with real mobile app testing capabilities.
+**Two-Tiered Testing Strategy for Protocol Development**
 
-## Overview
-
-The BitChat simulator provides two complementary testing frameworks:
-
-### 1. emulator-rig - Real Mobile App Testing
-Black-box testing of actual BitChat mobile applications:
-- **iOS (Swift)** - Native Swift implementation in `vendored/bitchat-ios/`
-- **Android (Kotlin)** - Native Kotlin implementation in `vendored/bitchat-android/`
-- Runs apps in iOS Simulator and Android Emulator with Appium automation
-- Network analysis and protocol compliance validation
-
-### 2. scenario-runner - Simulation-Based Protocol Testing
-Event-driven protocol testing with mock simulation:
-- **CLI (Rust)** - Native Rust command-line client
-- **Web (WASM)** - Browser-based WebAssembly client *(WASM build fixed 2025-01-20)*
-- TOML-configured scenarios with network condition simulation
-- Deterministic, reproducible test execution
-- Cross-implementation testing (CLI ↔ Web)
-- **Unified Client Bridge** - Bridges to emulator-rig for cross-framework testing *(New 2025-01-20)*
+```
+┌─────────────────────────────────────────────────────────────────┐
+│                     Test Scenarios (TOML)                        │
+│              Single Source of Truth for ALL Tests                │
+└────────────────────────┬─────────────────┬──────────────────────┘
+                         │                 │
+         ┌───────────────▼────┐    ┌──────▼───────────────┐
+         │     virtual        │    │      device          │
+         │ Fast Simulation    │    │ Real-World E2E       │
+         │   (seconds)        │    │   (minutes)          │
+         └────────────────────┘    └──────────────────────┘
+```
 
 ## Quick Start
 
-### iOS Setup
-
-1. **Install Xcode**: Download from the [Mac App Store](https://apps.apple.com/us/app/xcode/id497799835)
-2. **Install Command Line Tools**:
-   ```bash
-   xcode-select --install
-   ```
-3. **Configure Signing** (for simulator testing, automatic signing works):
-   - Open Xcode → Settings → Accounts
-   - Add your Apple ID (free account works for simulator testing)
-   - Xcode will automatically manage certificates and provisioning profiles
-
-> **Note**: For simulator-only testing (no physical device), you don't need a paid Apple Developer account.
-
-### Android Setup
-
-1. **Install Android Studio**: Download from [developer.android.com/studio](https://developer.android.com/studio)
-2. **Install Android SDK** (via Android Studio):
-   - Open Android Studio → Settings → Appearance & Behavior → System Settings → Android SDK
-   - Install the latest SDK Platform and SDK Build Tools
-3. **Set Environment Variable**:
-   ```bash
-   export ANDROID_HOME="$HOME/Library/Android/sdk"  # macOS
-   # Or for Linux:
-   # export ANDROID_HOME="$HOME/Android/Sdk"
-   ```
-   Add this to your `~/.zshrc` or `~/.bashrc` to make it permanent.
-
-> **Tip**: Verify setup with `$ANDROID_HOME/platform-tools/adb --version`
-
-### Real Mobile App Testing
 ```bash
-# Set ANDROID_HOME if you have Android Studio installed
-export ANDROID_HOME="/Users/username/Library/Android/sdk"  # macOS location
+# 1. Write a test scenario (once)
+cat > scenarios/my_test.toml << 'EOF'
+[metadata]
+name = "My Test"
 
-# Enter Nix environment with hybrid system tools support
-cd emulator-rig && ANDROID_HOME="$ANDROID_HOME" nix develop
+[[peers]]
+name = "alice"
 
-# All tools automatically available - iOS, Android, and Nix tools integrated
-cargo run -- test --client1 ios --client2 ios          # iOS ↔ iOS testing
-cargo run -- test --client1 android --client2 android  # Android ↔ Android testing
-cargo run -- test --client1 ios --client2 android      # Cross-platform testing
+[[peers]]
+name = "bob"
+
+[[sequence]]
+at_time_seconds = 2.0
+action = "SendMessage"
+from = "alice"
+to = "bob"
+content = "Hello!"
+EOF
+
+# 2. Run with fast simulation (seconds)
+just test-scenario my_test cli,cli
+
+# 3. Run with real devices (minutes)
+just test-scenario my_test ios,android
 ```
 
-### Data-Driven Scenario Testing
-```bash
-cd scenario-runner && nix develop
+## Architecture Overview
 
-# Run TOML scenario with Android emulator integration
-ANDROID_HOME="/path/to/android/sdk" cargo run -- run-android ../scenarios/android_to_android.toml
+### Virtual Testing System
+**Use for:** Protocol validation, regression testing, fault injection
+- **Fast** - 1000+ tests in minutes
+- **Deterministic** - Same input → same output, always
+- **White-box** - Can inspect internal state
+- **Mocked** - Network, time, crypto all controlled
 
-# Run TOML scenario with mock simulation
-cargo run -- run-file ../scenarios/android_to_android.toml
+### Device Testing System  
+**Use for:** Integration testing, UI validation, final product verification
+- **Slow** - 10+ tests in hours
+- **Non-deterministic** - Real network timing varies
+- **Black-box** - Only observes external behavior
+- **Real** - Actual OS, network stack, Bluetooth
 
-# Validate scenario configuration
-cargo run -- validate ../scenarios/android_to_android.toml
-```
+### Separation of Concerns
 
-## Architecture
+| Component | Virtual | Device | Shared |
+|-----------|---------|--------|--------|
+| **Test Definition** | No | No | TOML files |
+| **Protocol Logic** | In-memory | Black-box | - |
+| **Network** | Mocked | Real | - |
+| **Time Control** | Virtual | Real | - |
+| **Client Types** | CLI, WASM | iOS, Android | Both via bridge |
+| **Speed** | Seconds | Minutes | - |
+
+## Directory Structure
 
 ```
 simulator/
-├── emulator-rig/                      # Real mobile app testing framework
-│   ├── src/                           # Emulator orchestration and Appium automation
-│   └── vendored/
-│       ├── bitchat-ios/               # Swift implementation (canonical)
-│       └── bitchat-android/           # Kotlin implementation  
-├── scenario-runner/                   # Simulation-based protocol testing
-│   ├── src/                           # Event orchestration and mock networking
-│   └── scenarios/                     # Protocol test scenarios (Rust code)
-├── scenarios/                         # Data-driven test scenarios (TOML files)
-└── Justfile                           # Build and test automation commands
+├── scenarios/               ← TOML test definitions (shared)
+│   ├── 01_discovery_basic.toml
+│   ├── 02_messaging_basic.toml
+│   └── 03_integration_comprehensive.toml
+│
+├── virtual/                 ← Fast protocol simulation
+│   ├── src/simulation_executor.rs
+│   ├── src/network_router.rs
+│   └── harness/             # Client abstraction layer
+│
+├── device/                  ← Real-world E2E testing
+│   ├── src/orchestrator.rs
+│   ├── vendored/bitchat-ios/
+│   └── vendored/bitchat-android/
+│
+├── shared/                  ← Common scenario types
+└── ios-linker-workaround/   ← Temporary Xcode 16 fix
 ```
 
-### Client Type Mapping
+## Client Types and Usage
 
-| Client Type | Language | Framework | Unified Type | Framework-Specific Type |
-|-------------|----------|-----------|--------------|------------------------|
-| **iOS** | Swift | emulator-rig | `UnifiedClientType::Ios` | `bitchat_emulator_harness::ClientType::Ios` |
-| **Android** | Kotlin | emulator-rig | `UnifiedClientType::Android` | `bitchat_emulator_harness::ClientType::Android` |
-| **CLI** | Rust | scenario-runner | `UnifiedClientType::Cli` | `EventOrchestrator::ClientType::Cli` |
-| **Web** | Rust (WASM) | scenario-runner | `UnifiedClientType::Web` | `EventOrchestrator::ClientType::Web` |
-
-**Note**: The `UnifiedClientType` enum (added 2025-01-20) bridges both frameworks, enabling:
-- Same-framework testing: CLI↔Web, iOS↔Android
-- Cross-framework testing: CLI↔iOS, CLI↔Android, Web↔iOS, Web↔Android (orchestration needed)
-
-## Available Test Scenarios
-
-### Real Mobile App Scenarios
-- **Android ↔ Android** - Cross-device messaging with real Android emulators
-- **iOS ↔ iOS** - iOS Simulator communication testing
-- **Android ↔ iOS** - Cross-platform interoperability
-
-### Data-Driven TOML Scenarios
-- `android_to_android.toml` - Comprehensive Android testing configuration
-- `basic_messaging.toml` - Simple peer-to-peer communication
-- `mesh_network.toml` - Multi-peer mesh networking scenarios
-- `unreliable_network.toml` - Network condition simulation
-
-### Protocol Testing Scenarios
-- `deterministic-messaging` - Basic message exchange validation
-- `transport-failover` - BLE ↔ Nostr switching robustness
-- `session-rekey` - Cryptographic session management
-- `byzantine-fault` - Malicious peer behavior resistance
-
-## Commands Reference
-
-### Environment Setup
 ```bash
-# Check environments
-just check-android-env
-just check-ios-env
+# Fast protocol testing (virtual simulation)
+just test-scenario 02_messaging_basic cli,cli        # CLI ↔ CLI
+just test-scenario 01_discovery_basic wasm,wasm      # WebAssembly ↔ WebAssembly
 
-# Build apps
-just build-android
-just build-ios
+# Real-world device testing
+just test-scenario 02_messaging_basic ios,ios        # iOS ↔ iOS
+just test-scenario 02_messaging_basic android,android # Android ↔ Android
+just test-scenario 02_messaging_basic ios,android    # Cross-platform
+
+# Validation prevents mixing virtual and device clients
+just test-scenario 02_messaging_basic cli,ios        # ERROR: Cannot mix
 ```
 
-### Real Mobile App Testing
-```bash
-# Flexible client combinations
-just test-android-android
-just test-ios-ios  
-just test-cross-platform
-just test-emulator-matrix
+## Writing Test Scenarios
+
+Scenarios are defined in **TOML files** that work with **both** testing systems.
+
+### Minimal Example
+
+```toml
+# scenarios/hello_world.toml
+
+[metadata]
+name = "Hello World"
+description = "Alice says hello to Bob"
+
+[[peers]]
+name = "alice"
+
+[[peers]]
+name = "bob"
+
+[[sequence]]
+at_time_seconds = 2.0
+action = "SendMessage"
+from = "alice"
+to = "bob"
+content = "Hello World!"
+
+[[validation.final_checks]]
+type = "MessageDelivered"
+from = "alice"
+to = "bob"
+content = "Hello World!"
 ```
 
-### Data-Driven Scenario Testing
-```bash
-cd scenario-runner && nix develop
+### Advanced Example with Network Simulation
 
-# Run scenarios with Android environment
-ANDROID_HOME="/path/to/android/sdk" cargo run -- run-android ../scenarios/android_to_android.toml
-cargo run -- run-file ../scenarios/basic_messaging.toml
-cargo run -- validate ../scenarios/mesh_network.toml
-cargo run -- list
+```toml
+# scenarios/network_partition.toml
+
+[metadata]
+name = "Network Partition Recovery"
+description = "Test mesh heals after partition"
+
+# Network simulation (virtual system only)
+[network]
+latency_ms = 50
+packet_loss = 0.05
+
+[[peers]]
+name = "alice"
+
+[[peers]]
+name = "bob"
+
+[[peers]]
+name = "charlie"
+
+[[sequence]]
+at_time_seconds = 5.0
+action = "PartitionNetwork"
+isolated_peers = ["charlie"]
+
+[[sequence]]
+at_time_seconds = 10.0
+action = "SendMessage"
+from = "alice"
+to = "charlie"
+content = "Are you there?"
+
+[[sequence]]
+at_time_seconds = 15.0
+action = "HealNetwork"
+
+[[validation.final_checks]]
+type = "MessageDelivered"
+from = "alice"
+to = "charlie"
+content = "Are you there?"
+timeout_seconds = 30
 ```
 
-### CLI/Web Client Testing (scenario-runner)
+## Design Principles
+
+### Do This
+```rust
+// virtual: Use mocked network
+let router = NetworkRouter::new()
+    .with_latency(Duration::from_millis(50))
+    .with_packet_loss(0.1);
+
+// device: Use real devices
+let sim = IosSimulator::create("alice")?;
+sim.install_app("BitChat.app")?;
+```
+
+### Don't Do This
+```rust
+// virtual should NOT use real devices
+let sim = IosSimulator::create("alice")?;  // WRONG!
+
+// device should NOT mock protocol
+let runtime = BitchatRuntime::new_with_mocks()?;  // WRONG!
+```
+
+### Abstract vs Concrete Actions
+```toml
+# GOOD - abstract action
+[[sequence]]
+action = "SendMessage"
+from = "alice"
+to = "bob"
+
+# BAD - platform-specific implementation
+[[sequence]]
+action = "TapButton"
+button_id = "send_button_ios"
+```
+
+## Decision Tree: Which System to Use?
+
+```
+Are you testing...
+
+├─ Protocol logic?
+│  ├─ State transitions? → virtual
+│  ├─ Message ordering? → virtual
+│  ├─ Fault tolerance? → virtual
+│  └─ Cryptography? → virtual
+│
+└─ Final application?
+   ├─ UI behavior? → device
+   ├─ OS integration? → device
+   ├─ Real Bluetooth? → device
+   └─ App stability? → device
+```
+
+**Rule of Thumb:** Need speed and determinism → `virtual`. Need real-world confidence → `device`.
+
+## Common Commands
+
+### Development Workflow
 ```bash
-cd scenario-runner && nix develop
+# Development cycle (fast → real-world verification)
+just dev-cycle 02_messaging_basic
 
-# Test with CLI client (default)
-cargo run -- scenario deterministic-messaging
-cargo run -- scenario transport-failover
+# Test across all client combinations
+just test-matrix 02_messaging_basic
 
-# Test with Web (WASM) client
-cargo run -- --client-type web scenario deterministic-messaging
-cargo run -- --client-type web scenario transport-failover
-
-# Cross-implementation testing (CLI ↔ Web)
-cargo run -- cross-implementation-test --client1 cli --client2 web
-
-# Run all scenarios
-cargo run -- all-scenarios
+# Quick health check
+just smoke-test
 
 # List available scenarios
-cargo run -- list
+just list-scenarios
 ```
 
-### Cross-Framework Testing (Using Client Bridge)
+### Build System
 ```bash
-cd scenario-runner && nix develop
+# Build all testing systems
+just build
 
-# The UnifiedClientType enum enables testing across frameworks
-# Currently supports: cli, web, ios, android
+# Build specific systems
+just build-virtual
+just build-device
 
-# Check client pair compatibility (in Rust code)
-use scenario_runner::{UnifiedClientType, ClientPair};
-
-let pair = ClientPair::new(UnifiedClientType::Cli, UnifiedClientType::Ios);
-println!("Requires bridging: {}", pair.requires_bridging());  // true
-println!("Strategy: {:?}", pair.testing_strategy());
-
-// Same-framework pairs (ready to use)
-// - CLI ↔ Web (scenario-runner)
-// - iOS ↔ Android (emulator-rig)
-
-// Cross-framework pairs (bridge implemented, orchestration needed)
-// - CLI ↔ iOS
-// - CLI ↔ Android  
-// - Web ↔ iOS
-// - Web ↔ Android
+# Check environments are ready
+just check-all
 ```
 
-## Platform Support
+### Debugging
+```bash
+# Virtual testing with verbose output
+cd virtual
+cargo run --release -- execute ../scenarios/my_test.toml --verbose
 
-| Client | Language | Framework | Implementation Path | Automation | Status |
-|--------|----------|-----------|---------------------|------------|--------|
-| **iOS** | Swift | emulator-rig | `vendored/bitchat-ios/` | Appium + XCUITest | ✅ Ready |
-| **Android** | Kotlin | emulator-rig | `vendored/bitchat-android/` | Appium + UiAutomator2 | ✅ Ready |
-| **CLI** | Rust | scenario-runner | `../../crates/bitchat-cli/` | JSON events | ✅ Working |
-| **Web** | Rust (WASM) | scenario-runner | `../../crates/bitchat-web/` | JSON events | ✅ **Fixed 2025-01-20** |
-
-### Implementation Details
-
-- **iOS (Swift)**: Canonical iOS implementation with full feature parity, includes Noise protocol, BLE mesh, Nostr relay support, and Tor integration
-- **Android (Kotlin)**: Canonical Android implementation with full feature parity, includes all protocol features and transport layers
-- **CLI (Rust)**: Reference Rust implementation for testing and development
-- **Web (WASM)**: Browser-based Rust implementation compiled to WebAssembly
-  - **Note**: WASM build fixed 2025-01-20 by making `std` and `wasm` features independent
-  - Uses `async-channel` for no_std compatibility instead of `futures-channel::mpsc`
-  - Feature flags now composable: can enable `std`, `wasm`, or both together
-
-## Key Features
-
-### emulator-rig Framework
-- **Real Mobile App Testing** - Black-box testing of actual Swift (iOS) and Kotlin (Android) implementations
-- **Appium Integration** - UI automation for iOS Simulator and Android Emulator
-- **Network Analysis** - mitmproxy integration for protocol validation
-- **Cross-Platform Testing** - iOS ↔ iOS, Android ↔ Android, and iOS ↔ Android scenarios
-- **Hybrid Nix Environment** - Automatic detection of system development tools (Xcode, Android SDK)
-
-### scenario-runner Framework
-- **Simulation-Based Testing** - Mock network environment with configurable conditions
-- **Protocol Scenarios** - Comprehensive protocol testing (handshake, rekey, byzantine fault, etc.)
-- **Event-Driven Orchestration** - Deterministic, reproducible test execution
-- **Data-Driven Configuration** - TOML scenario files with validation rules
-- **CLI & WASM Support** - Tests Rust CLI and browser-based WASM clients *(WASM fixed 2025-01-20)*
-- **Cross-Implementation Testing** - Validates CLI ↔ Web compatibility
-- **Independent Feature Flags** - `std` and `wasm` features can be used independently or together
-- **Client Type Bridge** - Unified client type system for cross-framework testing *(New 2025-01-20)*
-
-### Integration & Client Bridge (New 2025-01-20)
-- **Unified Client Types** - `UnifiedClientType` enum supports all 4 implementations (CLI, Web, iOS, Android)
-- **Framework Bridging** - Automatic conversion between scenario-runner and emulator-rig client types
-- **Client Pair Validation** - Validates compatibility and determines testing strategy
-- **Testing Strategies**:
-  - **Single Framework**: CLI↔Web (scenario-runner), iOS↔Android (emulator-rig)
-  - **Cross Framework**: CLI↔iOS, CLI↔Android, Web↔iOS, Web↔Android (bridge ready, orchestration needed)
-- **Fallback Mechanisms** - Automatic mock simulation when emulators unavailable
-- **Comprehensive Coverage** - From protocol-level simulation to real app black-box testing
-
-### Client Bridge API
-```rust
-use scenario_runner::{UnifiedClientType, ClientPair, TestingFramework};
-
-// Create unified client types
-let cli = UnifiedClientType::Cli;
-let ios = UnifiedClientType::Ios;
-
-// Check framework requirements
-assert!(cli.supports_scenario_runner());
-assert!(ios.requires_emulator_rig());
-
-// Validate client pairs
-let pair = ClientPair::new(cli, ios);
-assert!(pair.requires_bridging());  // Cross-framework testing
-
-// Convert between framework-specific types
-use std::convert::TryFrom;
-let scenario_cli = scenario_runner::event_orchestrator::ClientType::try_from(cli).unwrap();
-let emulator_ios = bitchat_emulator_harness::ClientType::try_from(ios).unwrap();
+# Device testing with debug logs
+cd device  
+RUST_LOG=debug cargo run --release -- execute --clients ios,ios ../scenarios/my_test.toml
 ```
+
+### Adding New Scenarios
+```bash
+# 1. Create from template
+just new-scenario my_new_test
+
+# 2. Edit the TOML file
+vim scenarios/my_new_test.toml
+
+# 3. Test with fast simulation first
+just test-scenario my_new_test cli,cli
+
+# 4. Test with real devices when ready
+just test-scenario my_new_test ios,ios
+```
+
+## Testing Pyramid
+
+```
+         /\
+        /  \       device
+       /E2E \      (10+ tests, minutes, high confidence)
+      /______\     
+     /        \    
+    /          \   virtual
+   / Integration\  (100+ tests, seconds, deterministic)
+  /______________\ 
+ /                \
+/  Unit Tests      \ cargo test
+\__________________/ (1000+ tests, instant, focused)
+```
+
+## Troubleshooting
+
+### Virtual Tests Failing
+```bash
+cd virtual
+cargo run --release -- execute ../scenarios/failing_test.toml
+cargo check
+cargo test
+```
+
+### Device Tests Failing
+```bash
+# Check simulators and emulators
+xcrun simctl list devices
+adb devices
+
+# Rebuild apps
+cd device && just build-apps
+
+# Check environment
+just check-env
+```
+
+### Environment Issues
+```bash
+# Check both environments
+just check-all
+
+# Clean and rebuild
+cd virtual && just clean && just build
+cd device && just clean && just build
+```
+
+## Implementation Status
+
+**Current:**
+- TOML scenario format implemented
+- Universal client bridge working
+- iOS and Android emulation functional
+- Virtual system with deterministic simulation
+
+**In Progress:**
+- Scenario executor trait standardization
+- Enhanced TOML schema with validation rules
+- Justfile simplification
+
+**Benefits:**
+- Single scenario definition works everywhere
+- Clear separation between fast simulation and real-world testing
+- Unified interface for all client types
+- Optimal speed: seconds for development, minutes for confidence
+- Easy maintenance and flexibility for new client types
+
+This architecture ensures fast development cycles with thorough real-world validation before shipping.

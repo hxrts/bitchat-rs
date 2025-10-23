@@ -1,7 +1,7 @@
-use alloc::{vec::Vec, string::String};
+use crate::errors::BitchatError;
+use alloc::{string::String, vec::Vec};
 use core::convert::TryInto;
 use serde::{Deserialize, Serialize};
-use crate::errors::BitchatError;
 
 /// TLV (Type-Length-Value) encoding types for BitChat protocol
 #[repr(u8)]
@@ -71,8 +71,7 @@ impl TlvEntry {
         if self.tlv_type != TlvType::Nickname {
             return Err(BitchatError::InvalidTlvType(self.tlv_type as u8));
         }
-        String::from_utf8(self.value.clone())
-            .map_err(|_| BitchatError::InvalidUtf8)
+        String::from_utf8(self.value.clone()).map_err(|_| BitchatError::InvalidUtf8)
     }
 
     /// Get the value as a 32-byte key
@@ -80,7 +79,9 @@ impl TlvEntry {
         if self.value.len() != 32 {
             return Err(BitchatError::InvalidKeyLength(self.value.len()));
         }
-        self.value.as_slice().try_into()
+        self.value
+            .as_slice()
+            .try_into()
             .map_err(|_| BitchatError::InvalidKeyLength(self.value.len()))
     }
 
@@ -89,14 +90,15 @@ impl TlvEntry {
         if self.tlv_type != TlvType::DirectNeighbors {
             return Err(BitchatError::InvalidTlvType(self.tlv_type as u8));
         }
-        
-        if self.value.len() % 32 != 0 {
+
+        if !self.value.len().is_multiple_of(32) {
             return Err(BitchatError::InvalidDataLength(self.value.len()));
         }
 
         let mut neighbors = Vec::new();
         for chunk in self.value.chunks_exact(32) {
-            let peer_id: [u8; 32] = chunk.try_into()
+            let peer_id: [u8; 32] = chunk
+                .try_into()
                 .map_err(|_| BitchatError::InvalidKeyLength(chunk.len()))?;
             neighbors.push(peer_id);
         }
@@ -106,17 +108,17 @@ impl TlvEntry {
     /// Encode this TLV entry to bytes
     pub fn encode(&self) -> Vec<u8> {
         let mut encoded = Vec::new();
-        
+
         // Type (1 byte)
         encoded.push(self.tlv_type as u8);
-        
+
         // Length (2 bytes, big-endian)
         let length = self.value.len() as u16;
         encoded.extend_from_slice(&length.to_be_bytes());
-        
+
         // Value
         encoded.extend_from_slice(&self.value);
-        
+
         encoded
     }
 
@@ -128,19 +130,19 @@ impl TlvEntry {
 
         // Parse type
         let tlv_type = TlvType::from_u8(data[0])?;
-        
+
         // Parse length (2 bytes, big-endian)
         let length = u16::from_be_bytes([data[1], data[2]]) as usize;
-        
+
         // Check if we have enough data for the value
         let total_length = 3 + length;
         if data.len() < total_length {
             return Err(BitchatError::InsufficientData(data.len()));
         }
-        
+
         // Extract value
         let value = data[3..3 + length].to_vec();
-        
+
         let entry = TlvEntry::new(tlv_type, value);
         Ok((entry, total_length))
     }
@@ -230,11 +232,11 @@ mod tests {
     #[test]
     fn test_key_entries() {
         let key = [0x42; 32];
-        
+
         let noise_entry = TlvEntry::noise_public_key(&key);
         assert_eq!(noise_entry.tlv_type, TlvType::NoisePublicKey);
         assert_eq!(noise_entry.as_key().unwrap(), key);
-        
+
         let signing_entry = TlvEntry::signing_public_key(&key);
         assert_eq!(signing_entry.tlv_type, TlvType::SigningPublicKey);
         assert_eq!(signing_entry.as_key().unwrap(), key);
@@ -245,10 +247,10 @@ mod tests {
         let neighbor1 = [0x11; 32];
         let neighbor2 = [0x22; 32];
         let neighbors = [&neighbor1, &neighbor2];
-        
+
         let entry = TlvEntry::direct_neighbors(&neighbors);
         assert_eq!(entry.tlv_type, TlvType::DirectNeighbors);
-        
+
         let decoded_neighbors = entry.as_neighbors().unwrap();
         assert_eq!(decoded_neighbors.len(), 2);
         assert_eq!(decoded_neighbors[0], neighbor1);
@@ -259,7 +261,7 @@ mod tests {
     fn test_tlv_entry_encode_decode() {
         let entry = TlvEntry::nickname("test").unwrap();
         let encoded = entry.encode();
-        
+
         let (decoded_entry, bytes_consumed) = TlvEntry::decode(&encoded).unwrap();
         assert_eq!(bytes_consumed, encoded.len());
         assert_eq!(decoded_entry, entry);
@@ -269,19 +271,19 @@ mod tests {
     #[test]
     fn test_tlv_codec_multiple_entries() {
         let mut codec = TlvCodec::new();
-        
+
         codec.add_entry(TlvEntry::nickname("alice").unwrap());
         codec.add_entry(TlvEntry::noise_public_key(&[0x42; 32]));
         codec.add_entry(TlvEntry::signing_public_key(&[0x43; 32]));
-        
+
         let encoded = codec.encode();
         let decoded_codec = TlvCodec::decode(&encoded).unwrap();
-        
+
         assert_eq!(decoded_codec.entries().len(), 3);
-        
+
         let nickname_entry = decoded_codec.find_entry(TlvType::Nickname).unwrap();
         assert_eq!(nickname_entry.as_nickname().unwrap(), "alice");
-        
+
         let noise_entry = decoded_codec.find_entry(TlvType::NoisePublicKey).unwrap();
         assert_eq!(noise_entry.as_key().unwrap(), [0x42; 32]);
     }
@@ -291,10 +293,10 @@ mod tests {
         let mut codec = TlvCodec::new();
         codec.add_entry(TlvEntry::nickname("alice").unwrap());
         codec.add_entry(TlvEntry::noise_public_key(&[0x42; 32]));
-        
+
         let required = [TlvType::Nickname, TlvType::NoisePublicKey];
         assert!(codec.validate_required(&required).is_ok());
-        
+
         let required_with_missing = [TlvType::Nickname, TlvType::SigningPublicKey];
         assert!(codec.validate_required(&required_with_missing).is_err());
     }

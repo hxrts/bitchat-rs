@@ -382,7 +382,7 @@ impl Padding {
         }
 
         // For very large data, round up to next 2048-byte boundary
-        ((length + 2047) / 2048) * 2048
+        length.div_ceil(2048) * 2048
     }
 }
 

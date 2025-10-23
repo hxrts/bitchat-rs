@@ -23,7 +23,9 @@ test-verbose:
 
 # Run only integration tests
 test-integration:
-    cargo test --test integration_tests
+    cargo test --test integration_decomposed_runtime
+    cargo test --test integration_tests_csp
+    cargo test --workspace --test '*integration*'
 
 # Check code without building
 check:
@@ -47,9 +49,9 @@ setup-relay:
     @echo "=============================="
     @echo ""
     @echo "BitChat will use external Nostr relays for testing:"
-    @echo "  • wss://relay.damus.io"
-    @echo "  • wss://nos.lol" 
-    @echo "  • wss://relay.nostr.band"
+    @echo "  - wss://relay.damus.io"
+    @echo "  - wss://nos.lol" 
+    @echo "  - wss://relay.nostr.band"
     @echo ""
     @echo "No local relay setup needed!"
     @echo "These relays are configured by default in the Nostr transport."
@@ -68,51 +70,53 @@ stop-relay:
 # View relay information
 relay-logs:
     @echo "BitChat uses external Nostr relays:"
-    @echo "  • wss://relay.damus.io"
-    @echo "  • wss://nos.lol" 
-    @echo "  • wss://relay.nostr.band"
+    @echo "  - wss://relay.damus.io"
+    @echo "  - wss://nos.lol" 
+    @echo "  - wss://relay.nostr.band"
     @echo ""
     @echo "No local relay logs available."
     @echo "For debugging, check BitChat application logs with RUST_LOG=debug"
 
 # Run BitChat CLI in chat mode with external relays  
 chat-external name="TestUser":
-    cargo run --bin bitchat -- chat --name "{{name}}"
+    cargo run --bin bitchat-cli -- chat --name "{{name}}"
 
 # Run BitChat CLI in chat mode with default relays
 chat name="TestUser":
-    cargo run --bin bitchat -- chat --name "{{name}}"
+    cargo run --bin bitchat-cli -- chat --name "{{name}}"
 
 # Send a test message
 send-message message="Hello BitChat!" to="":
     #!/usr/bin/env bash
     if [ -n "{{to}}" ]; then
-        cargo run --bin bitchat -- send --to "{{to}}" "{{message}}"
+        cargo run --bin bitchat-cli -- send --to "{{to}}" "{{message}}"
     else
-        cargo run --bin bitchat -- send "{{message}}"
+        cargo run --bin bitchat-cli -- send "{{message}}"
     fi
 
 # List discovered peers
 peers:
-    cargo run --bin bitchat -- peers
+    cargo run --bin bitchat-cli -- peers
 
 # Run transport tests
 test-transports:
-    cargo run --bin bitchat -- test
+    @echo "Running transport-specific tests..."
+    cargo test -p bitchat-nostr --lib
+    cargo test -p bitchat-runtime --lib --features testing
 
 # Build and run with BLE only
 run-ble-only:
-    cargo run --bin bitchat -- --no-nostr chat
+    cargo run --bin bitchat-cli -- --no-nostr chat
 
 # Build and run with Nostr only
 run-nostr-only:
-    cargo run --bin bitchat -- --no-ble chat
+    cargo run --bin bitchat-cli -- --no-ble chat
 
 # Run full Phase 3 demo (both transports)
 demo:
     @echo "Starting BitChat Phase 3 Demo..."
     @echo "This will start both BLE and Nostr transports"
-    cargo run --bin bitchat -- chat --name "Demo User"
+    cargo run --bin bitchat-cli -- chat --name "Demo User"
 
 # Quick development check (format + clippy + test)
 dev-check:

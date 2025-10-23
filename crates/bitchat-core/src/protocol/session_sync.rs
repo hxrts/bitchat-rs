@@ -3,7 +3,11 @@
 //! This module implements synchronization of session state and message history
 //! across multiple devices belonging to the same BitChat identity.
 
-use alloc::{collections::BTreeMap, string::{String, ToString}, vec::Vec};
+use alloc::{
+    collections::BTreeMap,
+    string::{String, ToString},
+    vec::Vec,
+};
 use serde::{Deserialize, Serialize};
 
 use crate::protocol::message::NoisePayloadType;
@@ -302,7 +306,11 @@ pub struct SessionSyncRequest {
 
 impl SessionSyncRequest {
     /// Create new sync request
-    pub fn new(device_id: DeviceId, sessions: Vec<SessionSyncState>, messages: Vec<MessageRef>) -> Self {
+    pub fn new(
+        device_id: DeviceId,
+        sessions: Vec<SessionSyncState>,
+        messages: Vec<MessageRef>,
+    ) -> Self {
         Self {
             device_id,
             known_sessions: sessions,
@@ -639,7 +647,9 @@ impl MultiDeviceSessionManager {
 
     /// Check if any sessions need synchronization
     pub fn needs_sync(&self) -> bool {
-        self.session_states.values().any(|session| session.needs_sync())
+        self.session_states
+            .values()
+            .any(|session| session.needs_sync())
     }
 
     /// Get devices that need sync (haven't synced recently)
@@ -668,7 +678,12 @@ mod tests {
     fn create_test_device(id: u8, name: &str) -> DeviceInfo {
         let device_id = DeviceId::from_string(format!("device-{}", id));
         let fingerprint = Fingerprint::new([id; 32]);
-        DeviceInfo::new(device_id, name.to_string(), DeviceType::Desktop, fingerprint)
+        DeviceInfo::new(
+            device_id,
+            name.to_string(),
+            DeviceType::Desktop,
+            fingerprint,
+        )
     }
 
     #[test]
@@ -746,7 +761,7 @@ mod tests {
         // Create an older version of the session to simulate sync
         let mut old_session = SessionSyncState::new(peer_id, SessionStatus::Active);
         old_session.last_sync = Timestamp::new(Timestamp::now().as_millis() - 1000); // 1 second ago
-        
+
         let request = SessionSyncRequest::new(device2.device_id, vec![old_session], Vec::new());
         let response = manager.process_sync_request(&request).unwrap();
 

@@ -23,7 +23,6 @@ Decentralized, peer-to-peer messaging protocol designed for secure, private, and
 
 CSP-based multi-task orchestrator with channel communication
 - `bitchat-core` - Protocol, cryptography, and data structures
-- `bitchat-harness` - Shared runtime plumbing and transport traits
 - `bitchat-runtime` - Task orchestration and lifecycle management
 - `bitchat-ble` / `bitchat-nostr` - Transport implementations
 - `bitchat-cli` / `bitchat-web` - Application frontends
@@ -38,16 +37,16 @@ See `docs/protocol-architecture.md` for complete specification.
 
 ### Native
 ```bash
-nix develop              # Enter development environment
+nix develop              # Enter development environment (optional)
 just build               # Build all crates
-just test                # Run tests (101 canonical + 26 experimental)
+just test                # Run tests
 just demo                # Run CLI demo (BLE + Nostr)
 ```
 
 ### With Experimental Features
 ```bash
 cargo build --features experimental
-cargo test --features experimental     # Run all 127 tests
+cargo test --features experimental
 ```
 
 ### WebAssembly

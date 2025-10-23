@@ -140,6 +140,7 @@ impl Nip17Content {
 // ----------------------------------------------------------------------------
 
 /// NIP-17 gift-wrapper for creating encrypted direct messages
+#[derive(Clone)]
 pub struct Nip17GiftWrapper {
     /// Our private keys for encryption
     sender_keys: Keys,
@@ -471,7 +472,8 @@ mod tests {
             Timestamp::now(),
             b"Test message".to_vec(),
             PacketFlags::NONE,
-        ).unwrap();
+        )
+        .unwrap();
 
         let content = Nip17Content::from_bitchat_packet(&packet).unwrap();
         assert!(content.content.starts_with(BITCHAT_NIP17_PREFIX));

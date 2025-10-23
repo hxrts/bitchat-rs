@@ -32,6 +32,10 @@ pub enum DeliveryStatus {
 // Import delivery configuration from the centralized config module
 pub use crate::config::DeliveryConfig;
 
+// Import acknowledgment types for integration
+use crate::protocol::acknowledgments::{DeliveryAck, ReadReceipt, ReceiptManager, EnhancedDeliveryStatus};
+use crate::protocol::message_store::MessageId;
+
 // ----------------------------------------------------------------------------
 // Delivery Attempt
 // ----------------------------------------------------------------------------
@@ -476,6 +480,247 @@ impl DeliveryStats {
 }
 
 // ----------------------------------------------------------------------------
+// Enhanced Delivery Tracker with Receipt Integration
+// ----------------------------------------------------------------------------
+
+/// Enhanced delivery tracker that integrates read receipts and delivery acknowledgments
+/// 
+/// This extends the basic DeliveryTracker with canonical receipt management,
+/// providing comprehensive message delivery and read status tracking.
+pub struct EnhancedDeliveryTracker<T: TimeSource> {
+    /// Core delivery tracking
+    delivery_tracker: DeliveryTracker<T>,
+    /// Receipt management
+    receipt_manager: ReceiptManager,
+    /// Enhanced delivery statuses keyed by message UUID
+    enhanced_statuses: HashMap<Uuid, EnhancedDeliveryStatus>,
+    /// Content-addressed message ID mapping (UUID -> MessageId for receipts)
+    message_id_mapping: HashMap<Uuid, MessageId>,
+}
+
+impl<T: TimeSource> EnhancedDeliveryTracker<T> {
+    /// Create a new enhanced delivery tracker
+    pub fn new(time_source: T) -> Self {
+        Self {
+            delivery_tracker: DeliveryTracker::new(time_source),
+            receipt_manager: ReceiptManager::new(),
+            enhanced_statuses: HashMap::new(),
+            message_id_mapping: HashMap::new(),
+        }
+    }
+
+    /// Create with custom configuration
+    pub fn with_config(config: DeliveryConfig, time_source: T) -> Self {
+        Self {
+            delivery_tracker: DeliveryTracker::with_config(config, time_source),
+            receipt_manager: ReceiptManager::new(),
+            enhanced_statuses: HashMap::new(),
+            message_id_mapping: HashMap::new(),
+        }
+    }
+
+    /// Track a message with both UUID and content-addressed MessageId
+    pub fn track_message_with_id(
+        &mut self,
+        message_uuid: Uuid,
+        message_id: MessageId,
+        recipient: PeerId,
+        payload: Vec<u8>,
+    ) -> &mut TrackedMessage {
+        // Track in the core delivery tracker
+        let tracked = self.delivery_tracker.track_message(message_uuid, recipient, payload);
+        
+        // Store the mapping and initial status
+        self.message_id_mapping.insert(message_uuid, message_id);
+        self.enhanced_statuses.insert(message_uuid, EnhancedDeliveryStatus::Sending);
+        
+        tracked
+    }
+
+    /// Process a received delivery acknowledgment
+    pub fn process_delivery_ack(&mut self, ack: &DeliveryAck) -> bool {
+        // Find the UUID corresponding to this MessageId
+        let message_uuid = self.message_id_mapping
+            .iter()
+            .find(|(_, &id)| id == ack.message_id)
+            .map(|(&uuid, _)| uuid);
+
+        if let Some(uuid) = message_uuid {
+            // Update core delivery tracker
+            let success = self.delivery_tracker.confirm_delivery(&uuid);
+            
+            if success {
+                // Update enhanced status
+                let enhanced_status = EnhancedDeliveryStatus::from_delivery_ack(ack);
+                self.enhanced_statuses.insert(uuid, enhanced_status);
+            }
+            
+            success
+        } else {
+            false
+        }
+    }
+
+    /// Process a received read receipt
+    pub fn process_read_receipt(&mut self, receipt: &ReadReceipt) -> bool {
+        // Find the UUID corresponding to this MessageId
+        let message_uuid = self.message_id_mapping
+            .iter()
+            .find(|(_, &id)| id == receipt.message_id)
+            .map(|(&uuid, _)| uuid);
+
+        if let Some(uuid) = message_uuid {
+            // Update enhanced status (read receipt supersedes delivery ack)
+            let enhanced_status = EnhancedDeliveryStatus::from_read_receipt(receipt);
+            self.enhanced_statuses.insert(uuid, enhanced_status);
+            true
+        } else {
+            false
+        }
+    }
+
+    /// Check if a delivery acknowledgment should be sent for a received message
+    pub fn should_send_delivery_ack(&self, message_id: &MessageId) -> bool {
+        self.receipt_manager.should_send_delivery_ack(message_id)
+    }
+
+    /// Check if a read receipt should be sent for a received message
+    pub fn should_send_read_receipt(&self, message_id: &MessageId) -> bool {
+        self.receipt_manager.should_send_read_receipt(message_id)
+    }
+
+    /// Mark that a delivery acknowledgment has been sent
+    pub fn mark_delivery_ack_sent(&mut self, message_id: MessageId) {
+        self.receipt_manager.mark_delivery_ack_sent(message_id);
+    }
+
+    /// Mark that a read receipt has been sent
+    pub fn mark_read_receipt_sent(&mut self, message_id: MessageId) {
+        self.receipt_manager.mark_read_receipt_sent(message_id);
+    }
+
+    /// Get the enhanced delivery status for a message
+    pub fn get_enhanced_status(&self, message_uuid: &Uuid) -> Option<&EnhancedDeliveryStatus> {
+        self.enhanced_statuses.get(message_uuid)
+    }
+
+    /// Get the content-addressed MessageId for a tracked message
+    pub fn get_message_id(&self, message_uuid: &Uuid) -> Option<&MessageId> {
+        self.message_id_mapping.get(message_uuid)
+    }
+
+    /// Configure receipt privacy settings
+    pub fn configure_receipts(&mut self, send_delivery_acks: bool, send_read_receipts: bool) {
+        self.receipt_manager.set_delivery_acks_enabled(send_delivery_acks);
+        self.receipt_manager.set_read_receipts_enabled(send_read_receipts);
+    }
+
+    /// Get receipt manager for direct access
+    pub fn receipt_manager(&self) -> &ReceiptManager {
+        &self.receipt_manager
+    }
+
+    /// Get mutable receipt manager for direct access
+    pub fn receipt_manager_mut(&mut self) -> &mut ReceiptManager {
+        &mut self.receipt_manager
+    }
+
+    /// Get core delivery tracker for direct access
+    pub fn delivery_tracker(&self) -> &DeliveryTracker<T> {
+        &self.delivery_tracker
+    }
+
+    /// Get mutable core delivery tracker for direct access  
+    pub fn delivery_tracker_mut(&mut self) -> &mut DeliveryTracker<T> {
+        &mut self.delivery_tracker
+    }
+
+    /// Clean up old data to prevent memory growth
+    pub fn cleanup(&mut self) -> (Vec<TrackedMessage>, Vec<TrackedMessage>) {
+        // Clean up core delivery tracker
+        let (completed, expired) = self.delivery_tracker.cleanup();
+        
+        // Clean up enhanced statuses for completed/expired messages
+        for message in &completed {
+            self.enhanced_statuses.remove(&message.message_id);
+            self.message_id_mapping.remove(&message.message_id);
+        }
+        
+        for message in &expired {
+            self.enhanced_statuses.remove(&message.message_id);
+            self.message_id_mapping.remove(&message.message_id);
+        }
+        
+        // Clean up receipt manager
+        self.receipt_manager.cleanup_old_receipts(1000); // Keep last 1000 receipts
+        
+        (completed, expired)
+    }
+
+    /// Get comprehensive delivery statistics
+    pub fn get_enhanced_stats(&self) -> EnhancedDeliveryStats {
+        let delivery_stats = self.delivery_tracker.get_stats();
+        let receipt_stats = self.receipt_manager.get_stats();
+        
+        // Count enhanced statuses
+        let mut delivered_count = 0;
+        let mut read_count = 0;
+        
+        for status in self.enhanced_statuses.values() {
+            if status.is_delivered() {
+                delivered_count += 1;
+            }
+            if status.is_read() {
+                read_count += 1;
+            }
+        }
+        
+        EnhancedDeliveryStats {
+            basic_stats: delivery_stats,
+            receipt_stats,
+            delivered_count,
+            read_count,
+            tracked_messages_count: self.enhanced_statuses.len(),
+        }
+    }
+}
+
+/// Enhanced delivery statistics combining core delivery and receipt data
+#[derive(Debug, Clone)]
+pub struct EnhancedDeliveryStats {
+    /// Basic delivery statistics
+    pub basic_stats: DeliveryStats,
+    /// Receipt manager statistics
+    pub receipt_stats: crate::protocol::acknowledgments::ReceiptStats,
+    /// Number of messages confirmed delivered
+    pub delivered_count: usize,
+    /// Number of messages confirmed read
+    pub read_count: usize,
+    /// Total number of tracked messages with enhanced status
+    pub tracked_messages_count: usize,
+}
+
+impl EnhancedDeliveryStats {
+    /// Calculate read rate (read messages / delivered messages)
+    pub fn read_rate(&self) -> f32 {
+        if self.delivered_count == 0 {
+            0.0
+        } else {
+            self.read_count as f32 / self.delivered_count as f32
+        }
+    }
+
+    /// Calculate delivery confirmation rate (delivered / sent)
+    pub fn delivery_confirmation_rate(&self) -> f32 {
+        if self.basic_stats.sent == 0 {
+            0.0
+        } else {
+            self.delivered_count as f32 / self.basic_stats.sent as f32
+        }
+    }
+}
+
+// ----------------------------------------------------------------------------
 // Tests
 // ----------------------------------------------------------------------------
 
@@ -615,5 +860,78 @@ mod tests {
         // Second attempt (reaches max)
         tracked.mark_sent(Duration::from_secs(1), &time_source);
         assert!(!tracked.can_retry());
+    }
+
+    #[cfg(any(feature = "std", target_arch = "wasm32"))]
+    #[test]
+    fn test_enhanced_delivery_tracker_integration() {
+        use crate::protocol::acknowledgments::{DeliveryAck, ReadReceipt};
+        use crate::protocol::message_store::MessageId;
+        use sha2::{Digest, Sha256};
+
+        let time_source = SystemTimeSource;
+        let mut tracker = EnhancedDeliveryTracker::new(time_source);
+
+        // Create test IDs
+        let message_uuid = Uuid::new_v4();
+        let hash = Sha256::digest(b"test message");
+        let message_id = MessageId::from_bytes(hash.into());
+        let recipient = PeerId::new([1, 2, 3, 4, 5, 6, 7, 8]);
+        let payload = b"test message".to_vec();
+
+        // Track a message
+        tracker.track_message_with_id(message_uuid, message_id, recipient, payload);
+
+        // Verify initial status
+        let status = tracker.get_enhanced_status(&message_uuid).unwrap();
+        assert!(matches!(status, EnhancedDeliveryStatus::Sending));
+
+        // Create and process delivery acknowledgment
+        let delivery_ack = DeliveryAck::new(message_id, recipient, Some("Alice".to_string()));
+        assert!(tracker.process_delivery_ack(&delivery_ack));
+
+        // Verify delivered status
+        let status = tracker.get_enhanced_status(&message_uuid).unwrap();
+        assert!(status.is_delivered());
+        assert!(!status.is_read());
+
+        // Create and process read receipt
+        let read_receipt = ReadReceipt::new(message_id, recipient, recipient, Some("Alice".to_string()));
+        assert!(tracker.process_read_receipt(&read_receipt));
+
+        // Verify read status
+        let status = tracker.get_enhanced_status(&message_uuid).unwrap();
+        assert!(status.is_delivered());
+        assert!(status.is_read());
+
+        // Check statistics
+        let stats = tracker.get_enhanced_stats();
+        assert_eq!(stats.delivered_count, 1);
+        assert_eq!(stats.read_count, 1);
+        assert_eq!(stats.read_rate(), 1.0);
+    }
+
+    #[cfg(any(feature = "std", target_arch = "wasm32"))]
+    #[test]
+    fn test_receipt_deduplication() {
+        use crate::protocol::message_store::MessageId;
+        use sha2::{Digest, Sha256};
+
+        let time_source = SystemTimeSource;
+        let tracker = EnhancedDeliveryTracker::new(time_source);
+
+        let hash = Sha256::digest(b"test message");
+        let message_id = MessageId::from_bytes(hash.into());
+
+        // Should allow first receipt
+        assert!(tracker.should_send_delivery_ack(&message_id));
+        assert!(tracker.should_send_read_receipt(&message_id));
+
+        // Configure privacy settings
+        let mut tracker = tracker;
+        tracker.configure_receipts(false, true); // Disable delivery acks, enable read receipts
+
+        assert!(!tracker.should_send_delivery_ack(&message_id));
+        assert!(tracker.should_send_read_receipt(&message_id));
     }
 }

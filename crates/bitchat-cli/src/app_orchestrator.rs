@@ -14,8 +14,8 @@ use bitchat_core::{
     BitchatError, BitchatResult, ChannelTransportType, EventSender, PeerId, TransportTask,
 };
 use bitchat_runtime::logic::{CoreLogicTask, LoggerWrapper};
-use tokio::task::JoinHandle;
 use std::collections::HashMap;
+use tokio::task::JoinHandle;
 
 // ----------------------------------------------------------------------------
 // CLI Application Orchestrator
@@ -258,7 +258,10 @@ impl CliAppOrchestrator {
     }
 
     /// Pause a specific transport
-    pub async fn pause_transport(&mut self, transport_type: ChannelTransportType) -> BitchatResult<()> {
+    pub async fn pause_transport(
+        &mut self,
+        transport_type: ChannelTransportType,
+    ) -> BitchatResult<()> {
         if !self.running {
             return Err(BitchatError::Transport(
                 TransportError::InvalidConfiguration {
@@ -283,7 +286,10 @@ impl CliAppOrchestrator {
     }
 
     /// Resume a specific transport
-    pub async fn resume_transport(&mut self, transport_type: ChannelTransportType) -> BitchatResult<()> {
+    pub async fn resume_transport(
+        &mut self,
+        transport_type: ChannelTransportType,
+    ) -> BitchatResult<()> {
         if !self.running {
             return Err(BitchatError::Transport(
                 TransportError::InvalidConfiguration {
@@ -312,7 +318,10 @@ impl CliAppOrchestrator {
                 _ => {
                     return Err(BitchatError::Transport(
                         TransportError::InvalidConfiguration {
-                            reason: format!("Transport {:?} not supported for resume", transport_type),
+                            reason: format!(
+                                "Transport {:?} not supported for resume",
+                                transport_type
+                            ),
                         },
                     ));
                 }
@@ -324,7 +333,10 @@ impl CliAppOrchestrator {
 
     /// Check if a transport is paused
     pub fn is_transport_paused(&self, transport_type: ChannelTransportType) -> bool {
-        self.paused_transports.get(&transport_type).copied().unwrap_or(false)
+        self.paused_transports
+            .get(&transport_type)
+            .copied()
+            .unwrap_or(false)
     }
 
     /// Get list of available transports
@@ -358,8 +370,10 @@ impl CliAppOrchestrator {
                             logger.clone(),
                         )
                         .await?;
-                    self.transport_handles.insert(ChannelTransportType::Ble, handle);
-                    self.paused_transports.insert(ChannelTransportType::Ble, false);
+                    self.transport_handles
+                        .insert(ChannelTransportType::Ble, handle);
+                    self.paused_transports
+                        .insert(ChannelTransportType::Ble, false);
                 }
                 ChannelTransportType::Nostr if self.transport_config.nostr_enabled => {
                     // Note: Nostr transport would be started here
@@ -457,7 +471,7 @@ mod tests {
     #[tokio::test]
     async fn test_orchestrator_lifecycle() {
         let peer_id = PeerId::new([1, 2, 3, 4, 5, 6, 7, 8]);
-        let mut orchestrator = CliAppOrchestrator::new(peer_id, false);
+        let orchestrator = CliAppOrchestrator::new(peer_id, false);
 
         assert!(!orchestrator.is_running());
 

@@ -113,10 +113,10 @@ sequenceDiagram
     B->>BLE: Broadcast to mesh (TTL=6)
     
     Note over A,B: Phase 10: Session Maintenance
-    Note over A,B: After 1 hour or 10,000 messages:<br/>Automatic rekey (new Noise handshake)
-    A->>B: NOISE_HANDSHAKE_INIT (new session)
-    B->>A: NOISE_HANDSHAKE_RESP
-    A->>B: NOISE_HANDSHAKE_FINAL
+    Note over A,B: After 24 hours or 1 billion messages:<br/>Automatic rekey (new Noise handshake)
+    A->>B: NOISE_HANDSHAKE (new session)
+    B->>A: NOISE_HANDSHAKE
+    A->>B: NOISE_HANDSHAKE
     Note over A,B: New transport keys established<br/>Old session destroyed
     
     Note over A,B: Phase 11: Graceful Disconnection
@@ -183,7 +183,8 @@ sequenceDiagram
 - Optional source routing for known topology paths
 
 **Phase 10: Session Maintenance**
-- Automatic rekey after 1 hour or 10,000 messages
+- Automatic rekey after 24 hours or 1 billion messages
+- 90% threshold trigger for message count (900 million messages)
 - Maintains forward secrecy over long sessions
 - New handshake performed transparently
 - Old session keys securely destroyed
@@ -297,7 +298,7 @@ Once a Noise session is established, peers exchange `BitchatPacket` structures, 
 
 Bitchat implements protocol version negotiation to ensure compatibility:
 
-- **v1:** Original protocol with 2-byte payload length (max 64 KiB)
+- **v1:** Original protocol with 1-byte payload length (max 255 bytes)
 - **v2:** Extended protocol with 4-byte payload length (max ~4 GiB)
 
 Version negotiation flow:
@@ -314,7 +315,7 @@ Type: 1 byte
 TTL: 1 byte
 Timestamp: 8 bytes (UInt64, big-endian, milliseconds since epoch)
 Flags: 1 byte
-PayloadLength: 2 bytes (UInt16, big-endian, max 64 KiB)
+PayloadLength: 1 byte (UInt8, max 255 bytes)
 ```
 
 **v2 Format (15 bytes):**
@@ -337,7 +338,7 @@ PayloadLength: 4 bytes (UInt32, big-endian, max ~4 GiB)
 | TTL             | 1            | Time-To-Live for mesh network routing. Decremented at each hop.                                         |
 | Timestamp       | 8            | `UInt64` millisecond timestamp of packet creation.                                                      |
 | Flags           | 1            | Bitmask for optional fields (`hasRecipient`, `hasSignature`, `isCompressed`, `hasRoute`).               |
-| Payload Length  | 2 or 4       | `UInt16` (v1) or `UInt32` (v2) length of the payload field.                                            |
+| Payload Length  | 1 or 4       | `UInt8` (v1) or `UInt32` (v2) length of the payload field.                                            |
 | **Variable**    | **...**      | **Variable-size fields**                                                                                |
 | Sender ID       | 8            | 8-byte truncated peer ID of the sender.                                                                 |
 | Recipient ID    | 8 (optional) | 8-byte truncated peer ID of the recipient. Present if `hasRecipient` flag is set. Broadcast if all `0xFF`. |
@@ -363,20 +364,15 @@ The `Type` field in the packet header indicates the type of the message:
 | Type | Hex  | Name                      | Description                                                    |
 |------|------|---------------------------|----------------------------------------------------------------|
 | 1    | 0x01 | `ANNOUNCE`                | Peer presence announcement with identity information           |
-| 4    | 0x04 | `MESSAGE`                 | Regular chat message                                           |
-| 16   | 0x10 | `NOISE_HANDSHAKE_INIT`    | Initiation of a Noise protocol handshake                       |
-| 17   | 0x11 | `NOISE_HANDSHAKE_RESP`    | Response to a Noise protocol handshake                         |
-| 18   | 0x12 | `NOISE_ENCRYPTED`         | Message encrypted with the Noise protocol                      |
-| 32   | 0x20 | `VERSION_HELLO`           | Protocol version negotiation hello                             |
-| 33   | 0x21 | `VERSION_ACK`             | Protocol version negotiation acknowledgment                    |
-| 33   | 0x21 | `REQUEST_SYNC`            | GCS filter sync request (gossip synchronization)               |
-| 34   | 0x22 | `FILE_TRANSFER`           | File transfer (images, audio, generic files)                   |
-| -    | 0x05 | `DELIVERY_ACK`            | Delivery acknowledgment for private messages                   |
-| -    | 0x06 | `READ_RECEIPT`            | Read receipt for messages                                      |
-| -    | 0x07 | `LEAVE`                   | Peer leaving notification                                      |
-| -    | 0x0A | `FRAGMENT_START`          | Start of a fragmented message                                  |
-| -    | 0x0B | `FRAGMENT_CONTINUE`       | Continuation of a fragmented message                           |
-| -    | 0x0C | `FRAGMENT_END`            | End of a fragmented message                                    |
+| 2    | 0x02 | `MESSAGE`                 | Regular chat message                                           |
+| 3    | 0x03 | `LEAVE`                   | Peer leaving notification                                      |
+| 16   | 0x10 | `NOISE_HANDSHAKE`         | Noise XX handshake (single type, not split)                   |
+| 17   | 0x11 | `NOISE_ENCRYPTED`         | Container for all encrypted payloads                          |
+| 32   | 0x20 | `FRAGMENT`                | Large message fragmentation                                    |
+| 33   | 0x21 | `REQUEST_SYNC`            | Mesh state synchronization request                            |
+| 34   | 0x22 | `FILE_TRANSFER`           | File transfer protocol                                         |
+| 48   | 0x30 | `VERSION_HELLO`           | Protocol version negotiation                                   |
+| 49   | 0x31 | `VERSION_ACK`             | Version acknowledgment                                         |
 
 ## 9. Application Layer: Message Format
 

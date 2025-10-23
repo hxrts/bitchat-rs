@@ -466,7 +466,7 @@ impl BitchatPacket {
         flags: PacketFlags,
     ) -> Result<Self> {
         let mut final_flags = flags;
-        
+
         // Ensure flags are consistent with optional fields
         if recipient_id.is_some() {
             final_flags = final_flags.with_recipient();
@@ -496,57 +496,56 @@ impl BitchatPacket {
     pub fn sign(&mut self, identity_keypair: &IdentityKeyPair) -> Result<()> {
         // Create canonical bytes for signing (excluding signature and TTL)
         let canonical_bytes = self.canonical_bytes_for_signing()?;
-        
+
         // Sign the canonical bytes
         let signature = identity_keypair.sign(&canonical_bytes);
-        
+
         // Store signature and update flags
         self.signature = Some(signature);
         self.header.flags = self.header.flags.with_signature();
-        
+
         Ok(())
     }
 
     /// Verify the packet's signature using an Ed25519 public key
     pub fn verify_signature(&self, public_key: &[u8; 32]) -> Result<()> {
-        let signature = self.signature.ok_or_else(|| {
-            BitchatError::invalid_packet("No signature present for verification")
-        })?;
+        let signature = self
+            .signature
+            .ok_or_else(|| BitchatError::invalid_packet("No signature present for verification"))?;
 
         // Recreate canonical bytes (excluding signature and TTL)
         let canonical_bytes = self.canonical_bytes_for_signing()?;
-        
+
         // Verify the signature
         IdentityKeyPair::verify(public_key, &canonical_bytes, &signature)?;
-        
+
         Ok(())
     }
 
     /// Create canonical bytes for signing/verification
     /// This excludes the signature field and TTL to allow for relay operations
     fn canonical_bytes_for_signing(&self) -> Result<Vec<u8>> {
-        
         let mut hasher = Sha256::new();
-        
+
         // Include context string
         hasher.update(b"bitchat-packet-v1");
-        
+
         // Include packet fields (excluding signature and TTL)
-        hasher.update(&[self.header.version]);
-        hasher.update(&[self.header.message_type.as_u8()]);
-        hasher.update(&self.header.timestamp.as_millis().to_be_bytes());
-        
+        hasher.update([self.header.version]);
+        hasher.update([self.header.message_type.as_u8()]);
+        hasher.update(self.header.timestamp.as_millis().to_be_bytes());
+
         // Include sender ID
         hasher.update(self.sender_id.as_bytes());
-        
+
         // Include recipient ID if present
         if let Some(recipient_id) = &self.recipient_id {
             hasher.update(recipient_id.as_bytes());
         }
-        
+
         // Include payload
         hasher.update(&self.payload);
-        
+
         Ok(hasher.finalize().to_vec())
     }
 

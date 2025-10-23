@@ -1,0 +1,40 @@
+# Rust build artifacts
+/target/
+Cargo.lock
+
+# Vendored external repositories
+vendored/bitchat-ios/
+vendored/bitchat-android/
+
+# Built app artifacts (now in ../builds/)
+result/
+result-*
+
+# Emulator artifacts
+*.avd/
+*.dmg
+*.log
+
+# mitmproxy artifacts
+*.mitm
+*.har
+*.pcap
+
+# Appium artifacts
+*.png
+screenshots/
+
+# Platform-specific
+.DS_Store
+Thumbs.db
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+
+# Temporary files
+/tmp/
+*.tmp
+*.temp

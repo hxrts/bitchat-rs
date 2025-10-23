@@ -1,0 +1,60 @@
+[package]
+name = "virtual"
+version = "0.1.0"
+edition = "2021"
+description = "Data-driven scenario runner for BitChat protocol testing"
+license = "MIT OR Apache-2.0"
+
+# Empty workspace table to prevent being part of parent workspace
+[workspace]
+
+[[bin]]
+name = "virtual"
+path = "src/main.rs"
+
+[dependencies]
+# BitChat crates
+bitchat-core = { path = "../../crates/bitchat-core" }
+bitchat-harness = { path = "./harness", features = ["testing"] }
+
+# Emulator testing (temporarily disabled due to compilation issues)
+# bitchat-emulator-harness = { path = "../device" }
+
+# Shared simulator abstractions
+bitchat-simulator-shared = { path = "../shared" }
+
+# Async runtime
+tokio = { version = "1.0", features = ["full"] }
+async-trait = "0.1"
+
+# Serialization
+serde = { version = "1.0", features = ["derive"] }
+serde_json = "1.0"
+toml = "0.8"
+hex = "0.4"
+
+# CLI
+clap = { version = "4.0", features = ["derive"] }
+
+# Error handling
+anyhow = "1.0"
+thiserror = "1.0"
+
+# Logging
+tracing = "0.1"
+tracing-subscriber = { version = "0.3", features = ["env-filter"] }
+
+# Utilities
+rand = "0.8"
+fastrand = "2.0"
+uuid = { version = "1.0", features = ["v4"] }
+
+# Collections
+dashmap = "5.5"
+
+[build-dependencies]
+ron = "0.8"
+serde = { version = "1.0", features = ["derive"] }
+
+[dev-dependencies]
+tempfile = "3.0"

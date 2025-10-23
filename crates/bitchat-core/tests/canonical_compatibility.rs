@@ -119,7 +119,8 @@ fn test_max_payload_size_v1() {
 
     // Payload larger than 255 should fail for v1
     let oversized_payload = vec![0u8; 256];
-    let oversized_packet = BitchatPacket::new_simple(MessageType::Message, sender, oversized_payload);
+    let oversized_packet =
+        BitchatPacket::new_simple(MessageType::Message, sender, oversized_payload);
     assert!(
         WireFormat::encode(&oversized_packet).is_err(),
         "v1 should reject payloads > 255 bytes"

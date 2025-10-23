@@ -143,6 +143,9 @@ impl CoreLogicTask {
                                 Event::ConnectionEstablished { transport, .. } => *transport,
                                 Event::ConnectionLost { transport, .. } => *transport,
                                 Event::TransportError { transport, .. } => *transport,
+                                Event::TransportHealthCheckCompleted { transport_type, .. } => *transport_type,
+                                Event::TransportMetricsUpdated { transport_type, .. } => *transport_type,
+                                Event::TransportFailoverOccurred { from_transport, .. } => *from_transport,
                             };
 
                             self.logger.log_receive_event(
@@ -329,6 +332,21 @@ impl CoreLogicTask {
             Event::TransportError { transport, error } => {
                 CommandHandlers::handle_transport_error(transport, error).await?
             }
+            Event::TransportHealthCheckCompleted { transport_type, success, latency_ms, timestamp } => {
+                // For now, just log the health check result
+                tracing::debug!(?transport_type, success, ?latency_ms, timestamp, "Transport health check completed");
+                (Vec::new(), Vec::new())
+            }
+            Event::TransportMetricsUpdated { transport_type, success_rate, average_latency_ms, timestamp } => {
+                // For now, just log the metrics update
+                tracing::debug!(?transport_type, success_rate, ?average_latency_ms, timestamp, "Transport metrics updated");
+                (Vec::new(), Vec::new())
+            }
+            Event::TransportFailoverOccurred { from_transport, to_transport, reason, timestamp } => {
+                // For now, just log the failover event
+                tracing::info!(?from_transport, ?to_transport, reason, timestamp, "Transport failover occurred");
+                (Vec::new(), Vec::new())
+            }
         };
 
         // Send effects to transport tasks
@@ -359,6 +377,9 @@ impl CoreLogicTask {
             Effect::ResumeTransport { transport } => *transport,
             Effect::WriteToStorage { .. } => return Ok(()), // Handled locally for now
             Effect::ScheduleRetry { .. } => return Ok(()),  // Handled locally for now
+            Effect::RequestTransportHealthCheck { transport_type, .. } => *transport_type,
+            Effect::UpdateTransportMetrics { transport_type, .. } => *transport_type,
+            Effect::SwitchPrimaryTransport { from_transport, .. } => *from_transport,
         };
 
         self.logger.log_send_effect(

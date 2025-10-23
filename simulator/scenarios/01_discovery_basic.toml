@@ -1,0 +1,95 @@
+# Basic Peer Discovery via Announce Packets
+# Comprehensive test of announce packet functionality and peer discovery
+
+[metadata]
+name = "Basic Peer Discovery"
+description = "Test announce packet creation, signing, verification, and peer discovery using TLV-encoded implementation"
+version = "1.0"
+tags = ["announce", "peer-discovery", "tlv", "basic"]
+duration_seconds = 45
+author = "BitChat Team"
+
+[network]
+[network.profile]
+type = "Perfect"
+
+[network.topology]
+type = "FullyConnected"
+
+[network.logging]
+enable_packet_logging = true
+enable_stats_logging = false
+stats_interval_seconds = 10
+
+[[peers]]
+name = "alice"
+[peers.behavior]
+auto_discovery = true
+auto_connect = true
+
+[[peers]]
+name = "bob"
+[peers.behavior]
+auto_discovery = true
+auto_connect = true
+
+# Enhanced test sequence for comprehensive announce testing
+[[sequence]]
+name = "alice_starts_discovery"
+at_time_seconds = 1.0
+action = "StartDiscovery"
+peer = "alice"
+
+[[sequence]]
+name = "bob_starts_discovery" 
+at_time_seconds = 1.0
+action = "StartDiscovery"
+peer = "bob"
+
+[[sequence]]
+name = "wait_for_discovery"
+at_time_seconds = 3.0
+action = "ValidateState"
+[sequence.validation]
+type = "PeerCount"
+peer = "alice"
+expected_count = 1
+
+[[sequence]]
+name = "test_discovered_messaging"
+at_time_seconds = 5.0
+action = "SendMessage"
+from = "alice"
+to = "bob"
+content = "Hello Bob via announce discovery!"
+
+[[sequence]]
+name = "test_response"
+at_time_seconds = 8.0
+action = "SendMessage"
+from = "bob"
+to = "alice"
+content = "Hello Alice, discovery worked!"
+
+[validation]
+[[validation.final_checks]]
+type = "PeerConnected"
+peer1 = "alice"
+peer2 = "bob"
+
+[[validation.final_checks]]
+type = "MessageCount"
+peer = "alice"
+expected_min = 1
+expected_max = 1
+
+[[validation.final_checks]]
+type = "MessageCount"
+peer = "bob"
+expected_min = 1
+expected_max = 1
+
+[performance]
+max_latency_ms = 100
+max_packet_loss = 0.0
+expected_throughput = 1.0

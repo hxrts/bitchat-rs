@@ -51,4 +51,3 @@ impl EphemeralIdentity {
         self.last_activity = Timestamp::now();
     }
 }
-

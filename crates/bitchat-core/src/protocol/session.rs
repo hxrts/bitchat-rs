@@ -279,7 +279,7 @@ impl NoiseSession {
         // Increment message count and update activity
         self.message_count += 1;
         self.update_activity(time_source);
-        
+
         result
     }
 
@@ -309,7 +309,7 @@ impl NoiseSession {
         // Increment message count and update activity
         self.message_count += 1;
         self.update_activity(time_source);
-        
+
         result
     }
 
@@ -328,14 +328,20 @@ impl NoiseSession {
 
         // Check time-based threshold (session timeout from last activity)
         let now = time_source.now();
-        let time_since_activity = now.as_millis().saturating_sub(self.last_activity.as_millis());
+        let time_since_activity = now
+            .as_millis()
+            .saturating_sub(self.last_activity.as_millis());
         let session_timeout_ms = self.rekey_interval_secs * 1000;
-        
+
         time_since_activity >= session_timeout_ms
     }
 
     /// Initialize rekey process - returns to handshaking state with new keys
-    pub fn start_rekey<T: TimeSource>(&mut self, local_key: &NoiseKeyPair, time_source: &T) -> Result<()> {
+    pub fn start_rekey<T: TimeSource>(
+        &mut self,
+        local_key: &NoiseKeyPair,
+        time_source: &T,
+    ) -> Result<()> {
         if self.state != SessionState::Established {
             return Err(BitchatError::Session(SessionError::InvalidState {
                 peer_id: self.peer_id.to_string(),
@@ -346,17 +352,17 @@ impl NoiseSession {
 
         // Transition to rekeying state
         self.state = SessionState::Rekeying;
-        
+
         // Create new handshake for rekey
         let handshake = NoiseHandshake::initiator(local_key)?;
         self.handshake = Some(handshake);
         self.transport = None; // Clear old transport
-        
+
         // Reset counters
         self.message_count = 0;
         self.last_rekey = time_source.now();
         self.update_activity(time_source);
-        
+
         Ok(())
     }
 
@@ -392,7 +398,7 @@ impl NoiseSession {
         self.transport = Some(handshake.into_transport_mode()?);
         self.state = SessionState::Established;
         self.update_activity(time_source);
-        
+
         Ok(())
     }
 

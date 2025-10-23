@@ -1,15 +1,15 @@
-use alloc::{vec::Vec, string::String, format};
-use alloc::string::ToString;
-use serde::{Deserialize, Serialize};
 use crate::{
     errors::BitchatError,
     protocol::{
+        crypto::IdentityKeyPair,
         packet::{BitchatPacket, MessageType, PacketFlags},
         tlv::{TlvCodec, TlvEntry, TlvType},
-        crypto::IdentityKeyPair,
     },
     types::{PeerId, Timestamp},
 };
+use alloc::string::ToString;
+use alloc::{format, string::String, vec::Vec};
+use serde::{Deserialize, Serialize};
 
 /// Announce packet payload containing peer information for discovery
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
@@ -33,8 +33,8 @@ impl AnnouncePayload {
         direct_neighbors: Option<Vec<[u8; 32]>>,
     ) -> Result<Self, BitchatError> {
         // Validate nickname length (max 255 bytes for TLV encoding)
-        if nickname.as_bytes().len() > 255 {
-            return Err(BitchatError::TlvValueTooLarge(nickname.as_bytes().len()));
+        if nickname.len() > 255 {
+            return Err(BitchatError::TlvValueTooLarge(nickname.len()));
         }
 
         Ok(Self {
@@ -68,24 +68,38 @@ impl AnnouncePayload {
         let codec = TlvCodec::decode(data)?;
 
         // Validate required TLV types are present
-        let required_types = [TlvType::Nickname, TlvType::NoisePublicKey, TlvType::SigningPublicKey];
+        let required_types = [
+            TlvType::Nickname,
+            TlvType::NoisePublicKey,
+            TlvType::SigningPublicKey,
+        ];
         codec.validate_required(&required_types)?;
 
         // Extract required fields
-        let nickname_entry = codec.find_entry(TlvType::Nickname)
+        let nickname_entry = codec
+            .find_entry(TlvType::Nickname)
             .ok_or(BitchatError::MissingRequiredTlv(TlvType::Nickname as u8))?;
         let nickname = nickname_entry.as_nickname()?;
 
-        let noise_key_entry = codec.find_entry(TlvType::NoisePublicKey)
-            .ok_or(BitchatError::MissingRequiredTlv(TlvType::NoisePublicKey as u8))?;
+        let noise_key_entry =
+            codec
+                .find_entry(TlvType::NoisePublicKey)
+                .ok_or(BitchatError::MissingRequiredTlv(
+                    TlvType::NoisePublicKey as u8,
+                ))?;
         let noise_public_key = noise_key_entry.as_key()?;
 
-        let signing_key_entry = codec.find_entry(TlvType::SigningPublicKey)
-            .ok_or(BitchatError::MissingRequiredTlv(TlvType::SigningPublicKey as u8))?;
+        let signing_key_entry =
+            codec
+                .find_entry(TlvType::SigningPublicKey)
+                .ok_or(BitchatError::MissingRequiredTlv(
+                    TlvType::SigningPublicKey as u8,
+                ))?;
         let signing_public_key = signing_key_entry.as_key()?;
 
         // Extract optional neighbors
-        let direct_neighbors = codec.find_entry(TlvType::DirectNeighbors)
+        let direct_neighbors = codec
+            .find_entry(TlvType::DirectNeighbors)
             .map(|entry| entry.as_neighbors())
             .transpose()?;
 
@@ -140,9 +154,10 @@ impl BitchatPacket {
     pub fn parse_announce(&self) -> Result<AnnouncePayload, BitchatError> {
         // Verify this is an announce packet
         if self.message_type() != MessageType::Announce {
-            return Err(BitchatError::invalid_packet(
-                format!("Expected announce packet, got {:?}", self.message_type())
-            ));
+            return Err(BitchatError::invalid_packet(format!(
+                "Expected announce packet, got {:?}",
+                self.message_type()
+            )));
         }
 
         // Decode the TLV payload
@@ -153,10 +168,10 @@ impl BitchatPacket {
     pub fn verify_and_parse_announce(&self) -> Result<AnnouncePayload, BitchatError> {
         // First parse the payload to get the signing key
         let payload = self.parse_announce()?;
-        
+
         // Verify the signature using the signing key from the payload
         self.verify_signature(&payload.signing_public_key)?;
-        
+
         Ok(payload)
     }
 }
@@ -185,14 +200,14 @@ impl DiscoveredPeer {
         timestamp: Timestamp,
     ) -> Result<Self, BitchatError> {
         let payload = packet.verify_and_parse_announce()?;
-        
+
         // Derive peer ID from Noise public key
         let peer_id = PeerId::from_noise_key(&payload.noise_public_key);
-        
+
         // Verify the sender ID matches the derived peer ID
         if packet.sender_id() != peer_id {
             return Err(BitchatError::invalid_packet(
-                "Sender ID does not match Noise public key"
+                "Sender ID does not match Noise public key",
             ));
         }
 
@@ -208,12 +223,15 @@ impl DiscoveredPeer {
 
     /// Get the cryptographic fingerprint of this peer
     pub fn fingerprint(&self) -> String {
-        crate::protocol::crypto::generate_fingerprint(&self.noise_public_key).to_string()
+        crate::protocol::crypto::generate_fingerprint(self.noise_public_key).to_string()
     }
 
     /// Check if this peer was recently seen (within the given duration)
     pub fn is_recent(&self, current_time: Timestamp, max_age_ms: u64) -> bool {
-        current_time.as_millis().saturating_sub(self.last_seen.as_millis()) <= max_age_ms
+        current_time
+            .as_millis()
+            .saturating_sub(self.last_seen.as_millis())
+            <= max_age_ms
     }
 }
 
@@ -231,30 +249,35 @@ mod tests {
     #[test]
     fn test_announce_payload_creation() {
         let (noise_keypair, identity_keypair) = create_test_keypairs();
-        
+
         let payload = AnnouncePayload::new(
             "alice".to_string(),
             noise_keypair.public_key_bytes(),
             identity_keypair.public_key_bytes(),
             None,
-        ).unwrap();
+        )
+        .unwrap();
 
         assert_eq!(payload.nickname, "alice");
         assert_eq!(payload.noise_public_key, noise_keypair.public_key_bytes());
-        assert_eq!(payload.signing_public_key, identity_keypair.public_key_bytes());
+        assert_eq!(
+            payload.signing_public_key,
+            identity_keypair.public_key_bytes()
+        );
         assert!(payload.direct_neighbors.is_none());
     }
 
     #[test]
     fn test_announce_payload_encode_decode() {
         let (noise_keypair, identity_keypair) = create_test_keypairs();
-        
+
         let original_payload = AnnouncePayload::new(
             "test_peer".to_string(),
             noise_keypair.public_key_bytes(),
             identity_keypair.public_key_bytes(),
             Some(vec![[0x42; 32], [0x43; 32]]),
-        ).unwrap();
+        )
+        .unwrap();
 
         let encoded = original_payload.encode().unwrap();
         let decoded_payload = AnnouncePayload::decode(&encoded).unwrap();
@@ -275,12 +298,13 @@ mod tests {
             &identity_keypair,
             None,
             timestamp,
-        ).unwrap();
+        )
+        .unwrap();
 
         assert_eq!(packet.message_type(), MessageType::Announce);
         assert_eq!(packet.sender_id(), peer_id);
         assert!(packet.recipient_id().is_none());
-        
+
         // Verify we can parse it back
         let payload = packet.parse_announce().unwrap();
         assert_eq!(payload.nickname, "test_peer");
@@ -300,14 +324,21 @@ mod tests {
             &identity_keypair,
             Some(vec![[0x11; 32]]),
             timestamp,
-        ).unwrap();
+        )
+        .unwrap();
 
         let discovered = DiscoveredPeer::from_announce_packet(&packet, timestamp).unwrap();
-        
+
         assert_eq!(discovered.peer_id, peer_id);
         assert_eq!(discovered.nickname, "discovered_peer");
-        assert_eq!(discovered.noise_public_key, noise_keypair.public_key_bytes());
-        assert_eq!(discovered.signing_public_key, identity_keypair.public_key_bytes());
+        assert_eq!(
+            discovered.noise_public_key,
+            noise_keypair.public_key_bytes()
+        );
+        assert_eq!(
+            discovered.signing_public_key,
+            identity_keypair.public_key_bytes()
+        );
         assert_eq!(discovered.direct_neighbors, Some(vec![[0x11; 32]]));
         assert_eq!(discovered.last_seen, timestamp);
     }
@@ -316,14 +347,14 @@ mod tests {
     fn test_nickname_too_long() {
         let (noise_keypair, identity_keypair) = create_test_keypairs();
         let long_nickname = "a".repeat(256); // Too long for TLV encoding
-        
+
         let result = AnnouncePayload::new(
             long_nickname,
             noise_keypair.public_key_bytes(),
             identity_keypair.public_key_bytes(),
             None,
         );
-        
+
         assert!(result.is_err());
     }
 
@@ -340,11 +371,12 @@ mod tests {
             &identity_keypair,
             None,
             timestamp,
-        ).unwrap();
+        )
+        .unwrap();
 
         let discovered = DiscoveredPeer::from_announce_packet(&packet, timestamp).unwrap();
         let fingerprint = discovered.fingerprint();
-        
+
         // Fingerprint should be a hex string representing the SHA-256 hash
         assert_eq!(fingerprint.len(), 64); // 32 bytes * 2 hex chars
         assert!(fingerprint.chars().all(|c| c.is_ascii_hexdigit()));

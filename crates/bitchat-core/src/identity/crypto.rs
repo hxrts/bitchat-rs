@@ -24,9 +24,9 @@ pub struct CryptographicIdentity {
 impl CryptographicIdentity {
     /// Create a new cryptographic identity
     pub fn new(public_key: [u8; 32], signing_public_key: Option<[u8; 32]>) -> Self {
-        let fingerprint = crate::protocol::generate_fingerprint(&public_key);
+        let fingerprint = crate::protocol::generate_fingerprint(public_key);
         let now = Timestamp::now();
-        
+
         Self {
             fingerprint,
             public_key,
@@ -43,4 +43,3 @@ impl CryptographicIdentity {
         self.handshake_count = self.handshake_count.saturating_add(1);
     }
 }
-

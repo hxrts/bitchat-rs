@@ -150,6 +150,9 @@ impl From<&Event> for MessageType {
             Event::ConnectionEstablished { .. } => "ConnectionEstablished",
             Event::ConnectionLost { .. } => "ConnectionLost",
             Event::TransportError { .. } => "TransportError",
+            Event::TransportHealthCheckCompleted { .. } => "TransportHealthCheckCompleted",
+            Event::TransportMetricsUpdated { .. } => "TransportMetricsUpdated",
+            Event::TransportFailoverOccurred { .. } => "TransportFailoverOccurred",
         };
         MessageType::Event(variant.to_string())
     }
@@ -170,6 +173,9 @@ impl From<&Effect> for MessageType {
             Effect::StopTransportDiscovery { .. } => "StopTransportDiscovery",
             Effect::PauseTransport { .. } => "PauseTransport",
             Effect::ResumeTransport { .. } => "ResumeTransport",
+            Effect::RequestTransportHealthCheck { .. } => "RequestTransportHealthCheck",
+            Effect::UpdateTransportMetrics { .. } => "UpdateTransportMetrics",
+            Effect::SwitchPrimaryTransport { .. } => "SwitchPrimaryTransport",
         };
         MessageType::Effect(variant.to_string())
     }
@@ -300,6 +306,15 @@ impl MessageSummary for Event {
             Event::TransportError { transport, error } => {
                 format!("transport:{} error:{}", transport, error)
             }
+            Event::TransportHealthCheckCompleted { transport_type, success, latency_ms, timestamp } => {
+                format!("transport:{} success:{} latency:{:?}ms at:{}", transport_type, success, latency_ms, timestamp)
+            }
+            Event::TransportMetricsUpdated { transport_type, success_rate, average_latency_ms, timestamp } => {
+                format!("transport:{} success_rate:{} avg_latency:{:?}ms at:{}", transport_type, success_rate, average_latency_ms, timestamp)
+            }
+            Event::TransportFailoverOccurred { from_transport, to_transport, reason, timestamp } => {
+                format!("failover from:{} to:{} reason:{} at:{}", from_transport, to_transport, reason, timestamp)
+            }
         }
     }
 }
@@ -345,6 +360,9 @@ impl MessageSummary for Effect {
             Effect::StopTransportDiscovery { transport } => format!("transport:{}", transport),
             Effect::PauseTransport { transport } => format!("pausing transport:{}", transport),
             Effect::ResumeTransport { transport } => format!("resuming transport:{}", transport),
+            Effect::RequestTransportHealthCheck { transport_type, timeout } => format!("health check for transport:{} timeout:{:?}", transport_type, timeout),
+            Effect::UpdateTransportMetrics { transport_type, latency_ms, success_rate } => format!("updating metrics for transport:{} latency:{:?}ms success_rate:{}", transport_type, latency_ms, success_rate),
+            Effect::SwitchPrimaryTransport { from_transport, to_transport, reason } => format!("switching from:{} to:{} reason:{}", from_transport, to_transport, reason),
         }
     }
 }

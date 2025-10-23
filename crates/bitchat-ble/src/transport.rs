@@ -8,8 +8,8 @@ use async_trait::async_trait;
 use smallvec::SmallVec;
 
 use bitchat_core::internal::{IdentityKeyPair, TransportError};
-use bitchat_core::protocol::{BitchatPacket, WireFormat, DiscoveredPeer, MessageType};
-use bitchat_core::{BitchatError, BitchatResult, PeerId, TransportTask, Timestamp};
+use bitchat_core::protocol::{BitchatPacket, DiscoveredPeer, MessageType, WireFormat};
+use bitchat_core::{BitchatError, BitchatResult, PeerId, Timestamp, TransportTask};
 use bitchat_core::{EffectReceiver, EventSender};
 use bitchat_harness::{
     messages::{ChannelTransportType, Effect, Event},
@@ -536,9 +536,13 @@ impl BleTransportTask {
     }
 
     /// Send an announce packet to a specific peer
-    pub async fn send_announce_to_peer(&mut self, peer_id: PeerId, nickname: String) -> BitchatResult<()> {
+    pub async fn send_announce_to_peer(
+        &mut self,
+        peer_id: PeerId,
+        nickname: String,
+    ) -> BitchatResult<()> {
         let noise_public_key = [0u8; 32]; // TODO: Get from noise session when available
-        
+
         let announce_packet = BitchatPacket::create_announce(
             self.local_peer_id,
             nickname,
@@ -548,13 +552,14 @@ impl BleTransportTask {
             Timestamp::now(),
         )?;
 
-        self.send_bitchat_packet_to_peer(peer_id, announce_packet).await
+        self.send_bitchat_packet_to_peer(peer_id, announce_packet)
+            .await
     }
 
     /// Broadcast an announce packet to all connected peers
     pub async fn broadcast_announce(&mut self, nickname: String) -> BitchatResult<()> {
         let noise_public_key = [0u8; 32]; // TODO: Get from noise session when available
-        
+
         let announce_packet = BitchatPacket::create_announce(
             self.local_peer_id,
             nickname,
@@ -568,18 +573,22 @@ impl BleTransportTask {
     }
 
     /// Handle an incoming announce packet from a peer
-    pub async fn handle_announce_packet(&mut self, peer_id: PeerId, packet: BitchatPacket) -> BitchatResult<()> {
+    pub async fn handle_announce_packet(
+        &mut self,
+        peer_id: PeerId,
+        packet: BitchatPacket,
+    ) -> BitchatResult<()> {
         if packet.message_type() != MessageType::Announce {
             return Err(BitchatError::invalid_packet("Expected announce packet"));
         }
 
         // Parse and verify the announce packet
         let discovered_peer = DiscoveredPeer::from_announce_packet(&packet, Timestamp::now())?;
-        
+
         // Verify the sender ID matches the packet sender
         if discovered_peer.peer_id != peer_id {
             return Err(BitchatError::invalid_packet(
-                "Announce packet sender ID mismatch"
+                "Announce packet sender ID mismatch",
             ));
         }
 
@@ -603,7 +612,7 @@ impl BleTransportTask {
                 transport: self.transport_type,
                 signal_strength: None, // BLE signal strength not available here
             };
-            
+
             if let Err(e) = channels.event_sender().send(event).await {
                 tracing::warn!("Failed to send peer discovery event: {}", e);
             }

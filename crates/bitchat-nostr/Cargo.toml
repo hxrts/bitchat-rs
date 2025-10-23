@@ -15,11 +15,11 @@ testing = ["bitchat-core/testing", "bitchat-harness/testing", "std"]
 [dependencies]
 # Core BitChat protocol
 bitchat-core = { path = "../bitchat-core", default-features = false, features = ["std"] }
-bitchat-harness = { path = "../bitchat-harness" }
+bitchat-harness = { path = "../../simulator/virtual/harness" }
 
 # Nostr dependencies (only for native targets, not WASM)
 [target.'cfg(not(target_arch = "wasm32"))'.dependencies]
-nostr-sdk = { workspace = true, default-features = false, features = ["nip04", "nip59"] }
+nostr-sdk = { workspace = true, default-features = false, features = ["nip04", "nip44", "nip59"] }
 rand = "0.8"
 
 # Native WebSocket support
@@ -42,6 +42,8 @@ async-trait = "0.1"
 smallvec = { workspace = true }
 cfg-if = "1.0"
 sha2 = { workspace = true }
+base64 = { workspace = true }
+hashbrown = { workspace = true }
 
 # Logging
 tracing = { workspace = true }

@@ -1,686 +1,256 @@
-# BitChat Simulator Test Runner
-# Extended with critical test scenarios
+# BitChat Simulator - Unified Test Interface
+#
+# This Justfile provides a unified interface for testing BitChat scenarios
+# across different client types and automatically routes to the appropriate
+# testing system (virtual for CLI/WASM, device for iOS/Android).
 
-# Variables for common paths and settings
-scenario_runner := "scenario-runner"
-emulator_rig := "emulator-rig"
-test_runner := "./scenario-runner/target/release/bitchat-scenario-runner"
-android_project := "./emulator-rig/vendored/bitchat-android"
-ios_project := "./emulator-rig/vendored/bitchat-ios"
+# ============================================================================
+# Default Recipe
+# ============================================================================
 
-# Build all simulator components
-build:
-    cd {{scenario_runner}} && nix develop --command cargo build --release
-    cd {{emulator_rig}} && nix develop --command cargo build --release
+# Default target shows help
+default:
+    just help
 
-# Helper: Check if a command exists
-[private]
-cmd-exists cmd:
-    @command -v {{cmd}} >/dev/null 2>&1
+# ============================================================================
+# Unified Test Interface
+# ============================================================================
 
-# Helper: Check if a directory exists
-[private]
-dir-exists path:
-    @[ -d "{{path}}" ]
-
-# Helper: Print status message
-[private]
-status level message:
-    @echo "[{{level}}] {{message}}"
-
-# Helper: Set up environment for system tools (iOS/Android development)
-[private]
-setup-system-env:
-    @echo "Setting up system development tools environment..."
-    @echo ""
-    @# Check iOS tools with explicit path
-    @if [ -f "/usr/bin/xcrun" ] && /usr/bin/xcrun simctl help >/dev/null 2>&1; then \
-        echo "[OK] iOS development tools (xcrun/simctl) available"; \
-    elif [ -f "/Applications/Xcode.app/Contents/Developer/usr/bin/xcrun" ] && /Applications/Xcode.app/Contents/Developer/usr/bin/xcrun simctl help >/dev/null 2>&1; then \
-        echo "[OK] iOS development tools (xcrun/simctl) available"; \
-    else \
-        echo "[ERROR] iOS development tools not available"; \
-        echo "   Install Xcode from the Mac App Store for iOS testing"; \
-    fi
-    @# Check Android tools
-    @if [ -n "$$ANDROID_HOME" ] && [ -d "$$ANDROID_HOME" ]; then \
-        echo "[OK] ANDROID_HOME set: $$ANDROID_HOME"; \
-        if command -v "$$ANDROID_HOME/platform-tools/adb" >/dev/null 2>&1; then \
-            echo "[OK] Android tools (adb) available"; \
-        else \
-            echo "[ERROR] adb not found in Android SDK"; \
-        fi; \
-    else \
-        echo "[ERROR] Android development tools not available"; \
-        echo "   Set ANDROID_HOME environment variable to Android SDK location"; \
-        echo "   Common locations:"; \
-        echo "   - $HOME/Library/Android/sdk (macOS)"; \
-        echo "   - $HOME/Android/Sdk (Linux)"; \
-    fi
-    @# Check Java with explicit path
-    @if [ -f "/usr/bin/java" ]; then \
-        echo "[OK] Java available: `/usr/bin/java --version 2>/dev/null | head -1 || /usr/bin/java -version 2>&1 | head -1`"; \
-    elif command -v java >/dev/null 2>&1; then \
-        echo "[OK] Java available: `java --version 2>/dev/null | head -1 || java -version 2>&1 | head -1`"; \
-    else \
-        echo "[ERROR] Java not available (required for Android development)"; \
-    fi
-    @echo ""
-
-# Helper: Run cargo with hybrid Nix + system tools environment
-[private]
-run-with-hybrid-env args:
+# Run a scenario with specific client types
+# Automatically routes to virtual (cli,wasm) or device (ios,android) testing
+# Usage: just test-scenario SCENARIO CLIENT1,CLIENT2
+# Clients: cli, wasm, ios, android
+test-scenario scenario clients:
     #!/usr/bin/env bash
     set -euo pipefail
     
-    # Auto-detect Android SDK if ANDROID_HOME not set
-    if [ -z "${ANDROID_HOME:-}" ]; then
-        echo "[WARN] ANDROID_HOME not set. Auto-detecting Android SDK..."
-        if [ -d "$HOME/Library/Android/sdk" ]; then
-            export ANDROID_HOME="$HOME/Library/Android/sdk"
-            echo "[INFO] Found Android SDK at: $ANDROID_HOME"
-        elif [ -d "$HOME/Android/Sdk" ]; then
-            export ANDROID_HOME="$HOME/Android/Sdk"
-            echo "[INFO] Found Android SDK at: $ANDROID_HOME"
-        else
-            echo "[WARN] Android SDK not found. Android testing may not work."
-            export ANDROID_HOME=""
+    # Parse client types
+    IFS=',' read -ra CLIENT_ARRAY <<< "{{clients}}"
+    CLIENT1="${CLIENT_ARRAY[0]}"
+    CLIENT2="${CLIENT_ARRAY[1]:-$CLIENT1}"  # Default to same client if only one provided
+    
+    # Determine which testing system to use
+    VIRTUAL_CLIENTS="cli wasm"
+    DEVICE_CLIENTS="ios android"
+    
+    USE_VIRTUAL=false
+    USE_DEVICE=false
+    
+    # Check client1
+    if [[ " $VIRTUAL_CLIENTS " =~ " $CLIENT1 " ]]; then
+        USE_VIRTUAL=true
+    elif [[ " $DEVICE_CLIENTS " =~ " $CLIENT1 " ]]; then
+        USE_DEVICE=true
+    else
+        echo "Error: Unknown client type '$CLIENT1'"
+        echo "Valid clients: cli, wasm, ios, android"
+        exit 1
+    fi
+    
+    # Check client2
+    if [[ " $VIRTUAL_CLIENTS " =~ " $CLIENT2 " ]]; then
+        if [ "$USE_DEVICE" = true ]; then
+            echo "Error: Cannot mix virtual clients ($CLIENT2) with device clients ($CLIENT1)"
+            echo "Virtual clients: cli, wasm"
+            echo "Device clients: ios, android"
+            exit 1
         fi
+        USE_VIRTUAL=true
+    elif [[ " $DEVICE_CLIENTS " =~ " $CLIENT2 " ]]; then
+        if [ "$USE_VIRTUAL" = true ]; then
+            echo "Error: Cannot mix device clients ($CLIENT2) with virtual clients ($CLIENT1)"
+            echo "Virtual clients: cli, wasm"
+            echo "Device clients: ios, android"
+            exit 1
+        fi
+        USE_DEVICE=true
+    else
+        echo "Error: Unknown client type '$CLIENT2'"
+        echo "Valid clients: cli, wasm, ios, android"
+        exit 1
     fi
     
-    echo "Running with hybrid Nix + system tools environment:"
-    echo "  iOS tools: System Xcode"
-    echo "  Android tools: ${ANDROID_HOME:-Not found}"
-    echo "  Java: Nix environment"
-    echo "  Rust: Nix environment"
-    echo ""
-    
-    cd {{emulator_rig}} && ANDROID_HOME="${ANDROID_HOME:-}" nix develop --command cargo run -- {{args}}
+    # Route to appropriate testing system
+    if [ "$USE_VIRTUAL" = true ]; then
+        echo "Running scenario {{scenario}} with virtual clients: {{clients}}"
+        echo "   Using fast simulation (seconds)..."
+        cd virtual && nix develop --quiet --command cargo run --release -- execute ../scenarios/{{scenario}}.toml
+    elif [ "$USE_DEVICE" = true ]; then
+        echo "Running scenario {{scenario}} with device clients: {{clients}}"
+        echo "   Using real-world testing (minutes)..."
+        cd device && nix develop --quiet --command cargo run --release --quiet -- execute --clients {{clients}} ../scenarios/{{scenario}}.toml
+    else
+        echo "Error: Could not determine testing system"
+        exit 1
+    fi
 
-# Show instructions for running with system tools (outside Nix)
-show-native-usage:
-    @echo "Running Emulator Harness with System Development Tools"
-    @echo "======================================================"
+# ============================================================================
+# Scenario Management
+# ============================================================================
+
+# List all available scenarios
+list-scenarios:
+    @echo "Available Scenarios:"
+    @echo "==================="
+    @ls scenarios/*.toml | sed 's/scenarios\///' | sed 's/\.toml//'
+
+# Create a new scenario from template
+new-scenario name:
+    @echo "Creating new scenario: {{name}}"
+    @cp scenarios/02_messaging_basic.toml scenarios/{{name}}.toml
+    @echo "Edit scenarios/{{name}}.toml to customize your test"
+
+# Run development workflow for a scenario (fast simulation, then device verification)
+dev-cycle scenario:
+    @echo "Development Cycle for {{scenario}}"
+    @echo "================================="
     @echo ""
-    @echo "For real iOS/Android emulator testing, you need system development tools."
-    @echo "These may not be available in the Nix environment."
+    @echo "1/3 Fast simulation test..."
+    just test-scenario {{scenario}} cli,cli
     @echo ""
-    @echo "To run with system tools (outside Nix environment):"
+    @echo "2/3 Real-world verification..." 
+    just test-scenario {{scenario}} ios,ios
     @echo ""
-    @echo "1. Exit any Nix shell (if currently in one)"
-    @echo "2. Set up environment variables:"
-    @echo "   export PATH=\"/usr/bin:/Applications/Xcode.app/Contents/Developer/usr/bin:\$$PATH\""
-    @echo "   export DEVELOPER_DIR=\"/Applications/Xcode.app/Contents/Developer\""
-    @echo "   export ANDROID_HOME=\"/path/to/android/sdk\"  # if you have Android SDK"
+    @echo "3/3 Development cycle complete!"
+
+# ============================================================================
+# Build System
+# ============================================================================
+
+# Build all components needed for testing
+build:
+    @echo "Building virtual testing system..."
+    cd virtual && nix develop --quiet --command cargo build --release
+    @echo "Building device testing system..."
+    cd device && nix develop --quiet --command just build-apps
+
+# Build only virtual testing system (for CLI/WASM simulation)
+build-virtual:
+    cd virtual && nix develop --quiet --command cargo build --release
+
+# Build only device testing system (for iOS/Android real-world testing)
+build-device:
+    cd device && nix develop --quiet --command just build-apps
+
+# ============================================================================
+# Environment Setup
+# ============================================================================
+
+# Check if environment is ready for virtual testing
+check-virtual:
+    @echo "Checking virtual testing environment..."
+    cd virtual && nix develop --quiet --command cargo check
+
+# Check if environment is ready for device testing  
+check-device:
+    @echo "Checking device testing environment..."
+    cd device && nix develop --quiet --command just check-env
+
+# Check both environments
+check-all: check-virtual check-device
+
+# ============================================================================
+# Testing Workflows
+# ============================================================================
+
+# Run a scenario across multiple client combinations for comprehensive testing
+test-matrix scenario:
+    @echo "Running test matrix for {{scenario}}"
+    @echo "==================================="
     @echo ""
-    @echo "3. Run commands directly:"
-    @echo "   cd emulator-rig"
-    @echo "   cargo run -- test --client1 ios --client2 ios"
-    @echo "   cargo run -- test --client1 android --client2 android"
-    @echo "   cargo run -- test --client1 ios --client2 android"
+    @echo "Virtual Tests (fast):"
+    just test-scenario {{scenario}} cli,cli
+    just test-scenario {{scenario}} wasm,wasm  
+    just test-scenario {{scenario}} cli,wasm
     @echo ""
-    @echo "4. Check tool availability:"
-    @echo "   xcrun simctl help    # Should show iOS simulator help"
-    @echo "   adb version          # Should show Android debug bridge version"
+    @echo "Device Tests (real-world):"
+    just test-scenario {{scenario}} ios,ios
+    just test-scenario {{scenario}} android,android
+    just test-scenario {{scenario}} ios,android
     @echo ""
+    @echo "Test matrix complete!"
 
-# Helper: Check command and report status
-[private]
-check-cmd cmd name:
-    @if command -v {{cmd}} >/dev/null 2>&1; then \
-        echo "[OK] {{name}} found"; \
-        {{cmd}} --version 2>/dev/null | head -1 || true; \
-    else \
-        echo "[ERROR] {{name}} not found"; \
-    fi
+# Run smoke tests across all client types
+smoke-test:
+    @echo "Running smoke tests..."
+    just test-scenario 02_messaging_basic cli,cli
+    just test-scenario 02_messaging_basic ios,ios
 
-# Helper: Check directory and report status
-[private]
-check-dir path name:
-    @if [ -d "{{path}}" ]; then \
-        echo "[OK] {{name}} found: {{path}}"; \
-    else \
-        echo "[ERROR] {{name}} not found at: {{path}}"; \
-    fi
+# ============================================================================
+# Cleanup
+# ============================================================================
 
-# Environment checks
-check-ios-env:
-    @echo "[iOS] BitChat iOS Build Environment Check"
-    @echo "====================================="
-    @echo ""
-    just check-cmd xcodebuild "xcodebuild"
-    just check-cmd swift "swift"
-    just check-dir "/Applications/Xcode.app" "Xcode.app"
-    @if command -v xcode-select >/dev/null 2>&1; then \
-        if xcode-select -p >/dev/null 2>&1; then \
-            echo "[OK] Developer directory: `xcode-select -p 2>/dev/null`"; \
-        else \
-            echo "[ERROR] No developer directory set"; \
-        fi; \
-    else \
-        echo "[ERROR] xcode-select not found"; \
-    fi
-    @echo ""
-    @echo "[SUMMARY] Summary:"
-    @echo "----------"
-    @if command -v xcodebuild >/dev/null 2>&1 && [ -d "/Applications/Xcode.app" ]; then \
-        echo "[OK] Environment ready for iOS app building"; \
-        echo ""; \
-        echo "Available commands:"; \
-        echo "  just build-ios       - Build iOS app"; \
-    else \
-        echo "[ERROR] iOS build environment not ready"; \
-        echo ""; \
-        echo "To enable iOS building:"; \
-        echo "1. Install Xcode from the App Store"; \
-        echo "2. Run: sudo xcode-select -s /Applications/Xcode.app/Contents/Developer"; \
-        echo "3. Accept the license: sudo xcodebuild -license accept"; \
-    fi
-
-check-android-env:
-    @echo "Android Build Environment Check"
-    @echo "==============================="
-    @echo ""
-    @just _check-android-home
-    @just check-cmd adb "adb"
-    @just _check-gradle
-    @just _check-java
-    @just check-dir "{{android_project}}" "Android project"
-    @if [ -d "{{android_project}}" ]; then \
-        just check-dir "{{android_project}}/build.gradle.kts" "build.gradle.kts" 2>/dev/null || echo "[ERROR] build.gradle.kts not found"; \
-        just check-dir "{{android_project}}/app/build.gradle.kts" "app/build.gradle.kts" 2>/dev/null || echo "[ERROR] app/build.gradle.kts not found"; \
-        just check-dir "{{android_project}}/settings.gradle.kts" "settings.gradle.kts" 2>/dev/null || echo "[ERROR] settings.gradle.kts not found"; \
-    fi
-    @echo ""
-    @echo "Build Environment Summary"
-    @echo "========================"
-    @just _android-env-summary
-    @echo ""
-    @echo "For full setup instructions, see:"
-    @echo "  https://developer.android.com/studio/install"
-
-# Private helper: Check ANDROID_HOME
-[private]
-_check-android-home:
-    @if [ -n "$$ANDROID_HOME" ] && [ -d "$$ANDROID_HOME" ]; then \
-        echo "[OK] ANDROID_HOME set: $$ANDROID_HOME"; \
-    else \
-        echo "[ERROR] ANDROID_HOME not set or directory doesn't exist"; \
-        just _suggest-android-sdk; \
-    fi
-
-# Private helper: Suggest Android SDK locations
-[private]
-_suggest-android-sdk:
-    @if [ -d "$$HOME/Android/Sdk" ]; then \
-        echo "[INFO] Found Android SDK at: $$HOME/Android/Sdk"; \
-        echo "   Set: export ANDROID_HOME=\"$$HOME/Android/Sdk\""; \
-    elif [ -d "$$HOME/Library/Android/sdk" ]; then \
-        echo "[INFO] Found Android SDK at: $$HOME/Library/Android/sdk"; \
-        echo "   Set: export ANDROID_HOME=\"$$HOME/Library/Android/sdk\""; \
-    elif [ -d "/Applications/Android Studio.app" ]; then \
-        echo "[INFO] Found Android Studio in Applications"; \
-        echo "   Check SDK location in Android Studio settings"; \
-    else \
-        echo "[ERROR] Android SDK not found in common locations"; \
-        echo "   Please install Android Studio or standalone SDK"; \
-    fi
-
-# Private helper: Check Gradle
-[private]
-_check-gradle:
-    @if [ -f "{{android_project}}/gradlew" ]; then \
-        echo "[OK] Gradle wrapper found in Android project"; \
-        if [ -x "{{android_project}}/gradlew" ]; then \
-            echo "[OK] Gradle wrapper is executable"; \
-        else \
-            echo "[WARN] Gradle wrapper not executable (will be fixed automatically)"; \
-        fi; \
-    elif command -v gradle >/dev/null 2>&1; then \
-        echo "[OK] System gradle found: `gradle --version 2>/dev/null | grep 'Gradle' | head -1`"; \
-    else \
-        echo "[ERROR] Neither gradle wrapper nor system gradle found"; \
-    fi
-
-# Private helper: Check Java
-[private]
-_check-java:
-    @if command -v java >/dev/null 2>&1 && java -version >/dev/null 2>&1; then \
-        echo "[OK] Java found: `java -version 2>&1 | head -1`"; \
-        if [ -n "${JAVA_HOME:-}" ]; then \
-            echo "[OK] JAVA_HOME set: ${JAVA_HOME}"; \
-        else \
-            echo "[WARN] JAVA_HOME not set (may cause issues)"; \
-        fi; \
-    else \
-        echo "[ERROR] Java not found - required for Android builds"; \
-        if [ -n "${JAVA_HOME:-}" ]; then \
-            echo "[WARN] JAVA_HOME set but java command not working: ${JAVA_HOME}"; \
-        else \
-            echo "[WARN] JAVA_HOME also not set"; \
-        fi; \
-    fi
-
-# Private helper: Android environment summary
-[private]
-_android-env-summary:
-    @if [ ! -d "{{android_project}}" ]; then \
-        echo "[ERROR] CRITICAL: Android project missing"; \
-        echo "[ERROR] Android build environment has critical issues"; \
-        echo ""; \
-        echo "Please install missing components and try again"; \
-    elif ! command -v java >/dev/null 2>&1; then \
-        echo "[ERROR] CRITICAL: Java/JDK missing"; \
-        echo "[ERROR] Android build environment has critical issues"; \
-        echo ""; \
-        echo "Please install missing components and try again"; \
-    elif [ ! -f "{{android_project}}/gradlew" ] && ! command -v gradle >/dev/null 2>&1; then \
-        echo "[ERROR] CRITICAL: Gradle missing"; \
-        echo "[ERROR] Android build environment has critical issues"; \
-        echo ""; \
-        echo "Please install missing components and try again"; \
-    else \
-        echo "[OK] Android build environment looks good!"; \
-        echo ""; \
-        echo "Ready to run:"; \
-        echo "  just build-android"; \
-    fi
-
-# Build iOS app for simulator
-build-ios:
-    @echo "[iOS] Building BitChat iOS app for simulator..."
-    @cd {{emulator_rig}} && \
-    if command -v xcodebuild >/dev/null 2>&1; then \
-        just _build-ios-xcode; \
-    elif command -v swift >/dev/null 2>&1; then \
-        just _build-ios-swift; \
-    else \
-        echo "[ERROR] Neither xcodebuild nor swift found"; \
-        echo "Please install Xcode from the App Store"; \
-        exit 1; \
-    fi
-
-# Private helper: Build iOS with Xcode
-[private]
-_build-ios-xcode:
-    cd {{ios_project}} && \
-    echo "[INFO] Available build schemes:"; \
-    xcodebuild -list -quiet 2>/dev/null || echo "Could not list schemes"; \
-    echo "[BUILD] Building for iOS Simulator..."; \
-    if xcodebuild \
-        -project bitchat.xcodeproj \
-        -scheme "bitchat (iOS)" \
-        -configuration Debug \
-        -destination "platform=iOS Simulator,name=iPhone 15 Pro Test" \
-        -derivedDataPath ./build \
-        CODE_SIGN_IDENTITY="" \
-        CODE_SIGNING_REQUIRED=NO \
-        DEVELOPMENT_TEAM="" \
-        ONLY_ACTIVE_ARCH=YES \
-        build; then \
-        cd ../.. && just _copy-ios-app; \
-    else \
-        echo "[WARN] iOS Simulator build failed, trying macOS target..."; \
-        just _build-ios-macos-fallback; \
-    fi
-
-# Private helper: Build iOS for macOS (fallback)
-[private]
-_build-ios-macos-fallback:
-    cd {{ios_project}} && \
-    xcodebuild \
-        -project bitchat.xcodeproj \
-        -scheme "bitchat (macOS)" \
-        -configuration Debug \
-        -destination "platform=macOS,arch=arm64" \
-        -derivedDataPath ./build \
-        CODE_SIGN_IDENTITY="" \
-        CODE_SIGNING_REQUIRED=NO \
-        DEVELOPMENT_TEAM="" \
-        ONLY_ACTIVE_ARCH=YES \
-        build && \
-    echo "[OK] macOS build completed (can be used for testing)" && \
-    just _copy-ios-app
-
-# Private helper: Build iOS with Swift PM
-[private]
-_build-ios-swift:
-    cd {{ios_project}} && \
-    swift build --configuration release && \
-    if [ -d ".build/release" ]; then \
-        just _create-ios-app-bundle; \
-    else \
-        echo "[ERROR] Swift build failed"; \
-        exit 1; \
-    fi
-
-# Private helper: Copy iOS app bundle
-[private]
-_copy-ios-app:
-    @cd {{emulator_rig}} && \
-    if find ./vendored/bitchat-ios/build -name "*.app" -type d | grep -q "iphonesimulator"; then \
-        just _extract-ios-app "iphonesimulator"; \
-    elif find ./vendored/bitchat-ios/build -name "*.app" -type d | head -1 >/dev/null 2>&1; then \
-        just _extract-ios-app ""; \
-    else \
-        echo "[ERROR] Build failed - no app bundle found"; \
-        exit 1; \
-    fi
-
-# Private helper: Extract iOS app to result directory
-[private]
-_extract-ios-app filter:
-    @mkdir -p ios-app-result
-    @rm -rf ios-app-result/*
-    @if [ -n "{{filter}}" ]; then \
-        APP_SOURCE=`find ./vendored/bitchat-ios/build -name "*.app" -type d | grep "{{filter}}" | head -1`; \
-    else \
-        APP_SOURCE=`find ./vendored/bitchat-ios/build -name "*.app" -type d | head -1`; \
-    fi; \
-    if [ -n "$$APP_SOURCE" ]; then \
-        cp -r "$$APP_SOURCE" ios-app-result/BitChat.app; \
-        echo "[APP] App bundle copied to: ios-app-result/BitChat.app"; \
-        echo "[READY] Ready for iOS Simulator installation!"; \
-    else \
-        echo "[ERROR] Could not locate built app bundle"; \
-        exit 1; \
-    fi
-
-# Private helper: Create iOS app bundle for Swift PM build
-[private]
-_create-ios-app-bundle:
-    mkdir -p ios-app-result/BitChat.app
-    if [ -f "{{ios_project}}/.build/release/bitchat" ]; then \
-        cp "{{ios_project}}/.build/release/bitchat" ios-app-result/BitChat.app/; \
-    fi
-    printf '<?xml version="1.0" encoding="UTF-8"?>\n<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">\n<plist version="1.0">\n<dict>\n    <key>CFBundleExecutable</key>\n    <string>bitchat</string>\n    <key>CFBundleIdentifier</key>\n    <string>tech.permissionless.bitchat</string>\n    <key>CFBundleName</key>\n    <string>BitChat</string>\n    <key>CFBundleVersion</key>\n    <string>1.0</string>\n    <key>CFBundleShortVersionString</key>\n    <string>1.0</string>\n    <key>LSMinimumSystemVersion</key>\n    <string>16.0</string>\n</dict>\n</plist>\n' > ios-app-result/BitChat.app/Info.plist
-    echo "[APP] App bundle created at: ios-app-result/BitChat.app"
-    echo "[READY] Ready for iOS Simulator installation!"
-
-# Build Android APK
-build-android:
-    @echo "[ANDROID] Building BitChat Android app..."
-    @cd {{android_project}} && just _setup-android-env && just _build-android-apk
-
-# Private helper: Setup Android environment
-[private]
-_setup-android-env:
-    @if [ -z "$$ANDROID_HOME" ]; then \
-        just _detect-android-sdk || exit 1; \
-    fi
-    @export PATH="$$PATH:$$ANDROID_HOME/platform-tools:$$ANDROID_HOME/emulator:$$ANDROID_HOME/tools/bin"
-    @if ! command -v java &> /dev/null; then \
-        echo "[ANDROID] ERROR: Java not found. Please install Java JDK 11 or later."; \
-        exit 1; \
-    fi
-    @echo "[ANDROID] Using Java: `java -version 2>&1 | head -1`"
-    @echo "[ANDROID] Using Android SDK: $$ANDROID_HOME"
-    @just _detect-java-home
-
-# Private helper: Detect Android SDK
-[private]
-_detect-android-sdk:
-    @if [ -d "$$HOME/Android/Sdk" ]; then \
-        export ANDROID_HOME="$$HOME/Android/Sdk"; \
-        echo "[ANDROID] Found Android SDK at: $$ANDROID_HOME"; \
-    elif [ -d "$$HOME/Library/Android/sdk" ]; then \
-        export ANDROID_HOME="$$HOME/Library/Android/sdk"; \
-        echo "[ANDROID] Found Android SDK at: $$ANDROID_HOME"; \
-    elif [ -d "/opt/android-sdk" ]; then \
-        export ANDROID_HOME="/opt/android-sdk"; \
-        echo "[ANDROID] Found Android SDK at: $$ANDROID_HOME"; \
-    else \
-        echo "[ANDROID] ERROR: Android SDK not found. Please set ANDROID_HOME or install Android Studio."; \
-        echo "[ANDROID] Common locations:"; \
-        echo "  - $$HOME/Android/Sdk (Linux)"; \
-        echo "  - $$HOME/Library/Android/sdk (macOS)"; \
-        echo "  - /opt/android-sdk (System install)"; \
-        exit 1; \
-    fi
-
-# Private helper: Detect Java home
-[private]
-_detect-java-home:
-    @if [ -z "$$JAVA_HOME" ]; then \
-        if command -v /usr/libexec/java_home &> /dev/null; then \
-            export JAVA_HOME=`/usr/libexec/java_home`; \
-            echo "[ANDROID] Detected JAVA_HOME: $$JAVA_HOME"; \
-        elif [ -d "/usr/lib/jvm/default-java" ]; then \
-            export JAVA_HOME="/usr/lib/jvm/default-java"; \
-            echo "[ANDROID] Using JAVA_HOME: $$JAVA_HOME"; \
-        else \
-            echo "[ANDROID] WARNING: JAVA_HOME not set. Build may fail."; \
-        fi; \
-    fi
-
-# Private helper: Build Android APK
-[private]
-_build-android-apk:
-    @if [ -f "./gradlew" ]; then \
-        chmod +x ./gradlew; \
-        echo "[ANDROID] Using gradle wrapper"; \
-        GRADLE_CMD="./gradlew"; \
-    else \
-        if command -v gradle &> /dev/null; then \
-            echo "[ANDROID] Using system gradle"; \
-            GRADLE_CMD="gradle"; \
-        else \
-            echo "[ANDROID] ERROR: Neither gradle wrapper nor system gradle found"; \
-            exit 1; \
-        fi; \
-    fi
-    @echo "[ANDROID] Cleaning previous build..."
-    @$$GRADLE_CMD clean
-    @echo "[ANDROID] Building debug APK..."
-    @$$GRADLE_CMD assembleDebug
-    @just _package-android-apk
-
-# Private helper: Package Android APK
-[private]
-_package-android-apk:
-    @APK_PATH="app/build/outputs/apk/debug/app-debug.apk"; \
-    if [ -f "$$APK_PATH" ]; then \
-        echo "[ANDROID] [OK] Build successful!"; \
-        echo "[ANDROID] APK location: $$APK_PATH"; \
-        RESULT_DIR="../../android-app-result"; \
-        mkdir -p "$$RESULT_DIR"; \
-        cp "$$APK_PATH" "$$RESULT_DIR/BitChat.apk"; \
-        echo "[ANDROID] APK copied to: $$RESULT_DIR/BitChat.apk"; \
-        just _extract-android-package-info "$$APK_PATH" "$$RESULT_DIR"; \
-        just _create-android-build-info "$$RESULT_DIR"; \
-        echo "[ANDROID] Build completed successfully!"; \
-        echo "[ANDROID] Results in: $$RESULT_DIR/"; \
-    else \
-        echo "[ANDROID] [ERROR] Build failed - APK not found"; \
-        echo "[ANDROID] Expected: $$APK_PATH"; \
-        exit 1; \
-    fi
-
-# Private helper: Extract Android package info
-[private]
-_extract-android-package-info apk_path result_dir:
-    @if command -v aapt &> /dev/null; then \
-        echo "[ANDROID] Extracting package name..."; \
-        aapt dump badging "{{apk_path}}" | grep package:\ name | cut -d"'" -f2 > "{{result_dir}}/package_name.txt"; \
-        echo "[ANDROID] Package name: `cat {{result_dir}}/package_name.txt`"; \
-    elif [ -n "$$ANDROID_HOME" ] && [ -f "$$ANDROID_HOME/build-tools/"*"/aapt" ]; then \
-        echo "[ANDROID] Using build tools aapt..."; \
-        find "$$ANDROID_HOME/build-tools" -name "aapt" | head -1 | xargs -I {} {} dump badging "{{apk_path}}" | grep package:\ name | cut -d"'" -f2 > "{{result_dir}}/package_name.txt"; \
-        echo "[ANDROID] Package name: `cat {{result_dir}}/package_name.txt`"; \
-    else \
-        echo "[ANDROID] WARNING: aapt not found, could not extract package name"; \
-        echo "com.bitchat.android" > "{{result_dir}}/package_name.txt"; \
-    fi
-
-# Private helper: Create Android build info
-[private]
-_create-android-build-info result_dir:
-    @echo "[ANDROID] Creating build info..."
-    @echo "Build Date: `date`" > "{{result_dir}}/build_info.txt"
-    @echo "APK Path: app/build/outputs/apk/debug/app-debug.apk" >> "{{result_dir}}/build_info.txt"
-    @echo "Android SDK: $$ANDROID_HOME" >> "{{result_dir}}/build_info.txt"
-    @echo "Java Version: `java -version 2>&1 | head -1`" >> "{{result_dir}}/build_info.txt"
-
-# Build both iOS and Android apps
-build-apps: build-ios build-android
-
-# Show system development tools status
-check-system-tools:
-    @echo "BitChat Emulator Harness - System Tools Check"
-    @echo "=============================================="
-    @echo ""
-    cd {{emulator_rig}} && just setup-system-env
-
-# Emulator Testing: iOS <-> iOS real app testing  
-test-ios-ios:
-    @echo "Running iOS <-> iOS emulator testing with hybrid environment..."
-    just run-with-hybrid-env "test --client1 ios --client2 ios"
-    @echo "iOS <-> iOS emulator testing completed"
-
-# Emulator Testing: Android <-> Android real app testing
-test-android-android:
-    @echo "Running Android <-> Android emulator testing with hybrid environment..."
-    just run-with-hybrid-env "test --client1 android --client2 android"
-    @echo "Android <-> Android emulator testing completed"
-
-# Emulator Testing: iOS <-> Android cross-platform testing
-test-cross-platform:
-    @echo "Running iOS <-> Android cross-platform testing with hybrid environment..."
-    just run-with-hybrid-env "test --client1 ios --client2 android"
-    @echo "Cross-platform emulator testing completed"
-
-# Emulator Testing: Android <-> iOS cross-platform testing (reverse order)
-test-android-ios:
-    @echo "Running Android <-> iOS cross-platform testing with hybrid environment..."
-    just run-with-hybrid-env "test --client1 android --client2 ios"
-    @echo "Android <-> iOS cross-platform testing completed"
-
-# Emulator Testing: Run specific scenario with client combination
-test-scenario client1 client2 scenario:
-    @echo "Running {{scenario}} scenario with {{client1}} <-> {{client2}} with hybrid environment..."
-    just run-with-hybrid-env "test --client1 {{client1}} --client2 {{client2}} --scenario {{scenario}}"
-    @echo "{{scenario}} scenario completed"
-
-# Emulator Testing: Full compatibility matrix
-test-emulator-matrix:
-    @echo "Running full emulator compatibility matrix with hybrid environment..."
-    just run-with-hybrid-env "matrix"
-    @echo "Emulator compatibility matrix completed"
-
-# Helper: Run test suite
-[private]
-run-suite suite:
-    {{test_runner}} run-suite {{suite}}
-
-# Helper: Run individual test scenario
-[private]
-run-scenario scenario:
-    {{test_runner}} run {{scenario}}
-
-# Run all critical test scenarios with event-driven orchestrator
-test-critical: build
-    just run-suite critical
-
-# Run security-critical scenarios only
-test-security: build
-    just run-suite security
-
-# Run robustness scenarios only  
-test-robustness: build
-    just run-suite robustness
-
-# Run all test scenarios (existing + critical)
-test-all: build
-    just run-suite all
-
-# Individual critical scenario tests
-test-transport-failover: build
-    just run-scenario transport-failover-recovery
-
-test-session-rekey: build
-    just run-scenario session-rekey-under-load
-
-test-byzantine-fault: build
-    just run-scenario byzantine-fault-tolerance
-
-test-panic-recovery: build
-    just run-scenario panic-action-recovery
-
-test-mesh-partition: build
-    just run-scenario mesh-partition-healing
-
-test-file-transfer-resume: build
-    just run-scenario file-transfer-interruption-resume
-
-test-version-compatibility: build
-    just run-scenario protocol-version-compatibility
-
-test-peer-scaling: build
-    just run-scenario massive-peer-discovery-scaling
-
-# Legacy test commands (existing)
-test: build
-    {{test_runner}} run-basic-test
-
-run-basic-test: build
-    {{test_runner}} basic-send-receive
-
-run-rust-client-test: build
-    cd ../crates/bitchat-cli && cargo run -- --test-mode
-
-# Helper: Run stress test
-[private]
-stress-test scenario options="":
-    {{test_runner}} stress {{scenario}} {{options}}
-
-# Continuous testing with file watching
-watch-test-critical:
-    watchexec -e rs,toml "just test-critical"
-
-watch-test-security:
-    watchexec -e rs,toml "just test-security"
-
-# Generate test reports
-test-report: test-all
-    {{test_runner}} generate-report --output test_results.html
-
-# Clean simulator artifacts
+# Clean all build artifacts
 clean:
-    cd {{scenario_runner}} && nix develop --command cargo clean
-    rm -rf test_results.html logs/
+    @echo "Cleaning all simulator artifacts..."
+    cd virtual && nix develop --quiet --command cargo clean
+    cd device && nix develop --quiet --command just clean
+    @echo "All artifacts cleaned"
 
-# Development helpers
-test-status:
-    {{test_runner}} status
+# ============================================================================
+# Help and Documentation  
+# ============================================================================
 
-logs:
-    tail -f logs/test_runner.log
+# Show the unified interface
+help:
+    @echo "BitChat Simulator - Unified Test Interface"
+    @echo "==========================================="
+    @echo ""
+    @echo "Main Command:"
+    @echo "  just test-scenario SCENARIO CLIENT1,CLIENT2"
+    @echo ""
+    @echo "Client Types:"
+    @echo "  cli     - Command-line simulation client"
+    @echo "  wasm    - WebAssembly browser client"
+    @echo "  ios     - iOS simulator/device"
+    @echo "  android - Android emulator/device"
+    @echo ""
+    @echo "Examples:"
+    @echo "  just test-scenario 02_messaging_basic cli,cli        # Fast protocol test"
+    @echo "  just test-scenario 02_messaging_basic ios,android    # Real cross-platform test"
+    @echo "  just test-scenario 01_discovery_basic wasm,wasm      # Browser environment test"
+    @echo "  just test-scenario 03_integration_comprehensive android,android"
+    @echo ""
+    @echo "Development Workflows:"
+    @echo "  just dev-cycle SCENARIO      - Run scenario in simulation, then devices"
+    @echo "  just test-matrix SCENARIO    - Test across all client combinations"
+    @echo "  just smoke-test             - Quick health check"
+    @echo ""
+    @echo "Scenario Management:"
+    @echo "  just list-scenarios         - List all available scenarios"
+    @echo "  just new-scenario NAME       - Create new scenario from template"
+    @echo ""
+    @echo "Environment:"
+    @echo "  just build                  - Build all testing systems"
+    @echo "  just check-all             - Verify both environments ready"
+    @echo "  just build-virtual         - Build only simulation system"
+    @echo "  just build-device          - Build only device testing system"
+    @echo ""
+    @echo "System Routing:"
+    @echo "  Virtual (cli,wasm)    → Fast simulation testing (seconds)"
+    @echo "  Device (ios,android)  → Real-world E2E testing (minutes)"
+    @echo ""
+    @echo "Documentation:"
+    @echo "  See simulator/ARCHITECTURE.md for detailed architecture"
+    @echo "  See scenarios/ directory for example TOML files"
 
-# Benchmark critical scenarios
-bench-critical: build
-    {{test_runner}} benchmark critical
+# ============================================================================
+# Internal Targets (CI/CD)
+# ============================================================================
 
-# Stress test specific scenarios
-stress-transport-failover: build
-    just stress-test transport-failover-recovery "--iterations 100"
+# Run all scenarios in virtual mode (for CI/CD)
+_ci-virtual:
+    #!/usr/bin/env bash
+    set -euo pipefail
+    echo "Running all scenarios in virtual mode..."
+    for scenario in scenarios/*.toml; do
+        name=$(basename "$scenario" .toml)
+        echo "Testing $name..."
+        just test-scenario "$name" cli,cli || echo "$name failed"
+    done
 
-stress-session-rekey: build  
-    just stress-test session-rekey-under-load "--load-factor 10"
-
-stress-mesh-partition: build
-    just stress-test mesh-partition-healing "--nodes 20"
-
-# Helper: Run network simulation test
-[private]
-network-sim-test suite params:
-    {{test_runner}} run-suite {{suite}} {{params}}
-
-# Network simulation modes
-test-lossy-network: build
-    just network-sim-test critical "--network-loss 0.1"
-
-test-high-latency: build
-    just network-sim-test critical "--network-latency 500ms"
-
-test-bandwidth-limited: build
-    just network-sim-test critical "--bandwidth-limit 56kbps"
+# Run smoke test across both systems (for CI/CD)  
+_ci-smoke:
+    @echo "Running CI smoke tests..."
+    just test-scenario 02_messaging_basic cli,cli
+    just test-scenario 02_messaging_basic ios,ios

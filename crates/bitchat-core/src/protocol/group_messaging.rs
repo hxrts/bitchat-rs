@@ -3,7 +3,11 @@
 //! This module implements group messaging functionality, allowing users to create
 //! and participate in group conversations with multiple participants.
 
-use alloc::{collections::BTreeMap, string::{String, ToString}, vec::Vec};
+use alloc::{
+    collections::BTreeMap,
+    string::{String, ToString},
+    vec::Vec,
+};
 use serde::{Deserialize, Serialize};
 
 use crate::protocol::message::NoisePayloadType;

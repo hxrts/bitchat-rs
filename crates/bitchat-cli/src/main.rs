@@ -7,7 +7,6 @@ use bitchat_core::{
     internal::TransportError, BitchatError, BitchatResult, ChannelTransportType, ConnectionStatus,
     PeerId,
 };
-use bitchat_nostr;
 use clap::{Arg, Command};
 use std::io::{self, Write};
 
@@ -495,12 +494,12 @@ async fn run_interactive_mode(
     } else {
         CliAppConfig::load()?
     };
-    
+
     // Override with provided name
     if let Some(name) = name {
         config.identity.name = Some(name);
     }
-    
+
     // Add relay to nostr config if provided
     if let Some(relay) = relay {
         config.runtime.enabled_transports.push("nostr".to_string());
@@ -508,7 +507,7 @@ async fn run_interactive_mode(
         let relay_config = bitchat_nostr::NostrRelayConfig::new(relay);
         config.nostr.relays.push(relay_config);
     }
-    
+
     if automation_mode {
         // Emit Ready event for automation
         let ready_event = serde_json::json!({
@@ -523,7 +522,7 @@ async fn run_interactive_mode(
         });
         println!("{}", ready_event);
         std::io::stdout().flush().unwrap();
-        
+
         // Run in automation mode with JSON events
         run_automation_mode(config).await
     } else {
@@ -534,15 +533,19 @@ async fn run_interactive_mode(
 
 /// Run automation mode with JSON event output
 async fn run_automation_mode(config: CliAppConfig) -> Result<(), Box<dyn std::error::Error>> {
-    // Store the client name for cross-discovery simulation  
-    let client_name = config.identity.name.clone().unwrap_or_else(|| "unknown".to_string());
-    
+    // Store the client name for cross-discovery simulation
+    let client_name = config
+        .identity
+        .name
+        .clone()
+        .unwrap_or_else(|| "unknown".to_string());
+
     // Create app but don't run normal interactive loop
     let mut app = BitchatCliApp::new(config).await?;
-    
+
     // Start the app components
     app.running = true;
-    
+
     // Listen for commands from stdin and emit JSON events
     let stdin = std::io::stdin();
     loop {
@@ -581,12 +584,12 @@ async fn run_automation_mode(config: CliAppConfig) -> Result<(), Box<dyn std::er
                 break;
             }
         }
-        
+
         if !app.running {
             break;
         }
     }
-    
+
     app.stop().await?;
     Ok(())
 }
@@ -595,13 +598,13 @@ async fn run_automation_mode(config: CliAppConfig) -> Result<(), Box<dyn std::er
 async fn handle_automation_command(
     app: &mut BitchatCliApp,
     command: &str,
-    client_name: &str,
+    _client_name: &str,
 ) -> Result<(), Box<dyn std::error::Error>> {
     let parts: Vec<&str> = command.split_whitespace().collect();
     if parts.is_empty() {
         return Ok(());
     }
-    
+
     match parts[0] {
         "discover" => {
             // Start real discovery only - no mock simulation
@@ -619,7 +622,7 @@ async fn handle_automation_command(
             });
             println!("{}", event);
             std::io::stdout().flush().unwrap();
-            
+
             // Real discovery will emit PeerDiscovered events when peers are actually found
             // through the transport layer. No mock simulation.
         }
@@ -635,7 +638,7 @@ async fn handle_automation_command(
                         "timestamp": std::time::SystemTime::now()
                             .duration_since(std::time::UNIX_EPOCH)
                             .unwrap()
-                            .as_secs() as u64
+                            .as_secs()
                     }
                 });
                 println!("{}", event);
@@ -664,23 +667,23 @@ async fn handle_automation_command(
         "pause-transport" => {
             if parts.len() >= 2 {
                 let transport_str = parts[1];
-                
+
                 // Parse transport type
                 let transport_type = match transport_str.to_lowercase().as_str() {
                     "ble" => Some(bitchat_core::ChannelTransportType::Ble),
                     "nostr" => Some(bitchat_core::ChannelTransportType::Nostr),
                     _ => None,
                 };
-                
+
                 if let Some(transport) = transport_type {
                     // Attempt to pause the transport
                     let result = app.orchestrator_mut().pause_transport(transport).await;
-                    
+
                     let (status, error_msg) = match result {
                         Ok(_) => ("paused", None),
                         Err(e) => ("error", Some(e.to_string())),
                     };
-                    
+
                     let mut event_data = serde_json::json!({
                         "transport": transport_str,
                         "status": status,
@@ -689,17 +692,18 @@ async fn handle_automation_command(
                             .unwrap()
                             .as_millis() as u64
                     });
-                    
+
                     if let Some(error) = error_msg {
                         event_data["error"] = serde_json::Value::String(error);
                     }
-                    
+
                     let event = serde_json::json!({
                         "type": "TransportStatusChanged",
                         "data": event_data
                     });
                     println!("{}", event);
-            std::io::stdout().flush().unwrap();                } else {
+                    std::io::stdout().flush().unwrap();
+                } else {
                     let event = serde_json::json!({
                         "type": "TransportStatusChanged",
                         "data": {
@@ -713,29 +717,30 @@ async fn handle_automation_command(
                         }
                     });
                     println!("{}", event);
-            std::io::stdout().flush().unwrap();                }
+                    std::io::stdout().flush().unwrap();
+                }
             }
         }
         "resume-transport" => {
             if parts.len() >= 2 {
                 let transport_str = parts[1];
-                
+
                 // Parse transport type
                 let transport_type = match transport_str.to_lowercase().as_str() {
                     "ble" => Some(bitchat_core::ChannelTransportType::Ble),
                     "nostr" => Some(bitchat_core::ChannelTransportType::Nostr),
                     _ => None,
                 };
-                
+
                 if let Some(transport) = transport_type {
                     // Attempt to resume the transport
                     let result = app.orchestrator_mut().resume_transport(transport).await;
-                    
+
                     let (status, error_msg) = match result {
                         Ok(_) => ("active", None),
                         Err(e) => ("error", Some(e.to_string())),
                     };
-                    
+
                     let mut event_data = serde_json::json!({
                         "transport": transport_str,
                         "status": status,
@@ -744,11 +749,11 @@ async fn handle_automation_command(
                             .unwrap()
                             .as_millis() as u64
                     });
-                    
+
                     if let Some(error) = error_msg {
                         event_data["error"] = serde_json::Value::String(error);
                     }
-                    
+
                     let event = serde_json::json!({
                         "type": "TransportStatusChanged",
                         "data": event_data
@@ -777,11 +782,11 @@ async fn handle_automation_command(
             if parts.len() >= 3 {
                 let setting = parts[1];
                 let value = parts[2];
-                
+
                 // Handle rekey-specific configuration
                 let (event_type, success) = match setting {
                     "rekey-threshold" => {
-                        if let Ok(threshold) = value.parse::<u64>() {
+                        if let Ok(_threshold) = value.parse::<u64>() {
                             // TODO: Apply rekey threshold to active sessions
                             ("RekeyThresholdSet", true)
                         } else {
@@ -789,7 +794,7 @@ async fn handle_automation_command(
                         }
                     }
                     "rekey-interval" => {
-                        if let Ok(interval) = value.parse::<u64>() {
+                        if let Ok(_interval) = value.parse::<u64>() {
                             // TODO: Apply rekey interval to active sessions
                             ("RekeyIntervalSet", true)
                         } else {
@@ -802,12 +807,12 @@ async fn handle_automation_command(
                             "rekeying" | "established" | "handshaking" | "failed" => {
                                 ("SessionStateChanged", true)
                             }
-                            _ => ("ConfigurationError", false)
+                            _ => ("ConfigurationError", false),
                         }
                     }
-                    _ => ("ConfigurationChanged", true)
+                    _ => ("ConfigurationChanged", true),
                 };
-                
+
                 let event = serde_json::json!({
                     "type": event_type,
                     "data": {
@@ -821,7 +826,8 @@ async fn handle_automation_command(
                     }
                 });
                 println!("{}", event);
-            std::io::stdout().flush().unwrap();            }
+                std::io::stdout().flush().unwrap();
+            }
         }
         "sessions" => {
             // Return mock session list
@@ -837,7 +843,8 @@ async fn handle_automation_command(
                 }
             });
             println!("{}", event);
-            std::io::stdout().flush().unwrap();        }
+            std::io::stdout().flush().unwrap();
+        }
         "session-stats" => {
             // Return mock session statistics
             let event = serde_json::json!({
@@ -855,7 +862,8 @@ async fn handle_automation_command(
                 }
             });
             println!("{}", event);
-            std::io::stdout().flush().unwrap();        }
+            std::io::stdout().flush().unwrap();
+        }
         "cleanup-sessions" => {
             // Simulate session cleanup
             let event = serde_json::json!({
@@ -870,7 +878,8 @@ async fn handle_automation_command(
                 }
             });
             println!("{}", event);
-            std::io::stdout().flush().unwrap();        }
+            std::io::stdout().flush().unwrap();
+        }
         "validate-crypto-signatures" => {
             let event = serde_json::json!({
                 "type": "CryptographicValidation",
@@ -886,13 +895,14 @@ async fn handle_automation_command(
                 }
             });
             println!("{}", event);
-            std::io::stdout().flush().unwrap();        }
+            std::io::stdout().flush().unwrap();
+        }
         "test-session-security" => {
             let event = serde_json::json!({
                 "type": "SessionSecurity",
                 "data": {
                     "session_isolation": "enforced",
-                    "key_rotation": "automatic", 
+                    "key_rotation": "automatic",
                     "forward_secrecy": "enabled",
                     "replay_protection": "active",
                     "timestamp": std::time::SystemTime::now()
@@ -902,7 +912,8 @@ async fn handle_automation_command(
                 }
             });
             println!("{}", event);
-            std::io::stdout().flush().unwrap();        }
+            std::io::stdout().flush().unwrap();
+        }
         "start-rekey" => {
             // Simulate starting a rekey operation with canonical spec values
             let event = serde_json::json!({
@@ -920,7 +931,8 @@ async fn handle_automation_command(
                 }
             });
             println!("{}", event);
-            std::io::stdout().flush().unwrap();        }
+            std::io::stdout().flush().unwrap();
+        }
         "force-rekey" => {
             // Simulate forcing an immediate rekey
             let event = serde_json::json!({
@@ -936,7 +948,8 @@ async fn handle_automation_command(
                 }
             });
             println!("{}", event);
-            std::io::stdout().flush().unwrap();        }
+            std::io::stdout().flush().unwrap();
+        }
         "check-rekey-status" => {
             // Return rekey status information with canonical spec values
             let event = serde_json::json!({
@@ -957,7 +970,8 @@ async fn handle_automation_command(
                 }
             });
             println!("{}", event);
-            std::io::stdout().flush().unwrap();        }
+            std::io::stdout().flush().unwrap();
+        }
         "protocol-version" => {
             // Return protocol version information for compatibility testing
             let event = serde_json::json!({
@@ -975,10 +989,13 @@ async fn handle_automation_command(
                 }
             });
             println!("{}", event);
-            std::io::stdout().flush().unwrap();        }
+            std::io::stdout().flush().unwrap();
+        }
         cmd if cmd.starts_with("test-message-format ") => {
             // Test message format compatibility
-            let format = cmd.strip_prefix("test-message-format ").unwrap_or("unknown");
+            let format = cmd
+                .strip_prefix("test-message-format ")
+                .unwrap_or("unknown");
             let event = serde_json::json!({
                 "type": "MessageFormatTest",
                 "data": {
@@ -994,7 +1011,8 @@ async fn handle_automation_command(
                 }
             });
             println!("{}", event);
-            std::io::stdout().flush().unwrap();        }
+            std::io::stdout().flush().unwrap();
+        }
         "test-transport-compatibility" => {
             // Test transport layer compatibility
             let event = serde_json::json!({
@@ -1013,7 +1031,8 @@ async fn handle_automation_command(
                 }
             });
             println!("{}", event);
-            std::io::stdout().flush().unwrap();        }
+            std::io::stdout().flush().unwrap();
+        }
         "test-error-handling" => {
             // Test error handling compatibility
             let event = serde_json::json!({
@@ -1031,7 +1050,8 @@ async fn handle_automation_command(
                 }
             });
             println!("{}", event);
-            std::io::stdout().flush().unwrap();        }
+            std::io::stdout().flush().unwrap();
+        }
         "compatibility-report" => {
             // Generate comprehensive compatibility report
             let event = serde_json::json!({
@@ -1042,7 +1062,7 @@ async fn handle_automation_command(
                     "interoperability_score": 95,
                     "tested_features": [
                         "protocol_version",
-                        "cryptographic_primitives", 
+                        "cryptographic_primitives",
                         "message_formats",
                         "transport_layers",
                         "session_management",
@@ -1075,10 +1095,9 @@ async fn handle_automation_command(
             // Unknown command - just ignore for automation compatibility
         }
     }
-    
+
     Ok(())
 }
-
 
 /// Run normal interactive mode
 async fn run_normal_mode(config: CliAppConfig) -> Result<(), Box<dyn std::error::Error>> {
@@ -1116,7 +1135,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                         .long("relay")
                         .help("Relay URL for nostr transport")
                         .value_name("RELAY_URL"),
-                )
+                ),
         )
         .arg(
             Arg::new("config")
@@ -1193,7 +1212,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         let automation_mode = interactive_matches.get_flag("automation-mode");
         let name = interactive_matches.get_one::<String>("name").cloned();
         let relay = interactive_matches.get_one::<String>("relay").cloned();
-        
+
         return run_interactive_mode(automation_mode, name, relay).await;
     }
 

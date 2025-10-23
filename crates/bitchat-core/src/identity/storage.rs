@@ -3,7 +3,12 @@
 //! Provides cross-platform secure storage interfaces for identity data.
 //! Supports native keychain integration, WASM browser storage, and testing mocks.
 
-use alloc::{boxed::Box, collections::BTreeMap, string::{String, ToString}, vec::Vec};
+use alloc::{
+    boxed::Box,
+    collections::BTreeMap,
+    string::{String, ToString},
+    vec::Vec,
+};
 use serde::{Deserialize, Serialize};
 
 use crate::{BitchatError, Result};
@@ -16,19 +21,19 @@ use crate::{BitchatError, Result};
 pub trait SecureStorage: Send + Sync {
     /// Store encrypted data with a key
     fn store(&mut self, key: &str, data: Vec<u8>) -> Result<()>;
-    
+
     /// Retrieve encrypted data by key
     fn retrieve(&self, key: &str) -> Result<Option<Vec<u8>>>;
-    
+
     /// Delete data by key
     fn delete(&mut self, key: &str) -> Result<()>;
-    
+
     /// List all keys (for debugging/cleanup)
     fn list_keys(&self) -> Result<Vec<String>>;
-    
+
     /// Clear all stored data (panic mode)
     fn clear_all(&mut self) -> Result<()>;
-    
+
     /// Check if storage is available and accessible
     fn is_available(&self) -> bool;
 }
@@ -233,28 +238,28 @@ mod tests {
     #[test]
     fn test_memory_storage() {
         let mut storage = MemoryStorage::new();
-        
+
         assert!(storage.is_available());
-        
+
         let key = "test_key";
         let data = vec![1, 2, 3, 4];
-        
+
         // Store data
         storage.store(key, data.clone()).unwrap();
-        
+
         // Retrieve data
         let retrieved = storage.retrieve(key).unwrap().unwrap();
         assert_eq!(retrieved, data);
-        
+
         // List keys
         let keys = storage.list_keys().unwrap();
         assert_eq!(keys.len(), 1);
         assert_eq!(keys[0], key);
-        
+
         // Delete data
         storage.delete(key).unwrap();
         assert!(storage.retrieve(key).unwrap().is_none());
-        
+
         // Clear all
         storage.store("key1", vec![1]).unwrap();
         storage.store("key2", vec![2]).unwrap();
@@ -262,4 +267,3 @@ mod tests {
         assert!(storage.list_keys().unwrap().is_empty());
     }
 }
-

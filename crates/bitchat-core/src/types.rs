@@ -6,11 +6,12 @@
 use core::fmt;
 use core::ops::Deref;
 use core::str::FromStr;
+use core::time::Duration;
 use serde::{Deserialize, Serialize};
 
 cfg_if::cfg_if! {
     if #[cfg(not(feature = "std"))] {
-        use alloc::string::{String, ToString};
+        // No-std imports (currently unused)
     }
 }
 
@@ -184,6 +185,21 @@ impl Sub for Timestamp {
 
     fn sub(self, other: Timestamp) -> u64 {
         self.0.saturating_sub(other.0)
+    }
+}
+
+impl Sub<Duration> for Timestamp {
+    type Output = Timestamp;
+
+    fn sub(self, duration: Duration) -> Timestamp {
+        Timestamp(self.0.saturating_sub(duration.as_millis() as u64))
+    }
+}
+
+impl Timestamp {
+    /// Subtract a duration from this timestamp, saturating at 0
+    pub fn saturating_sub(self, duration: Duration) -> Timestamp {
+        Timestamp(self.0.saturating_sub(duration.as_millis() as u64))
     }
 }
 

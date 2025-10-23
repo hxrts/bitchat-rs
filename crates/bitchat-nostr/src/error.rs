@@ -46,6 +46,12 @@ pub enum NostrTransportError {
 
     #[error("Unknown peer: {peer_id}")]
     UnknownPeer { peer_id: PeerId },
+
+    #[error("Configuration error: {0}")]
+    ConfigurationError(String),
+
+    #[error("Connection failed: {0}")]
+    ConnectionFailed(String),
 }
 
 #[cfg(not(target_arch = "wasm32"))]

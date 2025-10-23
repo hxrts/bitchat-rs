@@ -17,7 +17,9 @@
 //! - `capabilities`: Capability detection and version negotiation
 //! - `announce`: Peer discovery announce packets with TLV encoding
 //! - `tlv`: Type-Length-Value encoding for structured data
+//! - `acknowledgments`: Read receipts and delivery acknowledgments
 
+pub mod acknowledgments;
 pub mod announce;
 pub mod connection_state;
 pub mod crypto;
@@ -53,7 +55,10 @@ pub use crypto::{
 pub use session::{NoiseSession, SessionState};
 
 // Re-export delivery types
-pub use delivery::{DeliveryAttempt, DeliveryConfig, DeliveryStatus, TrackedMessage};
+pub use delivery::{
+    DeliveryAttempt, DeliveryConfig, DeliveryStatus, DeliveryTracker, TrackedMessage,
+    EnhancedDeliveryTracker, EnhancedDeliveryStats,
+};
 
 // Re-export message store types
 pub use message_store::{
@@ -87,6 +92,11 @@ pub use fragmentation::{Fragment, FragmentHeader, MessageFragmenter, MessageReas
 // Re-export deduplication types
 pub use deduplication::{BloomFilter, DeduplicationManager, DeduplicationStats, PacketId};
 
+// Re-export acknowledgment types
+pub use acknowledgments::{
+    DeliveryAck, EnhancedDeliveryStatus, ReadReceipt, ReceiptManager, ReceiptStats, ReceiptType,
+};
+
 // Experimental re-exports (only available with experimental feature flag)
 #[cfg(feature = "experimental")]
 pub use file_transfer::{
@@ -103,12 +113,13 @@ pub use group_messaging::{
 #[cfg(feature = "experimental")]
 pub use session_sync::{
     DeviceAnnouncement, DeviceCapabilities, DeviceHeartbeat, DeviceId, DeviceInfo, DeviceStatus,
-    DeviceType, MessageRef, MultiDeviceSessionManager, SessionSyncState, SessionStatus,
-    SessionSyncMessage, SessionSyncRequest, SessionSyncResponse,
+    DeviceType, MessageRef, MultiDeviceSessionManager, SessionStatus, SessionSyncMessage,
+    SessionSyncRequest, SessionSyncResponse, SessionSyncState,
 };
 
 #[cfg(feature = "experimental")]
 pub use capabilities::{
     Capability, CapabilityId, CapabilityManager, CapabilityMessage, CapabilityRejection,
-    ImplementationInfo, NegotiationStatus, ProtocolVersion, RejectionReason, VersionAck, VersionHello,
+    ImplementationInfo, NegotiationStatus, ProtocolVersion, RejectionReason, VersionAck,
+    VersionHello,
 };

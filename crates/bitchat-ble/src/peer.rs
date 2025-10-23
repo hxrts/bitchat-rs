@@ -2,8 +2,8 @@
 
 use std::time::{Duration, Instant};
 
-use bitchat_core::{PeerId, BitchatResult, BitchatError};
 use bitchat_core::protocol::DiscoveredPeer;
+use bitchat_core::{BitchatError, BitchatResult, PeerId};
 use btleplug::api::Peripheral;
 use btleplug::platform::Peripheral as PlatformPeripheral;
 
@@ -101,13 +101,15 @@ impl BlePeer {
     pub fn update_from_announce(&mut self, discovered_peer: &DiscoveredPeer) -> BitchatResult<()> {
         // Verify the peer IDs match
         if self.peer_id != discovered_peer.peer_id {
-            return Err(BitchatError::invalid_packet("Peer ID mismatch in announce update"));
+            return Err(BitchatError::invalid_packet(
+                "Peer ID mismatch in announce update",
+            ));
         }
 
         // Update the nickname if it's different
         // For now, we don't store the full announce information in BlePeer
         // In a full implementation, we might want to store noise keys, signatures, etc.
-        
+
         Ok(())
     }
 
@@ -117,7 +119,7 @@ impl BlePeer {
         // In a real implementation, we would need to create a mock peripheral or
         // refactor BlePeer to optionally have a peripheral
         Err(BitchatError::invalid_packet(
-            "Cannot create BlePeer from DiscoveredPeer without BLE peripheral"
+            "Cannot create BlePeer from DiscoveredPeer without BLE peripheral",
         ))
     }
 }
@@ -125,14 +127,13 @@ impl BlePeer {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use btleplug::platform::Peripheral;
 
     // Note: These tests would require mock peripherals in a real test suite
     // For now, we'll test the logic that doesn't depend on btleplug
 
     #[test]
     fn test_connection_state_transitions() {
-        let peer_id = PeerId::new([1, 2, 3, 4, 5, 6, 7, 8]);
+        let _peer_id = PeerId::new([1, 2, 3, 4, 5, 6, 7, 8]);
         // We can't easily create a mock Peripheral here, so this is a simplified test
 
         // Test retry logic

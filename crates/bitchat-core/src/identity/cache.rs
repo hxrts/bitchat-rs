@@ -34,7 +34,10 @@ impl IdentityCache {
     }
 
     /// Get cryptographic identity by fingerprint
-    pub fn get_cryptographic_identity(&self, fingerprint: &Fingerprint) -> Option<&CryptographicIdentity> {
+    pub fn get_cryptographic_identity(
+        &self,
+        fingerprint: &Fingerprint,
+    ) -> Option<&CryptographicIdentity> {
         self.cryptographic_identities.get(fingerprint)
     }
 
@@ -99,14 +102,12 @@ impl IdentityCache {
         });
 
         // Remove social identities without corresponding crypto identities
-        self.social_identities.retain(|fp, _| {
-            self.cryptographic_identities.contains_key(fp)
-        });
+        self.social_identities
+            .retain(|fp, _| self.cryptographic_identities.contains_key(fp));
 
         // Clean up verified list
-        self.verified_fingerprints.retain(|fp| {
-            self.cryptographic_identities.contains_key(fp)
-        });
+        self.verified_fingerprints
+            .retain(|fp| self.cryptographic_identities.contains_key(fp));
     }
 
     /// Remove an identity completely
@@ -160,4 +161,3 @@ pub struct IdentityCacheStats {
     /// Total blocked
     pub total_blocked: usize,
 }
-

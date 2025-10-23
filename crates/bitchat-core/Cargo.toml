@@ -41,9 +41,16 @@ testing = [
     "monitoring"
 ]
 
+# QR-based peer verification (Tier 1 feature)
+qr-verification = ["qr-generation"]
+
 # Experimental features (not in canonical implementation)
 # Includes: file transfer, group messaging, multi-device sync, capability negotiation
 experimental = []
+
+# QR code generation for peer verification
+qr-generation = ["qrcode"]
+qr-png = ["qr-generation", "qrcode/image"]
 
 # Internal feature flags (not for external use)
 task-logging = ["tracing"]
@@ -97,6 +104,10 @@ instant = { workspace = true, optional = true }
 
 # Geolocation support (std only)
 geohash = { workspace = true, optional = true }
+
+# QR code generation (optional)
+qrcode = { version = "0.13", default-features = false, optional = true }
+base64 = { version = "0.22", default-features = false, features = ["alloc"] }
 
 [target.'cfg(target_arch = "wasm32")'.dependencies]
 getrandom = { workspace = true }

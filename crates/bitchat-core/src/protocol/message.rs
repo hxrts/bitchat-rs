@@ -76,7 +76,7 @@ impl NoisePayloadType {
             0x03 => Ok(NoisePayloadType::Delivered),
             0x10 => Ok(NoisePayloadType::VerifyChallenge),
             0x11 => Ok(NoisePayloadType::VerifyResponse),
-            
+
             // Experimental message types (conditionally available)
             #[cfg(feature = "experimental")]
             0x20 => Ok(NoisePayloadType::FileOffer),
@@ -114,7 +114,7 @@ impl NoisePayloadType {
             0x51 => Ok(NoisePayloadType::VersionAck),
             #[cfg(feature = "experimental")]
             0x52 => Ok(NoisePayloadType::CapabilityRejection),
-            
+
             _ => Err(BitchatError::invalid_packet("Unknown noise payload type")),
         }
     }
@@ -124,13 +124,13 @@ impl NoisePayloadType {
         match value {
             // Core types always supported
             0x01..=0x03 | 0x10..=0x11 => true,
-            
+
             // Experimental types conditionally supported
             #[cfg(feature = "experimental")]
             0x20..=0x23 | 0x30..=0x36 | 0x40..=0x43 | 0x50..=0x52 => true,
             #[cfg(not(feature = "experimental"))]
             0x20..=0x23 | 0x30..=0x36 | 0x40..=0x43 | 0x50..=0x52 => false,
-            
+
             _ => false,
         }
     }

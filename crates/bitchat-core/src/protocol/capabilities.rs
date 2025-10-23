@@ -4,7 +4,12 @@
 //! graceful interoperability with different BitChat implementations that may support
 //! different feature sets.
 
-use alloc::{collections::BTreeSet, string::{String, ToString}, vec::Vec, vec};
+use alloc::{
+    collections::BTreeSet,
+    string::{String, ToString},
+    vec,
+    vec::Vec,
+};
 use hashbrown::{HashMap, HashSet};
 use serde::{Deserialize, Serialize};
 
@@ -98,7 +103,7 @@ impl CapabilityId {
     }
 
     // Standard capability identifiers for BitChat features
-    
+
     /// Core messaging capability (always present)
     pub fn core_messaging() -> Self {
         Self("core.messaging.v1".to_string())
@@ -224,7 +229,11 @@ impl ImplementationInfo {
                 "bitchat-rust".to_string(),
                 env!("CARGO_PKG_VERSION").to_string(),
             )
-            .with_platform(format!("{}-{}", std::env::consts::OS, std::env::consts::ARCH))
+            .with_platform(format!(
+                "{}-{}",
+                std::env::consts::OS,
+                std::env::consts::ARCH
+            ))
         }
         #[cfg(not(feature = "std"))]
         {
@@ -430,7 +439,7 @@ impl CapabilityManager {
     /// Create a new capability manager
     pub fn new(local_peer_id: PeerId) -> Result<Self> {
         let hello = VersionHello::standard(local_peer_id)?;
-        
+
         Ok(Self {
             local_peer_id,
             local_capabilities: hello.capabilities,
@@ -461,8 +470,10 @@ impl CapabilityManager {
         let mutual_capabilities = self.find_mutual_capabilities(&hello.capabilities);
 
         // Store negotiated state
-        self.peer_capabilities.insert(hello.peer_id, mutual_capabilities.clone());
-        self.peer_versions.insert(hello.peer_id, negotiated_version.clone());
+        self.peer_capabilities
+            .insert(hello.peer_id, mutual_capabilities.clone());
+        self.peer_versions
+            .insert(hello.peer_id, negotiated_version.clone());
 
         Ok(VersionAck::new(
             self.local_peer_id,
@@ -475,8 +486,10 @@ impl CapabilityManager {
     /// Process an incoming version ack
     pub fn process_ack(&mut self, ack: &VersionAck) -> Result<()> {
         // Store negotiated capabilities and version
-        self.peer_capabilities.insert(ack.peer_id, ack.mutual_capabilities.clone());
-        self.peer_versions.insert(ack.peer_id, ack.negotiated_version.clone());
+        self.peer_capabilities
+            .insert(ack.peer_id, ack.mutual_capabilities.clone());
+        self.peer_versions
+            .insert(ack.peer_id, ack.negotiated_version.clone());
         Ok(())
     }
 
@@ -523,7 +536,8 @@ impl CapabilityManager {
         let mut timed_out_peers = Vec::new();
 
         // Find peers that have timed out
-        let expired_peers: Vec<PeerId> = self.hello_timeouts
+        let expired_peers: Vec<PeerId> = self
+            .hello_timeouts
             .iter()
             .filter(|(_, &timeout)| now > timeout)
             .map(|(&peer_id, _)| peer_id)
@@ -542,7 +556,7 @@ impl CapabilityManager {
     /// Mark a peer as legacy (doesn't support capability negotiation)
     pub fn mark_as_legacy_peer(&mut self, peer_id: PeerId) {
         self.legacy_peers.insert(peer_id);
-        
+
         // Assign core capabilities only (what canonical implementation supports)
         let core_capabilities = vec![
             Capability::new(CapabilityId::core_messaging(), "1.0".to_string()),
@@ -553,9 +567,10 @@ impl CapabilityManager {
             Capability::new(CapabilityId::ble_transport(), "1.0".to_string()),
             Capability::new(CapabilityId::nostr_transport(), "1.0".to_string()),
         ];
-        
+
         self.peer_capabilities.insert(peer_id, core_capabilities);
-        self.peer_versions.insert(peer_id, ProtocolVersion::current());
+        self.peer_versions
+            .insert(peer_id, ProtocolVersion::current());
     }
 
     /// Check if a peer is marked as legacy (canonical implementation)
@@ -580,7 +595,7 @@ impl CapabilityManager {
 
     fn negotiate_version(&self, peer_versions: &[ProtocolVersion]) -> Result<ProtocolVersion> {
         let our_version = ProtocolVersion::current();
-        
+
         // Find the highest compatible version
         for peer_version in peer_versions {
             if our_version.is_compatible_with(peer_version) {
@@ -588,7 +603,9 @@ impl CapabilityManager {
             }
         }
 
-        Err(BitchatError::invalid_packet("No compatible protocol version"))
+        Err(BitchatError::invalid_packet(
+            "No compatible protocol version",
+        ))
     }
 
     fn find_mutual_capabilities(&self, peer_capabilities: &[Capability]) -> Vec<Capability> {
@@ -596,7 +613,11 @@ impl CapabilityManager {
 
         for peer_cap in peer_capabilities {
             // Find matching capability in our list
-            if let Some(our_cap) = self.local_capabilities.iter().find(|cap| cap.id == peer_cap.id) {
+            if let Some(our_cap) = self
+                .local_capabilities
+                .iter()
+                .find(|cap| cap.id == peer_cap.id)
+            {
                 // Use the intersection of parameters
                 let mutual_params: BTreeSet<String> = our_cap
                     .parameters
@@ -698,7 +719,7 @@ mod tests {
     fn test_capability_manager() {
         let peer_id = PeerId::new([1, 2, 3, 4, 5, 6, 7, 8]);
         let remote_peer = PeerId::new([9, 10, 11, 12, 13, 14, 15, 16]);
-        
+
         let mut manager = CapabilityManager::new(peer_id).unwrap();
 
         // Create a hello from remote peer with limited capabilities
@@ -710,7 +731,8 @@ mod tests {
                 Capability::new(CapabilityId::noise_protocol(), "1.0".to_string()),
             ],
             ImplementationInfo::new("test-impl".to_string(), "1.0".to_string()),
-        ).unwrap();
+        )
+        .unwrap();
 
         // Process the hello
         let ack = manager.process_hello(&remote_hello).unwrap();
@@ -725,7 +747,7 @@ mod tests {
     fn test_feature_compatibility_check() {
         let peer_id = PeerId::new([1, 2, 3, 4, 5, 6, 7, 8]);
         let remote_peer = PeerId::new([9, 10, 11, 12, 13, 14, 15, 16]);
-        
+
         let mut manager = CapabilityManager::new(peer_id).unwrap();
 
         // Simulate negotiation with canonical implementation (no advanced features)
@@ -739,7 +761,8 @@ mod tests {
                 Capability::new(CapabilityId::location_channels(), "1.0".to_string()),
             ],
             ImplementationInfo::new("bitchat-swift".to_string(), "1.0".to_string()),
-        ).unwrap();
+        )
+        .unwrap();
 
         manager.process_hello(&canonical_hello).unwrap();
 
@@ -755,19 +778,28 @@ mod tests {
     fn test_legacy_peer_detection() {
         let peer_id = PeerId::new([1, 2, 3, 4, 5, 6, 7, 8]);
         let legacy_peer = PeerId::new([9, 10, 11, 12, 13, 14, 15, 16]);
-        
+
         let mut manager = CapabilityManager::new(peer_id).unwrap();
 
         // Initially unknown
-        assert_eq!(manager.get_negotiation_status(&legacy_peer), NegotiationStatus::Unknown);
+        assert_eq!(
+            manager.get_negotiation_status(&legacy_peer),
+            NegotiationStatus::Unknown
+        );
 
         // Send hello and track timeout
         manager.track_hello_sent(legacy_peer);
-        assert_eq!(manager.get_negotiation_status(&legacy_peer), NegotiationStatus::Pending);
+        assert_eq!(
+            manager.get_negotiation_status(&legacy_peer),
+            NegotiationStatus::Pending
+        );
 
         // Mark as legacy
         manager.mark_as_legacy_peer(legacy_peer);
-        assert_eq!(manager.get_negotiation_status(&legacy_peer), NegotiationStatus::Legacy);
+        assert_eq!(
+            manager.get_negotiation_status(&legacy_peer),
+            NegotiationStatus::Legacy
+        );
         assert!(manager.is_legacy_peer(&legacy_peer));
 
         // Should have core capabilities only
@@ -784,18 +816,24 @@ mod tests {
     fn test_hello_timeout_handling() {
         let peer_id = PeerId::new([1, 2, 3, 4, 5, 6, 7, 8]);
         let timeout_peer = PeerId::new([9, 10, 11, 12, 13, 14, 15, 16]);
-        
+
         let mut manager = CapabilityManager::new(peer_id).unwrap();
 
         // Track hello sent
         manager.track_hello_sent(timeout_peer);
-        assert_eq!(manager.get_negotiation_status(&timeout_peer), NegotiationStatus::Pending);
+        assert_eq!(
+            manager.get_negotiation_status(&timeout_peer),
+            NegotiationStatus::Pending
+        );
 
         // Simulate timeout by marking as legacy directly (in real use, check_hello_timeouts would do this)
         manager.mark_as_legacy_peer(timeout_peer);
-        
+
         // Should now be legacy with core capabilities
-        assert_eq!(manager.get_negotiation_status(&timeout_peer), NegotiationStatus::Legacy);
+        assert_eq!(
+            manager.get_negotiation_status(&timeout_peer),
+            NegotiationStatus::Legacy
+        );
         assert!(manager.peer_supports_capability(&timeout_peer, &CapabilityId::core_messaging()));
         assert!(!manager.peer_supports_capability(&timeout_peer, &CapabilityId::file_transfer()));
     }
@@ -804,7 +842,7 @@ mod tests {
     fn test_graceful_degradation_with_canonical_implementation() {
         let peer_id = PeerId::new([1, 2, 3, 4, 5, 6, 7, 8]);
         let canonical_peer = PeerId::new([9, 10, 11, 12, 13, 14, 15, 16]);
-        
+
         let mut manager = CapabilityManager::new(peer_id).unwrap();
 
         // Simulate canonical implementation that doesn't respond to VersionHello
@@ -813,7 +851,10 @@ mod tests {
 
         // Verify graceful degradation
         assert!(manager.is_legacy_peer(&canonical_peer));
-        assert_eq!(manager.get_negotiation_status(&canonical_peer), NegotiationStatus::Legacy);
+        assert_eq!(
+            manager.get_negotiation_status(&canonical_peer),
+            NegotiationStatus::Legacy
+        );
 
         // Can use core features
         assert!(manager.should_use_feature(&canonical_peer, &CapabilityId::core_messaging()));
@@ -835,7 +876,7 @@ mod tests {
         let peer_id = PeerId::new([1, 2, 3, 4, 5, 6, 7, 8]);
         let enhanced_peer = PeerId::new([9, 10, 11, 12, 13, 14, 15, 16]);
         let legacy_peer = PeerId::new([17, 18, 19, 20, 21, 22, 23, 24]);
-        
+
         let mut manager = CapabilityManager::new(peer_id).unwrap();
 
         // Enhanced peer with full capabilities
@@ -846,8 +887,14 @@ mod tests {
         manager.mark_as_legacy_peer(legacy_peer);
 
         // Compare capabilities
-        assert_eq!(manager.get_negotiation_status(&enhanced_peer), NegotiationStatus::Negotiated);
-        assert_eq!(manager.get_negotiation_status(&legacy_peer), NegotiationStatus::Legacy);
+        assert_eq!(
+            manager.get_negotiation_status(&enhanced_peer),
+            NegotiationStatus::Negotiated
+        );
+        assert_eq!(
+            manager.get_negotiation_status(&legacy_peer),
+            NegotiationStatus::Legacy
+        );
 
         // Enhanced peer has all features
         assert!(manager.should_use_feature(&enhanced_peer, &CapabilityId::file_transfer()));

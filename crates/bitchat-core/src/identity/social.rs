@@ -79,4 +79,3 @@ impl SocialIdentity {
         self.last_interaction = Timestamp::now();
     }
 }
-

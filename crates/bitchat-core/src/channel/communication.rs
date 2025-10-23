@@ -100,6 +100,27 @@ pub enum Event {
         transport: TransportType,
         error: String,
     },
+    /// Transport health check completed
+    TransportHealthCheckCompleted {
+        transport_type: TransportType,
+        success: bool,
+        latency_ms: Option<u64>,
+        timestamp: u64,
+    },
+    /// Transport performance metrics updated
+    TransportMetricsUpdated {
+        transport_type: TransportType,
+        success_rate: f64,
+        average_latency_ms: Option<u64>,
+        timestamp: u64,
+    },
+    /// Transport failover occurred
+    TransportFailoverOccurred {
+        from_transport: TransportType,
+        to_transport: TransportType,
+        reason: String,
+        timestamp: u64,
+    },
 }
 
 // ----------------------------------------------------------------------------
@@ -148,6 +169,23 @@ pub enum Effect {
     PauseTransport { transport: TransportType },
     /// Resume a specific transport
     ResumeTransport { transport: TransportType },
+    /// Request transport health check
+    RequestTransportHealthCheck {
+        transport_type: TransportType,
+        timeout: Duration,
+    },
+    /// Update transport performance metrics
+    UpdateTransportMetrics {
+        transport_type: TransportType,
+        latency_ms: Option<u64>,
+        success_rate: f64,
+    },
+    /// Switch primary transport for failover
+    SwitchPrimaryTransport {
+        from_transport: TransportType,
+        to_transport: TransportType,
+        reason: String,
+    },
 }
 
 // ----------------------------------------------------------------------------

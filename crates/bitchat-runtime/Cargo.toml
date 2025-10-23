@@ -9,7 +9,7 @@ categories = ["network-programming", "cryptography"]
 
 [dependencies]
 bitchat-core = { path = "../bitchat-core", default-features = false, features = ["std"] }
-bitchat-harness = { path = "../bitchat-harness" }
+bitchat-harness = { path = "../../simulator/virtual/harness" }
 sha2 = { workspace = true }
 
 # Async runtime

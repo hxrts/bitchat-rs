@@ -9,14 +9,15 @@ use crate::{ChannelTransportType, PeerId};
 use crate::internal::LogLevel;
 use alloc::sync::Arc;
 use alloc::vec::Vec;
+use alloc::string::{String, ToString};
+use core::time::Duration;
+use serde::{Deserialize, Serialize};
 
 cfg_if::cfg_if! {
     if #[cfg(not(feature = "std"))] {
         use alloc::vec;
-        use alloc::boxed::Box;
     }
 }
-use core::time::Duration;
 
 // ----------------------------------------------------------------------------
 // Rate Limiting Configuration
@@ -566,11 +567,641 @@ impl TestConfig {
 }
 
 // ----------------------------------------------------------------------------
+// Canonical Transport Configuration
+// ----------------------------------------------------------------------------
+
+/// BLE Transport configuration with canonical parameter compatibility
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct BleTransportConfig {
+    // Core BLE parameters
+    pub max_packet_size: usize,
+    pub connection_timeout: Duration,
+    pub scan_timeout: Duration,
+    pub device_name_prefix: String,
+    
+    // Canonical fragmentation parameters
+    pub fragment_size: usize,                    // bleDefaultFragmentSize: 469
+    pub max_in_flight_assemblies: usize,         // bleMaxInFlightAssemblies: 128
+    pub fragment_lifetime_secs: f64,             // bleFragmentLifetimeSeconds: 30.0
+    pub expected_write_per_fragment_ms: u64,     // bleExpectedWritePerFragmentMs: 8
+    pub expected_write_max_ms: u64,              // bleExpectedWriteMaxMs: 2000
+    pub fragment_spacing_ms: u64,                // bleFragmentSpacingMs: 5
+    pub fragment_spacing_directed_ms: u64,       // bleFragmentSpacingDirectedMs: 4
+    
+    // Canonical duty cycle parameters
+    pub duty_on_duration: Duration,              // bleDutyOnDuration: 5.0s
+    pub duty_off_duration: Duration,             // bleDutyOffDuration: 10.0s
+    pub duty_on_duration_dense: Duration,        // bleDutyOnDurationDense: 3.0s
+    pub duty_off_duration_dense: Duration,       // bleDutyOffDurationDense: 15.0s
+    pub recent_traffic_force_scan_secs: f64,     // bleRecentTrafficForceScanSeconds: 10.0
+    
+    // Canonical connection and maintenance parameters
+    pub max_central_links: usize,                // bleMaxCentralLinks: 6
+    pub connect_rate_limit_interval: Duration,   // bleConnectRateLimitInterval: 0.5s
+    pub maintenance_interval: Duration,          // bleMaintenanceInterval: 5.0s
+    pub maintenance_leeway_secs: u64,            // bleMaintenanceLeewaySeconds: 1
+    pub isolation_relax_threshold_secs: u64,     // bleIsolationRelaxThresholdSeconds: 60
+    pub recent_timeout_window_secs: u64,         // bleRecentTimeoutWindowSeconds: 60
+    pub peer_inactivity_timeout_secs: f64,       // blePeerInactivityTimeoutSeconds: 8.0
+    
+    // Canonical timing parameters
+    pub announce_min_interval: Duration,         // bleAnnounceMinInterval: 1.0s
+    pub initial_announce_delay_secs: f64,        // bleInitialAnnounceDelaySeconds: 0.6
+    pub connect_timeout_secs: f64,               // bleConnectTimeoutSeconds: 8.0
+    pub restart_scan_delay_secs: f64,            // bleRestartScanDelaySeconds: 0.1
+    pub post_subscribe_announce_delay_secs: f64, // blePostSubscribeAnnounceDelaySeconds: 0.05
+    pub post_announce_delay_secs: f64,           // blePostAnnounceDelaySeconds: 0.4
+    pub force_announce_min_interval_secs: f64,   // bleForceAnnounceMinIntervalSeconds: 0.15
+    
+    // Canonical RSSI and connection parameters
+    pub dynamic_rssi_threshold: i32,             // bleDynamicRSSIThresholdDefault: -90
+    pub connection_candidates_max: usize,        // bleConnectionCandidatesMax: 100
+    pub pending_write_buffer_cap: usize,         // blePendingWriteBufferCapBytes: 1M
+    pub pending_notifications_cap: usize,        // blePendingNotificationsCapCount: 20
+    pub rssi_isolated_base: i32,                 // bleRSSIIsolatedBase: -90
+    pub rssi_isolated_relaxed: i32,              // bleRSSIIsolatedRelaxed: -92
+    pub rssi_connected_threshold: i32,           // bleRSSIConnectedThreshold: -85
+    pub rssi_high_timeout_threshold: i32,        // bleRSSIHighTimeoutThreshold: -80
+    
+    // Canonical network parameters
+    pub high_degree_threshold: usize,            // bleHighDegreeThreshold: 6
+    pub reachability_retention_verified_secs: f64,   // bleReachabilityRetentionVerifiedSeconds: 21.0
+    pub reachability_retention_unverified_secs: f64, // bleReachabilityRetentionUnverifiedSeconds: 21.0
+    pub ingress_record_lifetime_secs: f64,       // bleIngressRecordLifetimeSeconds: 3.0
+    pub connect_timeout_backoff_window_secs: f64, // bleConnectTimeoutBackoffWindowSeconds: 120.0
+    pub directed_spool_window_secs: f64,         // bleDirectedSpoolWindowSeconds: 15.0
+    pub disconnect_notify_debounce_secs: f64,    // bleDisconnectNotifyDebounceSeconds: 0.9
+    pub reconnect_log_debounce_secs: f64,        // bleReconnectLogDebounceSeconds: 2.0
+    pub weak_link_cooldown_secs: f64,            // bleWeakLinkCooldownSeconds: 30.0
+    pub weak_link_rssi_cutoff: i32,              // bleWeakLinkRSSICutoff: -90
+    
+    // Canonical packet tracking parameters
+    pub recent_packet_window_secs: f64,          // bleRecentPacketWindowSeconds: 30.0
+    pub recent_packet_window_max_count: usize,   // bleRecentPacketWindowMaxCount: 100
+    pub announce_interval_secs: f64,             // bleAnnounceIntervalSeconds: 4.0
+    pub connected_announce_base_secs_dense: f64, // bleConnectedAnnounceBaseSecondsDense: 30.0
+    pub connected_announce_base_secs_sparse: f64, // bleConnectedAnnounceBaseSecondsSparse: 15.0
+    pub connected_announce_jitter_dense: f64,    // bleConnectedAnnounceJitterDense: 8.0
+    pub connected_announce_jitter_sparse: f64,   // bleConnectedAnnounceJitterSparse: 4.0
+}
+
+impl Default for BleTransportConfig {
+    fn default() -> Self {
+        Self::canonical()
+    }
+}
+
+impl BleTransportConfig {
+    /// Create configuration with canonical default values from Swift implementation
+    pub fn canonical() -> Self {
+        Self {
+            // Core parameters (existing)
+            max_packet_size: 512,
+            connection_timeout: Duration::from_secs(8),
+            scan_timeout: Duration::from_secs(10),
+            device_name_prefix: "BitChat".to_string(),
+            
+            // Canonical fragmentation parameters
+            fragment_size: 469,
+            max_in_flight_assemblies: 128,
+            fragment_lifetime_secs: 30.0,
+            expected_write_per_fragment_ms: 8,
+            expected_write_max_ms: 2000,
+            fragment_spacing_ms: 5,
+            fragment_spacing_directed_ms: 4,
+            
+            // Canonical duty cycle parameters
+            duty_on_duration: Duration::from_secs(5),
+            duty_off_duration: Duration::from_secs(10),
+            duty_on_duration_dense: Duration::from_secs(3),
+            duty_off_duration_dense: Duration::from_secs(15),
+            recent_traffic_force_scan_secs: 10.0,
+            
+            // Canonical connection parameters
+            max_central_links: 6,
+            connect_rate_limit_interval: Duration::from_millis(500),
+            maintenance_interval: Duration::from_secs(5),
+            maintenance_leeway_secs: 1,
+            isolation_relax_threshold_secs: 60,
+            recent_timeout_window_secs: 60,
+            peer_inactivity_timeout_secs: 8.0,
+            
+            // Canonical timing parameters
+            announce_min_interval: Duration::from_secs(1),
+            initial_announce_delay_secs: 0.6,
+            connect_timeout_secs: 8.0,
+            restart_scan_delay_secs: 0.1,
+            post_subscribe_announce_delay_secs: 0.05,
+            post_announce_delay_secs: 0.4,
+            force_announce_min_interval_secs: 0.15,
+            
+            // Canonical RSSI parameters
+            dynamic_rssi_threshold: -90,
+            connection_candidates_max: 100,
+            pending_write_buffer_cap: 1_000_000,
+            pending_notifications_cap: 20,
+            rssi_isolated_base: -90,
+            rssi_isolated_relaxed: -92,
+            rssi_connected_threshold: -85,
+            rssi_high_timeout_threshold: -80,
+            
+            // Canonical network parameters
+            high_degree_threshold: 6,
+            reachability_retention_verified_secs: 21.0,
+            reachability_retention_unverified_secs: 21.0,
+            ingress_record_lifetime_secs: 3.0,
+            connect_timeout_backoff_window_secs: 120.0,
+            directed_spool_window_secs: 15.0,
+            disconnect_notify_debounce_secs: 0.9,
+            reconnect_log_debounce_secs: 2.0,
+            weak_link_cooldown_secs: 30.0,
+            weak_link_rssi_cutoff: -90,
+            
+            // Canonical packet tracking parameters
+            recent_packet_window_secs: 30.0,
+            recent_packet_window_max_count: 100,
+            announce_interval_secs: 4.0,
+            connected_announce_base_secs_dense: 30.0,
+            connected_announce_base_secs_sparse: 15.0,
+            connected_announce_jitter_dense: 8.0,
+            connected_announce_jitter_sparse: 4.0,
+        }
+    }
+    
+    /// Create configuration optimized for battery life
+    pub fn battery_optimized() -> Self {
+        let mut config = Self::canonical();
+        config.duty_on_duration = Duration::from_secs(3);
+        config.duty_off_duration = Duration::from_secs(15);
+        config.maintenance_interval = Duration::from_secs(10);
+        config.announce_interval_secs = 8.0;
+        config
+    }
+    
+    /// Create configuration optimized for development (faster intervals)
+    pub fn development() -> Self {
+        let mut config = Self::canonical();
+        config.duty_on_duration = Duration::from_secs(2);
+        config.duty_off_duration = Duration::from_secs(5);
+        config.maintenance_interval = Duration::from_secs(2);
+        config.announce_interval_secs = 2.0;
+        config
+    }
+    
+    /// Create configuration optimized for testing (very fast intervals)
+    pub fn testing() -> Self {
+        let mut config = Self::canonical();
+        config.duty_on_duration = Duration::from_millis(500);
+        config.duty_off_duration = Duration::from_millis(1000);
+        config.maintenance_interval = Duration::from_millis(500);
+        config.connection_timeout = Duration::from_millis(1000);
+        config.scan_timeout = Duration::from_millis(2000);
+        config.announce_interval_secs = 1.0;
+        config
+    }
+}
+
+/// Nostr Transport configuration with canonical parameter compatibility
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct NostrTransportConfig {
+    // Core Nostr parameters
+    pub relays: Vec<String>,
+    pub connection_timeout_secs: u64,
+    pub max_message_size: usize,
+    pub verify_tls: bool,
+    
+    // Canonical timing parameters
+    pub read_ack_interval: Duration,              // nostrReadAckInterval: 0.35s
+    pub geohash_initial_lookback_secs: u64,       // nostrGeohashInitialLookbackSeconds: 3600s
+    pub geohash_initial_limit: usize,             // nostrGeohashInitialLimit: 200
+    pub geo_relay_count: usize,                   // nostrGeoRelayCount: 5
+    pub geohash_sample_lookback_secs: u64,        // nostrGeohashSampleLookbackSeconds: 300s
+    pub geohash_sample_limit: usize,              // nostrGeohashSampleLimit: 100
+    
+    // Canonical backoff and reconnection parameters
+    pub relay_initial_backoff_secs: f64,          // nostrRelayInitialBackoffSeconds: 1.0s
+    pub relay_max_backoff_secs: f64,              // nostrRelayMaxBackoffSeconds: 300.0s
+    pub relay_backoff_multiplier: f64,            // nostrRelayBackoffMultiplier: 2.0
+    pub relay_max_reconnect_attempts: usize,      // nostrRelayMaxReconnectAttempts: 10
+}
+
+impl Default for NostrTransportConfig {
+    fn default() -> Self {
+        Self::canonical()
+    }
+}
+
+impl NostrTransportConfig {
+    /// Create configuration with canonical default values from Swift implementation
+    pub fn canonical() -> Self {
+        Self {
+            // Core parameters
+            relays: vec![
+                "wss://relay.damus.io".to_string(),
+                "wss://nos.lol".to_string(),
+                "wss://relay.nostr.band".to_string(),
+            ],
+            connection_timeout_secs: 10,
+            max_message_size: 65536,
+            verify_tls: true,
+            
+            // Canonical timing parameters
+            read_ack_interval: Duration::from_millis(350),
+            geohash_initial_lookback_secs: 3600,
+            geohash_initial_limit: 200,
+            geo_relay_count: 5,
+            geohash_sample_lookback_secs: 300,
+            geohash_sample_limit: 100,
+            
+            // Canonical backoff parameters
+            relay_initial_backoff_secs: 1.0,
+            relay_max_backoff_secs: 300.0,
+            relay_backoff_multiplier: 2.0,
+            relay_max_reconnect_attempts: 10,
+        }
+    }
+    
+    /// Create configuration optimized for testing (faster timeouts)
+    pub fn testing() -> Self {
+        let mut config = Self::canonical();
+        config.connection_timeout_secs = 1;
+        config.read_ack_interval = Duration::from_millis(50);
+        config.relay_initial_backoff_secs = 0.1;
+        config.relay_max_backoff_secs = 5.0;
+        config.relay_max_reconnect_attempts = 3;
+        config
+    }
+    
+    /// Create configuration optimized for development
+    pub fn development() -> Self {
+        let mut config = Self::canonical();
+        config.connection_timeout_secs = 5;
+        config.relay_initial_backoff_secs = 0.5;
+        config.relay_max_backoff_secs = 30.0;
+        config
+    }
+}
+
+/// System limits configuration with canonical parameter compatibility
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct LimitsConfig {
+    pub private_chat_cap: usize,                  // privateChatCap: 1337
+    pub mesh_timeline_cap: usize,                 // meshTimelineCap: 1337
+    pub geo_timeline_cap: usize,                  // geoTimelineCap: 1337
+    pub content_lru_cap: usize,                   // contentLRUCap: 2000
+    pub max_nickname_length: usize,               // maxNicknameLength: 50
+    pub max_message_length: usize,                // maxMessageLength: 60000
+    pub message_ttl_default: u8,                  // messageTTLDefault: 7
+    pub processed_nostr_events_cap: usize,        // uiProcessedNostrEventsCap: 2000
+}
+
+impl Default for LimitsConfig {
+    fn default() -> Self {
+        Self::canonical()
+    }
+}
+
+impl LimitsConfig {
+    /// Create configuration with canonical default values from Swift implementation
+    pub fn canonical() -> Self {
+        Self {
+            private_chat_cap: 1337,
+            mesh_timeline_cap: 1337,
+            geo_timeline_cap: 1337,
+            content_lru_cap: 2000,
+            max_nickname_length: 50,
+            max_message_length: 60_000,
+            message_ttl_default: 7,
+            processed_nostr_events_cap: 2000,
+        }
+    }
+    
+    /// Create configuration for low-memory environments
+    pub fn low_memory() -> Self {
+        Self {
+            private_chat_cap: 500,
+            mesh_timeline_cap: 500,
+            geo_timeline_cap: 500,
+            content_lru_cap: 1000,
+            max_nickname_length: 30,
+            max_message_length: 10_000,
+            message_ttl_default: 5,
+            processed_nostr_events_cap: 500,
+        }
+    }
+    
+    /// Create configuration for testing (smaller limits)
+    pub fn testing() -> Self {
+        Self {
+            private_chat_cap: 100,
+            mesh_timeline_cap: 100,
+            geo_timeline_cap: 100,
+            content_lru_cap: 200,
+            max_nickname_length: 20,
+            max_message_length: 1000,
+            message_ttl_default: 3,
+            processed_nostr_events_cap: 100,
+        }
+    }
+}
+
+/// Timing configuration with canonical parameter compatibility
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct TimingConfig {
+    pub network_reset_grace_secs: u64,            // networkResetGraceSeconds: 600s
+    pub base_public_flush_interval: Duration,     // basePublicFlushInterval: 0.08s
+    pub channel_inactivity_threshold_secs: u64,   // uiChannelInactivityThresholdSeconds: 540s
+    pub late_insert_threshold_secs: f64,          // uiLateInsertThreshold: 15.0s
+    pub late_insert_threshold_geo_secs: f64,      // uiLateInsertThresholdGeo: 0.0s
+}
+
+impl Default for TimingConfig {
+    fn default() -> Self {
+        Self::canonical()
+    }
+}
+
+impl TimingConfig {
+    /// Create configuration with canonical default values from Swift implementation
+    pub fn canonical() -> Self {
+        Self {
+            network_reset_grace_secs: 600,
+            base_public_flush_interval: Duration::from_millis(80),
+            channel_inactivity_threshold_secs: 540, // 9 minutes
+            late_insert_threshold_secs: 15.0,
+            late_insert_threshold_geo_secs: 0.0,
+        }
+    }
+    
+    /// Create configuration optimized for testing (faster timeouts)
+    pub fn testing() -> Self {
+        Self {
+            network_reset_grace_secs: 10,
+            base_public_flush_interval: Duration::from_millis(10),
+            channel_inactivity_threshold_secs: 30,
+            late_insert_threshold_secs: 1.0,
+            late_insert_threshold_geo_secs: 0.0,
+        }
+    }
+}
+
+/// UI-related configuration with canonical parameter compatibility
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct UiConfig {
+    // Rate limiting parameters
+    pub sender_rate_bucket_capacity: f64,         // uiSenderRateBucketCapacity: 5.0
+    pub sender_rate_bucket_refill_per_sec: f64,   // uiSenderRateBucketRefillPerSec: 1.0
+    pub content_rate_bucket_capacity: f64,        // uiContentRateBucketCapacity: 3.0
+    pub content_rate_bucket_refill_per_sec: f64,  // uiContentRateBucketRefillPerSec: 0.5
+    
+    // Timing parameters
+    pub scroll_throttle_secs: f64,                // uiScrollThrottleSeconds: 0.5s
+    pub geo_notify_cooldown_secs: f64,            // uiGeoNotifyCooldownSeconds: 60.0s
+    pub geo_notify_snippet_max_len: usize,        // uiGeoNotifySnippetMaxLen: 80
+    
+    // Message display parameters
+    pub long_message_length_threshold: usize,     // uiLongMessageLengthThreshold: 2000
+    pub very_long_token_threshold: usize,         // uiVeryLongTokenThreshold: 512
+    pub long_message_line_limit: usize,           // uiLongMessageLineLimit: 30
+    pub content_key_prefix_length: usize,         // contentKeyPrefixLength: 256
+    pub fingerprint_sample_count: usize,          // uiFingerprintSampleCount: 3
+    
+    // Animation timing
+    pub animation_short_secs: f64,                // uiAnimationShortSeconds: 0.15
+    pub animation_medium_secs: f64,               // uiAnimationMediumSeconds: 0.2
+    pub animation_sidebar_secs: f64,              // uiAnimationSidebarSeconds: 0.25
+    
+    // Gesture thresholds
+    pub back_swipe_translation_large: f64,        // uiBackSwipeTranslationLarge: 50
+    pub back_swipe_translation_small: f64,        // uiBackSwipeTranslationSmall: 30
+    pub back_swipe_velocity_threshold: f64,       // uiBackSwipeVelocityThreshold: 300
+}
+
+impl Default for UiConfig {
+    fn default() -> Self {
+        Self::canonical()
+    }
+}
+
+impl UiConfig {
+    /// Create configuration with canonical default values from Swift implementation
+    pub fn canonical() -> Self {
+        Self {
+            // Rate limiting
+            sender_rate_bucket_capacity: 5.0,
+            sender_rate_bucket_refill_per_sec: 1.0,
+            content_rate_bucket_capacity: 3.0,
+            content_rate_bucket_refill_per_sec: 0.5,
+            
+            // Timing
+            scroll_throttle_secs: 0.5,
+            geo_notify_cooldown_secs: 60.0,
+            geo_notify_snippet_max_len: 80,
+            
+            // Message display
+            long_message_length_threshold: 2000,
+            very_long_token_threshold: 512,
+            long_message_line_limit: 30,
+            content_key_prefix_length: 256,
+            fingerprint_sample_count: 3,
+            
+            // Animation timing
+            animation_short_secs: 0.15,
+            animation_medium_secs: 0.2,
+            animation_sidebar_secs: 0.25,
+            
+            // Gesture thresholds
+            back_swipe_translation_large: 50.0,
+            back_swipe_translation_small: 30.0,
+            back_swipe_velocity_threshold: 300.0,
+        }
+    }
+    
+    /// Create configuration optimized for testing (faster animations)
+    pub fn testing() -> Self {
+        let mut config = Self::canonical();
+        config.scroll_throttle_secs = 0.1;
+        config.geo_notify_cooldown_secs = 1.0;
+        config.animation_short_secs = 0.01;
+        config.animation_medium_secs = 0.02;
+        config.animation_sidebar_secs = 0.03;
+        config
+    }
+}
+
+/// Configuration presets for different deployment scenarios
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+pub enum ConfigPreset {
+    /// Canonical values matching Swift implementation exactly
+    Canonical,
+    /// Optimized for development with faster intervals
+    Development,
+    /// Optimized for production use
+    Production,
+    /// Optimized for battery life on mobile devices
+    BatteryOptimized,
+    /// Optimized for testing with short timeouts
+    Testing,
+}
+
+impl ConfigPreset {
+    /// Apply preset to BLE transport configuration
+    pub fn apply_to_ble_config(&self, config: &mut BleTransportConfig) {
+        match self {
+            ConfigPreset::Canonical => {
+                *config = BleTransportConfig::canonical();
+            }
+            ConfigPreset::Development => {
+                *config = BleTransportConfig::development();
+            }
+            ConfigPreset::Production => {
+                *config = BleTransportConfig::canonical(); // Production uses canonical values
+            }
+            ConfigPreset::BatteryOptimized => {
+                *config = BleTransportConfig::battery_optimized();
+            }
+            ConfigPreset::Testing => {
+                *config = BleTransportConfig::testing();
+            }
+        }
+    }
+    
+    /// Apply preset to Nostr transport configuration
+    pub fn apply_to_nostr_config(&self, config: &mut NostrTransportConfig) {
+        match self {
+            ConfigPreset::Canonical | ConfigPreset::Production => {
+                *config = NostrTransportConfig::canonical();
+            }
+            ConfigPreset::Development => {
+                *config = NostrTransportConfig::development();
+            }
+            ConfigPreset::BatteryOptimized => {
+                *config = NostrTransportConfig::canonical(); // No specific battery optimization for Nostr
+            }
+            ConfigPreset::Testing => {
+                *config = NostrTransportConfig::testing();
+            }
+        }
+    }
+    
+    /// Apply preset to limits configuration
+    pub fn apply_to_limits_config(&self, config: &mut LimitsConfig) {
+        match self {
+            ConfigPreset::Canonical | ConfigPreset::Development | ConfigPreset::Production => {
+                *config = LimitsConfig::canonical();
+            }
+            ConfigPreset::BatteryOptimized => {
+                *config = LimitsConfig::low_memory(); // Reduce memory usage for battery optimization
+            }
+            ConfigPreset::Testing => {
+                *config = LimitsConfig::testing();
+            }
+        }
+    }
+    
+    /// Apply preset to timing configuration
+    pub fn apply_to_timing_config(&self, config: &mut TimingConfig) {
+        match self {
+            ConfigPreset::Canonical | ConfigPreset::Development | ConfigPreset::Production | ConfigPreset::BatteryOptimized => {
+                *config = TimingConfig::canonical();
+            }
+            ConfigPreset::Testing => {
+                *config = TimingConfig::testing();
+            }
+        }
+    }
+    
+    /// Apply preset to UI configuration
+    pub fn apply_to_ui_config(&self, config: &mut UiConfig) {
+        match self {
+            ConfigPreset::Canonical | ConfigPreset::Development | ConfigPreset::Production | ConfigPreset::BatteryOptimized => {
+                *config = UiConfig::canonical();
+            }
+            ConfigPreset::Testing => {
+                *config = UiConfig::testing();
+            }
+        }
+    }
+}
+
+/// Configuration validator for canonical parameter ranges
+pub struct ConfigValidator;
+
+impl ConfigValidator {
+    /// Validate canonical parameter ranges for BLE transport
+    pub fn validate_ble_config(config: &BleTransportConfig) -> Result<(), alloc::string::String> {
+        if config.fragment_size < 100 || config.fragment_size > 1024 {
+            return Err("BLE fragment size must be between 100-1024 bytes".into());
+        }
+        
+        if config.max_central_links > 10 {
+            return Err("BLE max central links should not exceed 10".into());
+        }
+        
+        if config.high_degree_threshold > 20 {
+            return Err("BLE high degree threshold should not exceed 20".into());
+        }
+        
+        if config.dynamic_rssi_threshold > -50 || config.dynamic_rssi_threshold < -120 {
+            return Err("BLE RSSI threshold should be between -120 and -50 dBm".into());
+        }
+        
+        Ok(())
+    }
+    
+    /// Validate canonical parameter ranges for Nostr transport
+    pub fn validate_nostr_config(config: &NostrTransportConfig) -> Result<(), alloc::string::String> {
+        if config.geo_relay_count > 20 {
+            return Err("Nostr geo relay count should not exceed 20".into());
+        }
+        
+        if config.relay_max_reconnect_attempts > 50 {
+            return Err("Nostr max reconnect attempts should not exceed 50".into());
+        }
+        
+        if config.relay_backoff_multiplier < 1.1 || config.relay_backoff_multiplier > 5.0 {
+            return Err("Nostr backoff multiplier should be between 1.1 and 5.0".into());
+        }
+        
+        Ok(())
+    }
+    
+    /// Validate canonical parameter ranges for limits
+    pub fn validate_limits_config(config: &LimitsConfig) -> Result<(), alloc::string::String> {
+        if config.message_ttl_default > 15 {
+            return Err("Message TTL should not exceed 15 hops".into());
+        }
+        
+        if config.max_message_length > 100_000 {
+            return Err("Max message length should not exceed 100KB".into());
+        }
+        
+        if config.max_nickname_length > 200 {
+            return Err("Max nickname length should not exceed 200 characters".into());
+        }
+        
+        Ok(())
+    }
+    
+    /// Validate all canonical configurations
+    pub fn validate_canonical_ranges(
+        ble: &BleTransportConfig,
+        nostr: &NostrTransportConfig,
+        limits: &LimitsConfig,
+    ) -> Result<(), alloc::string::String> {
+        Self::validate_ble_config(ble)?;
+        Self::validate_nostr_config(nostr)?;
+        Self::validate_limits_config(limits)?;
+        Ok(())
+    }
+}
+
+// ----------------------------------------------------------------------------
 // Master Configuration
 // ----------------------------------------------------------------------------
 
 /// Master configuration struct that consolidates all BitChat configurations
-#[derive(Debug, Clone, serde::Serialize, serde::Deserialize, Default)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct BitchatConfig {
     /// Channel buffer configuration
     pub channels: ChannelConfig,
@@ -586,12 +1217,48 @@ pub struct BitchatConfig {
     pub rate_limiting: RateLimitConfig,
     /// Test configuration (optional, used in testing contexts)
     pub test: Option<TestConfig>,
+    
+    // Canonical transport configurations
+    /// BLE transport configuration with canonical compatibility
+    pub ble: BleTransportConfig,
+    /// Nostr transport configuration with canonical compatibility
+    pub nostr: NostrTransportConfig,
+    /// System limits configuration with canonical compatibility
+    pub limits: LimitsConfig,
+    /// Timing configuration with canonical compatibility
+    pub timing: TimingConfig,
+    /// UI configuration with canonical compatibility
+    pub ui: UiConfig,
+}
+
+impl Default for BitchatConfig {
+    fn default() -> Self {
+        Self::canonical()
+    }
 }
 
 impl BitchatConfig {
-    /// Create new configuration with default values
+    /// Create new configuration with canonical default values
     pub fn new() -> Self {
-        Self::default()
+        Self::canonical()
+    }
+    
+    /// Create configuration with canonical default values from Swift implementation
+    pub fn canonical() -> Self {
+        Self {
+            channels: ChannelConfig::default(),
+            delivery: DeliveryConfig::default(),
+            message_store: MessageStoreConfig::default(),
+            session: SessionConfig::default(),
+            monitoring: MonitoringConfig::default(),
+            rate_limiting: RateLimitConfig::default(),
+            test: None,
+            ble: BleTransportConfig::canonical(),
+            nostr: NostrTransportConfig::canonical(),
+            limits: LimitsConfig::canonical(),
+            timing: TimingConfig::canonical(),
+            ui: UiConfig::canonical(),
+        }
     }
 
     /// Create a new builder for BitchatConfig
@@ -609,6 +1276,11 @@ impl BitchatConfig {
             monitoring: MonitoringConfig::minimal(),
             rate_limiting: RateLimitConfig::default(),
             test: None,
+            ble: BleTransportConfig::canonical(),
+            nostr: NostrTransportConfig::canonical(),
+            limits: LimitsConfig::low_memory(), // Reduce memory usage for browser
+            timing: TimingConfig::canonical(),
+            ui: UiConfig::canonical(),
         }
     }
 
@@ -622,6 +1294,11 @@ impl BitchatConfig {
             monitoring: MonitoringConfig::detailed(),
             rate_limiting: RateLimitConfig::permissive(),
             test: None,
+            ble: BleTransportConfig::canonical(),
+            nostr: NostrTransportConfig::canonical(),
+            limits: LimitsConfig::canonical(),
+            timing: TimingConfig::canonical(),
+            ui: UiConfig::canonical(),
         }
     }
 
@@ -635,6 +1312,11 @@ impl BitchatConfig {
             monitoring: MonitoringConfig::minimal(),
             rate_limiting: RateLimitConfig::strict(),
             test: None,
+            ble: BleTransportConfig::battery_optimized(),
+            nostr: NostrTransportConfig::canonical(),
+            limits: LimitsConfig::low_memory(),
+            timing: TimingConfig::canonical(),
+            ui: UiConfig::canonical(),
         }
     }
 
@@ -648,6 +1330,11 @@ impl BitchatConfig {
             monitoring: MonitoringConfig::testing(),
             rate_limiting: RateLimitConfig::permissive(),
             test: Some(TestConfig::new()),
+            ble: BleTransportConfig::testing(),
+            nostr: NostrTransportConfig::testing(),
+            limits: LimitsConfig::testing(),
+            timing: TimingConfig::testing(),
+            ui: UiConfig::testing(),
         }
     }
 
@@ -661,6 +1348,11 @@ impl BitchatConfig {
             monitoring: MonitoringConfig::detailed(),
             rate_limiting: RateLimitConfig::strict(),
             test: None,
+            ble: BleTransportConfig::canonical(),
+            nostr: NostrTransportConfig::canonical(),
+            limits: LimitsConfig::canonical(),
+            timing: TimingConfig::canonical(),
+            ui: UiConfig::canonical(),
         }
     }
 
@@ -698,6 +1390,51 @@ impl BitchatConfig {
     pub fn with_test(mut self, test: TestConfig) -> Self {
         self.test = Some(test);
         self
+    }
+    
+    /// Builder method for customizing BLE transport configuration
+    pub fn with_ble(mut self, ble: BleTransportConfig) -> Self {
+        self.ble = ble;
+        self
+    }
+    
+    /// Builder method for customizing Nostr transport configuration
+    pub fn with_nostr(mut self, nostr: NostrTransportConfig) -> Self {
+        self.nostr = nostr;
+        self
+    }
+    
+    /// Builder method for customizing limits configuration
+    pub fn with_limits(mut self, limits: LimitsConfig) -> Self {
+        self.limits = limits;
+        self
+    }
+    
+    /// Builder method for customizing timing configuration
+    pub fn with_timing(mut self, timing: TimingConfig) -> Self {
+        self.timing = timing;
+        self
+    }
+    
+    /// Builder method for customizing UI configuration
+    pub fn with_ui(mut self, ui: UiConfig) -> Self {
+        self.ui = ui;
+        self
+    }
+    
+    /// Apply a configuration preset
+    pub fn with_preset(mut self, preset: ConfigPreset) -> Self {
+        preset.apply_to_ble_config(&mut self.ble);
+        preset.apply_to_nostr_config(&mut self.nostr);
+        preset.apply_to_limits_config(&mut self.limits);
+        preset.apply_to_timing_config(&mut self.timing);
+        preset.apply_to_ui_config(&mut self.ui);
+        self
+    }
+    
+    /// Create configuration with a specific preset applied
+    pub fn from_preset(preset: ConfigPreset) -> Self {
+        Self::canonical().with_preset(preset)
     }
 
     /// Validate the configuration for consistency and feasibility
@@ -745,6 +1482,9 @@ impl BitchatConfig {
                 return Err("Max performance samples cannot be zero".into());
             }
         }
+        
+        // Validate canonical transport configurations
+        ConfigValidator::validate_canonical_ranges(&self.ble, &self.nostr, &self.limits)?;
 
         Ok(())
     }
@@ -760,28 +1500,15 @@ pub struct ConfigPresets;
 impl ConfigPresets {
     /// Development configuration (balanced for development work)
     pub fn development() -> BitchatConfig {
-        BitchatConfig {
-            channels: ChannelConfig::default(),
-            delivery: DeliveryConfig::default(),
-            message_store: MessageStoreConfig::default(),
-            session: SessionConfig::default(),
-            monitoring: MonitoringConfig::detailed(),
-            rate_limiting: RateLimitConfig::permissive(),
-            test: Some(TestConfig::new().with_logging()),
-        }
+        BitchatConfig::from_preset(ConfigPreset::Development)
+            .with_monitoring(MonitoringConfig::detailed())
+            .with_rate_limiting(RateLimitConfig::permissive())
+            .with_test(TestConfig::new().with_logging())
     }
 
     /// Production configuration (optimized for production use)
     pub fn production() -> BitchatConfig {
-        BitchatConfig {
-            channels: ChannelConfig::default(),
-            delivery: DeliveryConfig::default(),
-            message_store: MessageStoreConfig::default(),
-            session: SessionConfig::default(),
-            monitoring: MonitoringConfig::default(),
-            rate_limiting: RateLimitConfig::default(),
-            test: None,
-        }
+        BitchatConfig::from_preset(ConfigPreset::Production)
     }
 
     /// Embedded configuration (minimal resource usage)
@@ -794,6 +1521,11 @@ impl ConfigPresets {
             monitoring: MonitoringConfig::minimal(),
             rate_limiting: RateLimitConfig::strict(),
             test: None,
+            ble: BleTransportConfig::battery_optimized(),
+            nostr: NostrTransportConfig::canonical(),
+            limits: LimitsConfig::low_memory(),
+            timing: TimingConfig::canonical(),
+            ui: UiConfig::canonical(),
         }
     }
 }
@@ -874,6 +1606,11 @@ pub struct BitchatConfigBuilder {
     monitoring: Option<MonitoringConfig>,
     rate_limiting: Option<RateLimitConfig>,
     test: Option<TestConfig>,
+    ble_config: Option<BleTransportConfig>,
+    nostr_config: Option<NostrTransportConfig>,
+    limits_config: Option<LimitsConfig>,
+    timing_config: Option<TimingConfig>,
+    ui_config: Option<UiConfig>,
 }
 
 /// Error type for configuration building
@@ -902,6 +1639,11 @@ impl BitchatConfigBuilder {
             monitoring: None,
             rate_limiting: None,
             test: None,
+            ble_config: None,
+            nostr_config: None,
+            limits_config: None,
+            timing_config: None,
+            ui_config: None,
         }
     }
 
@@ -946,6 +1688,36 @@ impl BitchatConfigBuilder {
         self.test = Some(config);
         self
     }
+    
+    /// Set BLE transport configuration
+    pub fn ble(mut self, config: BleTransportConfig) -> Self {
+        self.ble_config = Some(config);
+        self
+    }
+    
+    /// Set Nostr transport configuration
+    pub fn nostr(mut self, config: NostrTransportConfig) -> Self {
+        self.nostr_config = Some(config);
+        self
+    }
+    
+    /// Set limits configuration
+    pub fn limits(mut self, config: LimitsConfig) -> Self {
+        self.limits_config = Some(config);
+        self
+    }
+    
+    /// Set timing configuration
+    pub fn timing(mut self, config: TimingConfig) -> Self {
+        self.timing_config = Some(config);
+        self
+    }
+    
+    /// Set UI configuration
+    pub fn ui(mut self, config: UiConfig) -> Self {
+        self.ui_config = Some(config);
+        self
+    }
 
     /// Use browser-optimized preset as base (can be further customized)
     pub fn browser_optimized(self) -> Self {
@@ -957,6 +1729,11 @@ impl BitchatConfigBuilder {
             monitoring: Some(MonitoringConfig::minimal()),
             rate_limiting: Some(RateLimitConfig::default()),
             test: None,
+            ble_config: Some(BleTransportConfig::canonical()),
+            nostr_config: Some(NostrTransportConfig::canonical()),
+            limits_config: Some(LimitsConfig::low_memory()),
+            timing_config: Some(TimingConfig::canonical()),
+            ui_config: Some(UiConfig::canonical()),
         }
     }
 
@@ -970,6 +1747,11 @@ impl BitchatConfigBuilder {
             monitoring: Some(MonitoringConfig::detailed()),
             rate_limiting: Some(RateLimitConfig::permissive()),
             test: None,
+            ble_config: Some(BleTransportConfig::canonical()),
+            nostr_config: Some(NostrTransportConfig::canonical()),
+            limits_config: Some(LimitsConfig::canonical()),
+            timing_config: Some(TimingConfig::canonical()),
+            ui_config: Some(UiConfig::canonical()),
         }
     }
 
@@ -983,6 +1765,11 @@ impl BitchatConfigBuilder {
             monitoring: Some(MonitoringConfig::minimal()),
             rate_limiting: Some(RateLimitConfig::strict()),
             test: None,
+            ble_config: Some(BleTransportConfig::battery_optimized()),
+            nostr_config: Some(NostrTransportConfig::canonical()),
+            limits_config: Some(LimitsConfig::low_memory()),
+            timing_config: Some(TimingConfig::canonical()),
+            ui_config: Some(UiConfig::canonical()),
         }
     }
 
@@ -996,6 +1783,11 @@ impl BitchatConfigBuilder {
             monitoring: Some(MonitoringConfig::detailed()),
             rate_limiting: Some(RateLimitConfig::strict()),
             test: None,
+            ble_config: Some(BleTransportConfig::canonical()),
+            nostr_config: Some(NostrTransportConfig::canonical()),
+            limits_config: Some(LimitsConfig::canonical()),
+            timing_config: Some(TimingConfig::canonical()),
+            ui_config: Some(UiConfig::canonical()),
         }
     }
 
@@ -1009,6 +1801,29 @@ impl BitchatConfigBuilder {
             monitoring: Some(MonitoringConfig::testing()),
             rate_limiting: Some(RateLimitConfig::permissive()),
             test: Some(TestConfig::new()),
+            ble_config: Some(BleTransportConfig::testing()),
+            nostr_config: Some(NostrTransportConfig::testing()),
+            limits_config: Some(LimitsConfig::testing()),
+            timing_config: Some(TimingConfig::testing()),
+            ui_config: Some(UiConfig::testing()),
+        }
+    }
+    
+    /// Use canonical preset as base (exact Swift compatibility)
+    pub fn canonical(self) -> Self {
+        Self {
+            channels: Some(ChannelConfig::default()),
+            delivery: Some(DeliveryConfig::default()),
+            message_store: Some(MessageStoreConfig::default()),
+            session: Some(SessionConfig::default()),
+            monitoring: Some(MonitoringConfig::default()),
+            rate_limiting: Some(RateLimitConfig::default()),
+            test: None,
+            ble_config: Some(BleTransportConfig::canonical()),
+            nostr_config: Some(NostrTransportConfig::canonical()),
+            limits_config: Some(LimitsConfig::canonical()),
+            timing_config: Some(TimingConfig::canonical()),
+            ui_config: Some(UiConfig::canonical()),
         }
     }
 
@@ -1022,6 +1837,11 @@ impl BitchatConfigBuilder {
             monitoring: self.monitoring.unwrap_or_default(),
             rate_limiting: self.rate_limiting.unwrap_or_default(),
             test: self.test,
+            ble: self.ble_config.unwrap_or_default(),
+            nostr: self.nostr_config.unwrap_or_default(),
+            limits: self.limits_config.unwrap_or_default(),
+            timing: self.timing_config.unwrap_or_default(),
+            ui: self.ui_config.unwrap_or_default(),
         };
 
         // Validate the built configuration
@@ -1042,6 +1862,11 @@ impl BitchatConfigBuilder {
             monitoring: self.monitoring.unwrap_or_default(),
             rate_limiting: self.rate_limiting.unwrap_or_default(),
             test: self.test,
+            ble: self.ble_config.unwrap_or_default(),
+            nostr: self.nostr_config.unwrap_or_default(),
+            limits: self.limits_config.unwrap_or_default(),
+            timing: self.timing_config.unwrap_or_default(),
+            ui: self.ui_config.unwrap_or_default(),
         }
     }
 }
@@ -1195,5 +2020,92 @@ mod tests {
 
         // Config was created but validation would fail
         assert!(config.validate().is_err());
+    }
+    
+    #[test]
+    fn test_canonical_configuration() {
+        let config = BitchatConfig::canonical();
+        assert!(config.validate().is_ok());
+        
+        // Verify canonical BLE parameters
+        assert_eq!(config.ble.fragment_size, 469);
+        assert_eq!(config.ble.max_central_links, 6);
+        assert_eq!(config.ble.duty_on_duration, Duration::from_secs(5));
+        assert_eq!(config.ble.duty_off_duration, Duration::from_secs(10));
+        
+        // Verify canonical Nostr parameters
+        assert_eq!(config.nostr.read_ack_interval, Duration::from_millis(350));
+        assert_eq!(config.nostr.geohash_initial_lookback_secs, 3600);
+        assert_eq!(config.nostr.geo_relay_count, 5);
+        
+        // Verify canonical limits
+        assert_eq!(config.limits.private_chat_cap, 1337);
+        assert_eq!(config.limits.message_ttl_default, 7);
+        assert_eq!(config.limits.max_message_length, 60_000);
+    }
+    
+    #[test]
+    fn test_config_presets() {
+        // Test development preset
+        let dev_config = BitchatConfig::from_preset(ConfigPreset::Development);
+        assert!(dev_config.validate().is_ok());
+        assert_eq!(dev_config.ble.duty_on_duration, Duration::from_secs(2));
+        
+        // Test battery optimized preset
+        let battery_config = BitchatConfig::from_preset(ConfigPreset::BatteryOptimized);
+        assert!(battery_config.validate().is_ok());
+        assert_eq!(battery_config.ble.duty_on_duration, Duration::from_secs(3));
+        assert_eq!(battery_config.ble.duty_off_duration, Duration::from_secs(15));
+        
+        // Test testing preset
+        let test_config = BitchatConfig::from_preset(ConfigPreset::Testing);
+        assert!(test_config.validate().is_ok());
+        assert_eq!(test_config.ble.duty_on_duration, Duration::from_millis(500));
+    }
+    
+    #[test]
+    fn test_transport_config_validation() {
+        // Test valid BLE config
+        let ble_config = BleTransportConfig::canonical();
+        assert!(ConfigValidator::validate_ble_config(&ble_config).is_ok());
+        
+        // Test invalid BLE config
+        let mut invalid_ble = BleTransportConfig::canonical();
+        invalid_ble.fragment_size = 50; // Too small
+        assert!(ConfigValidator::validate_ble_config(&invalid_ble).is_err());
+        
+        // Test valid Nostr config
+        let nostr_config = NostrTransportConfig::canonical();
+        assert!(ConfigValidator::validate_nostr_config(&nostr_config).is_ok());
+        
+        // Test invalid Nostr config
+        let mut invalid_nostr = NostrTransportConfig::canonical();
+        invalid_nostr.geo_relay_count = 25; // Too many
+        assert!(ConfigValidator::validate_nostr_config(&invalid_nostr).is_err());
+    }
+    
+    #[test]
+    fn test_builder_with_canonical_params() {
+        let config = BitchatConfig::builder()
+            .canonical()
+            .ble(BleTransportConfig::development())
+            .nostr(NostrTransportConfig::testing())
+            .build()
+            .expect("Canonical config with custom transport should be valid");
+        
+        assert!(config.validate().is_ok());
+        assert_eq!(config.ble.duty_on_duration, Duration::from_secs(2)); // Development preset
+        assert_eq!(config.nostr.connection_timeout_secs, 1); // Testing preset
+    }
+    
+    #[test]
+    fn test_memory_optimized_configs() {
+        let low_memory_config = BitchatConfig::mobile_optimized();
+        assert!(low_memory_config.validate().is_ok());
+        assert_eq!(low_memory_config.limits.private_chat_cap, 500); // Reduced for low memory
+        
+        let browser_config = BitchatConfig::browser_optimized();
+        assert!(browser_config.validate().is_ok());
+        assert_eq!(browser_config.limits.private_chat_cap, 500); // Reduced for browser memory constraints
     }
 }

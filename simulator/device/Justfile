@@ -1,0 +1,116 @@
+# BitChat Emulator Rig - Real-World E2E Testing
+# iOS and Android app testing with real devices/emulators
+
+# Variables
+nix_cmd := "nix develop --no-warn-dirty --command"
+android_project := "./vendored/bitchat-android"
+ios_project := "./vendored/bitchat-ios"
+
+# ============================================================================
+# Unified Interface
+# ============================================================================
+
+# Execute a TOML scenario with real devices (NEW UNIFIED INTERFACE)
+execute scenario clients:
+    {{nix_cmd}} cargo run --release -- execute scenarios/{{scenario}}.toml --clients {{clients}}
+
+# Setup emulator environment
+setup:
+    {{nix_cmd}} cargo run --release -- setup
+
+# Clean up emulator environment
+cleanup:
+    {{nix_cmd}} cargo run --release -- cleanup
+
+# ============================================================================
+# Build System
+# ============================================================================
+
+# Build scenario runner
+build:
+    {{nix_cmd}} cargo build --release
+
+# Build all mobile apps
+build-apps: build-ios build-android
+
+# Build iOS app
+build-ios:
+    @echo "Building iOS app..."
+    @cd {{ios_project}} && xcodebuild \
+        -project bitchat.xcodeproj \
+        -scheme "bitchat (iOS)" \
+        -configuration Debug \
+        -sdk iphonesimulator \
+        CODE_SIGN_IDENTITY="" \
+        CODE_SIGNING_REQUIRED=NO \
+        build
+    @mkdir -p {{ios_project}}/build
+    @find ~/Library/Developer/Xcode/DerivedData -name "bitchat.app" -path "*iphonesimulator*" | head -1 | xargs -I {} cp -r {} {{ios_project}}/build/BitChat.app
+    @echo "iOS app built: {{ios_project}}/build/BitChat.app"
+
+# Build Android app
+build-android:
+    @echo "Building Android app..."
+    {{nix_cmd}} bash -c " \
+        cd {{android_project}} && \
+        ./gradlew assembleDebug && \
+        mkdir -p build && \
+        cp app/build/outputs/apk/debug/app-debug.apk build/BitChat.apk \
+    "
+    @echo "Android app built: {{android_project}}/build/BitChat.apk"
+
+# ============================================================================
+# Environment Checks
+# ============================================================================
+
+# Check if environment is ready for real-world testing
+check-env:
+    @echo "Checking emulator environment..."
+    {{nix_cmd}} cargo run --release -- setup
+
+# Check iOS environment specifically
+check-ios:
+    @echo "Checking iOS environment..."
+    @command -v xcodebuild >/dev/null && echo "Xcode found" || echo "Xcode not found"
+    @[ -d "/Applications/Xcode.app" ] && echo "Xcode.app found" || echo "Xcode.app not found"
+
+# Check Android environment specifically
+check-android:
+    @echo "Checking Android environment..."
+    {{nix_cmd}} bash -c " \
+        [ -n \"\$${ANDROID_HOME:-}\" ] && echo \"ANDROID_HOME: \$$ANDROID_HOME\" || echo \"ANDROID_HOME not set\"; \
+        command -v java >/dev/null && echo \"Java found\" || echo \"Java not found\" \
+    "
+
+# ============================================================================
+# Legacy Compatibility (DEPRECATED)
+# ============================================================================
+
+# [DEPRECATED] iOS <-> iOS testing - use 'execute' instead
+test-ios-ios:
+    @echo "DEPRECATED: Use 'just execute messaging_basic ios,ios' instead"
+    {{nix_cmd}} cargo run -- execute scenarios/02_messaging_basic.toml --clients ios,ios
+
+# [DEPRECATED] Android <-> Android testing - use 'execute' instead
+test-android-android:
+    @echo "DEPRECATED: Use 'just execute messaging_basic android,android' instead"
+    {{nix_cmd}} cargo run -- execute scenarios/02_messaging_basic.toml --clients android,android
+
+# [DEPRECATED] Cross-platform testing - use 'execute' instead
+test-cross-platform:
+    @echo "DEPRECATED: Use 'just execute messaging_basic ios,android' instead"
+    {{nix_cmd}} cargo run -- execute scenarios/02_messaging_basic.toml --clients ios,android
+
+# ============================================================================
+# Cleanup
+# ============================================================================
+
+# Clean build artifacts
+clean:
+    {{nix_cmd}} cargo clean
+    rm -rf {{ios_project}}/build/*
+    rm -rf {{android_project}}/build/*
+
+# Default target
+default:
+    @just --list

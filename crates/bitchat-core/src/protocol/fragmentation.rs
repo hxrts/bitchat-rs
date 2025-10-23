@@ -1,20 +1,30 @@
 //! Message fragmentation and reassembly for MTU-limited transports
 //!
-//! This module handles splitting large messages into fragments for transport
-//! over connections with limited Maximum Transmission Unit (MTU) sizes, such as BLE.
+//! This module implements the canonical BitChat fragmentation protocol as specified
+//! in the reference Swift/iOS implementation. It handles automatic splitting of large
+//! messages into fragments for BLE transport and reliable reassembly at the receiver.
 //!
-//! ## Canonical Fragment Format
+//! ## Canonical Fragment Format (matching Swift/iOS implementation)
 //!
 //! Fragments use a canonical 13-byte header format:
-//! - FragmentID: 8 bytes (u64, big-endian)
-//! - Index: 2 bytes (u16, big-endian)
-//! - Total: 2 bytes (u16, big-endian)
-//! - OriginalType: 1 byte (u8)
-//! - Data: remaining bytes
+//! - FragmentID: 8 bytes (u64, big-endian) - random unique identifier
+//! - Sequence: 2 bytes (u16, big-endian) - zero-based fragment index  
+//! - Total: 2 bytes (u16, big-endian) - total number of fragments
+//! - OriginalType: 1 byte (u8) - MessageType of original unfragmented packet
+//! - Data: remaining bytes - actual fragment payload
+//!
+//! ## Key Canonical Behaviors
+//!
+//! - **Fragment Size**: Default 469 bytes for unknown MTU (canonical value)
+//! - **Max Assemblies**: 128 concurrent fragment assemblies (canonical limit)
+//! - **TTL Inheritance**: Fragments preserve original packet TTL
+//! - **Fragment Lifetime**: 30 seconds before cleanup (canonical timeout)
+//! - **Memory Management**: LRU eviction when assembly limit reached
 
 use alloc::collections::BTreeMap;
 use alloc::vec::Vec;
 use core::cmp;
+use rand_core::{OsRng, RngCore};
 use serde::{Deserialize, Serialize};
 
 use crate::types::{PeerId, Timestamp};
@@ -23,6 +33,9 @@ use crate::{BitchatError, Result};
 // ----------------------------------------------------------------------------
 // Constants
 // ----------------------------------------------------------------------------
+
+/// Default fragment size matching canonical implementation (469 bytes)
+pub const DEFAULT_FRAGMENT_SIZE: usize = 469;
 
 /// Maximum fragment size for BLE transport (conservative estimate)
 pub const BLE_MAX_FRAGMENT_SIZE: usize = 244;
@@ -33,8 +46,11 @@ pub const DEFAULT_MAX_FRAGMENT_SIZE: usize = 1024;
 /// Maximum number of fragments per message
 pub const MAX_FRAGMENTS_PER_MESSAGE: u16 = 256;
 
-/// Fragment timeout in milliseconds (5 minutes)
-pub const FRAGMENT_TIMEOUT_MS: u64 = 300_000;
+/// Maximum concurrent fragment assemblies (canonical limit)
+pub const MAX_FRAGMENT_ASSEMBLIES: usize = 128;
+
+/// Fragment timeout in milliseconds (30 seconds, canonical timeout)
+pub const FRAGMENT_TIMEOUT_MS: u64 = 30_000;
 
 // ----------------------------------------------------------------------------
 // Fragment Header
@@ -193,6 +209,11 @@ impl MessageFragmenter {
         }
     }
 
+    /// Create a fragmenter with canonical default fragment size (469 bytes)
+    pub fn new_canonical() -> Self {
+        Self::new(DEFAULT_FRAGMENT_SIZE)
+    }
+
     /// Create a fragmenter optimized for BLE transport
     pub fn for_ble() -> Self {
         Self::new(BLE_MAX_FRAGMENT_SIZE)
@@ -211,8 +232,8 @@ impl MessageFragmenter {
             ));
         }
 
-        let fragment_id = self.next_fragment_id;
-        self.next_fragment_id = self.next_fragment_id.wrapping_add(1);
+        // Generate random 8-byte fragment ID (canonical behavior)
+        let fragment_id = OsRng.next_u64();
 
         // Calculate fragments needed
         let fragment_data_size = self.max_fragment_size.saturating_sub(13); // Account for header
@@ -323,6 +344,8 @@ impl IncompleteMessage {
 pub struct MessageReassembler {
     /// Incomplete messages being reassembled, keyed by (sender, fragment_id)
     incomplete_messages: BTreeMap<(PeerId, u64), IncompleteMessage>,
+    /// LRU tracking for assembly limit enforcement
+    lru_order: Vec<(PeerId, u64)>,
 }
 
 impl MessageReassembler {
@@ -330,6 +353,7 @@ impl MessageReassembler {
     pub fn new() -> Self {
         Self {
             incomplete_messages: BTreeMap::new(),
+            lru_order: Vec::new(),
         }
     }
 
@@ -349,11 +373,22 @@ impl MessageReassembler {
             return Ok(Some((fragment.data, fragment.header.original_type)));
         }
 
+        // Enforce assembly limit before creating new entry
+        if !self.incomplete_messages.contains_key(&key) {
+            self.enforce_assembly_limit();
+        }
+
         // Get or create incomplete message
-        let incomplete = self
-            .incomplete_messages
-            .entry(key)
-            .or_insert_with(|| IncompleteMessage::new(&fragment.header, sender));
+        let incomplete = self.incomplete_messages.entry(key).or_insert_with(|| {
+            self.lru_order.push(key);
+            IncompleteMessage::new(&fragment.header, sender)
+        });
+
+        // Update LRU order
+        if let Some(pos) = self.lru_order.iter().position(|&x| x == key) {
+            self.lru_order.remove(pos);
+        }
+        self.lru_order.push(key);
 
         // Validate fragment consistency
         if incomplete.total_fragments != fragment.header.total_fragments
@@ -390,6 +425,19 @@ impl MessageReassembler {
     /// Clear all incomplete messages
     pub fn clear(&mut self) {
         self.incomplete_messages.clear();
+        self.lru_order.clear();
+    }
+
+    /// Enforce the maximum assembly limit using LRU eviction
+    fn enforce_assembly_limit(&mut self) {
+        while self.incomplete_messages.len() >= MAX_FRAGMENT_ASSEMBLIES {
+            if let Some(oldest_key) = self.lru_order.first().copied() {
+                self.incomplete_messages.remove(&oldest_key);
+                self.lru_order.remove(0);
+            } else {
+                break;
+            }
+        }
     }
 }
 
@@ -449,8 +497,9 @@ mod tests {
         assert_eq!(fragments.len(), 3);
 
         // Check fragment consistency
+        let expected_fragment_id = fragments[0].header.fragment_id; // All fragments should have same ID
         for (i, fragment) in fragments.iter().enumerate() {
-            assert_eq!(fragment.header.fragment_id, 1);
+            assert_eq!(fragment.header.fragment_id, expected_fragment_id);
             assert_eq!(fragment.header.fragment_index, i as u16);
             assert_eq!(fragment.header.total_fragments, 3);
             assert_eq!(fragment.header.original_type, 0x02);
@@ -518,6 +567,18 @@ mod tests {
 
         // Should need fragmentation for large messages
         assert!(fragmenter.needs_fragmentation(1000));
+    }
+
+    #[test]
+    fn test_canonical_fragmenter() {
+        let fragmenter = MessageFragmenter::new_canonical();
+        assert_eq!(fragmenter.max_fragment_size, DEFAULT_FRAGMENT_SIZE);
+
+        // Should not need fragmentation for messages under 469 bytes
+        assert!(!fragmenter.needs_fragmentation(400));
+
+        // Should need fragmentation for messages over 469 bytes
+        assert!(fragmenter.needs_fragmentation(500));
     }
 
     #[test]

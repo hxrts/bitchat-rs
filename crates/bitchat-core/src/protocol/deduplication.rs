@@ -97,7 +97,7 @@ pub struct BloomFilter {
 impl BloomFilter {
     /// Create a new Bloom filter with specified parameters
     pub fn new(bit_size: usize, hash_functions: usize) -> Self {
-        let byte_size = (bit_size + 7) / 8; // Round up to nearest byte
+        let byte_size = bit_size.div_ceil(8); // Round up to nearest byte
         Self {
             bits: vec![0u8; byte_size],
             hash_functions,

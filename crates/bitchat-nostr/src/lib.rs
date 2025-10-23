@@ -57,16 +57,23 @@
 //! - Channel-based coordination with Core Logic task
 
 pub mod config;
+pub mod embedding;
 pub mod error;
 pub mod message;
 pub mod nip17;
+pub mod relay_manager;
 pub mod transport;
+
+#[cfg(test)]
+mod integration_tests;
 
 // Re-export public API
 pub use config::{NostrConfig, NostrRelayConfig};
+pub use embedding::{EmbeddingConfig, EmbeddingStrategy, NostrEmbeddedBitChat, BITCHAT_EMBEDDING_PREFIX};
 pub use error::NostrTransportError;
 pub use message::{BitchatNostrMessage, BITCHAT_KIND};
 pub use nip17::{Nip17Content, Nip17GiftUnwrapper, Nip17GiftWrapper, BITCHAT_NIP17_PREFIX};
+pub use relay_manager::{GeoRelayDirectory, NostrRelayManager, RelayHealth, RelayInfo, RelaySelectionStrategy};
 pub use transport::NostrTransportTask;
 
 // Re-export TransportTask trait for convenience

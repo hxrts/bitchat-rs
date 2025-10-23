@@ -283,6 +283,7 @@ impl BitchatWebApp {
 
         // Create command and app event channels
         let (command_sender, _command_receiver) = create_command_channel(&config);
+        #[allow(unused_mut)] // mut needed for non-WASM tokio receiver
         let (_app_event_sender, mut app_event_receiver) = create_app_event_channel(&config);
 
         // Store command sender for API calls

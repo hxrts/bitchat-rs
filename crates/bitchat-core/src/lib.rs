@@ -165,7 +165,7 @@ extern crate alloc;
 // Compile-time Feature Configuration
 // ----------------------------------------------------------------------------
 // The 'std', 'wasm', and 'testing' features are independent and can be
-// combined as needed. Use #[cfg(feature = "...")] and #[cfg(all(...))] 
+// combined as needed. Use #[cfg(feature = "...")] and #[cfg(all(...))]
 // to control behavior when features are enabled.
 
 // Feature documentation for users
@@ -204,17 +204,19 @@ BitChat Core compiled with 'testing' feature:
 // ----------------------------------------------------------------------------
 
 pub mod errors;
-pub mod types;
 pub mod identity;
+pub mod types;
 
 #[cfg(feature = "task-logging")]
 pub mod task_logging;
 
 pub mod transport_task;
+pub mod transport;
 
 #[cfg(feature = "monitoring")]
 pub mod monitoring;
 
+pub mod verification;
 pub mod config;
 // Submodules
 pub mod channel;
@@ -231,9 +233,9 @@ pub mod geohash;
 pub use channel::{AppEvent, ChannelTransportType, Command, ConnectionStatus, TransportStatus};
 pub use config::{BitchatConfig, SharedBitchatConfig};
 pub use errors::{BitchatError, BitchatResult, Result};
+pub use identity::{HandshakeState, SecureIdentityStateManager, TrustLevel};
 pub use transport_task::TransportTask;
 pub use types::{Fingerprint, PeerId, Timestamp};
-pub use identity::{TrustLevel, HandshakeState, SecureIdentityStateManager};
 
 #[cfg(feature = "std")]
 pub use geohash::{
@@ -243,28 +245,82 @@ pub use geohash::{
 
 // Core protocol exports (canonical implementation features)
 pub use protocol::{
-    BitchatMessage, BitchatPacket, BloomFilter, ConnectionEvent, ConnectionState, 
+    BitchatMessage, BitchatPacket, BloomFilter, ConnectionEvent, ConnectionState,
     DeduplicationManager, DeduplicationStats, DeliveryAttempt, DeliveryStatus, Fragment,
     FragmentHeader, MessageFragmenter, MessageReassembler, MessageType, NoiseHandshake,
     NoisePayload, NoisePayloadType, PacketFlags, PacketHeader, TrackedMessage,
 };
 
+// QR-based peer verification exports
+pub use verification::{
+    PendingChallenge, VerificationConfig, VerificationQR, VerificationResponse,
+    VerificationResult, VerificationService,
+};
+
+// QR code generation (feature-gated)
+#[cfg(feature = "qr-generation")]
+pub use verification::qr_generation::{generate_qr_svg};
+
+#[cfg(all(feature = "qr-generation", feature = "qr-png"))]
+pub use verification::qr_generation::{generate_qr_png};
+
 // Experimental feature exports (only available with experimental feature flag)
 #[cfg(feature = "experimental")]
 pub use protocol::{
-    // File transfer
-    FileAccept, FileChunk, FileComplete, FileHash, FileMetadata, FileOffer,
-    FileTransferId, FileTransferManager, FileTransferMessage, FileTransferSession, TransferStatus,
-    // Group messaging
-    GroupCreate, GroupId, GroupInvite, GroupJoin, GroupKick, GroupLeave, GroupManager, GroupMember,
-    GroupMessage, GroupMessagingMessage, GroupMetadata, GroupRole, GroupSettings, GroupUpdate,
-    // Multi-device sync
-    DeviceAnnouncement, DeviceCapabilities, DeviceHeartbeat, DeviceId, DeviceInfo, DeviceStatus,
-    DeviceType, MessageRef, MultiDeviceSessionManager, SessionSyncState, SessionStatus,
-    SessionSyncMessage, SessionSyncRequest, SessionSyncResponse,
     // Capability negotiation
-    Capability, CapabilityId, CapabilityManager, CapabilityMessage, CapabilityRejection,
-    ImplementationInfo, NegotiationStatus, ProtocolVersion, RejectionReason, VersionAck, VersionHello,
+    Capability,
+    CapabilityId,
+    CapabilityManager,
+    CapabilityMessage,
+    CapabilityRejection,
+    // Multi-device sync
+    DeviceAnnouncement,
+    DeviceCapabilities,
+    DeviceHeartbeat,
+    DeviceId,
+    DeviceInfo,
+    DeviceStatus,
+    DeviceType,
+    // File transfer
+    FileAccept,
+    FileChunk,
+    FileComplete,
+    FileHash,
+    FileMetadata,
+    FileOffer,
+    FileTransferId,
+    FileTransferManager,
+    FileTransferMessage,
+    FileTransferSession,
+    // Group messaging
+    GroupCreate,
+    GroupId,
+    GroupInvite,
+    GroupJoin,
+    GroupKick,
+    GroupLeave,
+    GroupManager,
+    GroupMember,
+    GroupMessage,
+    GroupMessagingMessage,
+    GroupMetadata,
+    GroupRole,
+    GroupSettings,
+    GroupUpdate,
+    ImplementationInfo,
+    MessageRef,
+    MultiDeviceSessionManager,
+    NegotiationStatus,
+    ProtocolVersion,
+    RejectionReason,
+    SessionStatus,
+    SessionSyncMessage,
+    SessionSyncRequest,
+    SessionSyncResponse,
+    SessionSyncState,
+    TransferStatus,
+    VersionAck,
+    VersionHello,
 };
 
 // ----------------------------------------------------------------------------
@@ -295,6 +351,11 @@ pub mod internal {
     pub use crate::errors::{
         CryptographicError, FragmentationError, PacketError, SessionError, TransportError,
     };
+    pub use crate::identity::{
+        storage::{create_default_storage, create_test_storage, SecureStorage, StorageConfig},
+        CryptographicIdentity, EphemeralIdentity, HandshakeState, IdentityCache,
+        IdentityCacheStats, SecureIdentityStateManager, SocialIdentity, TrustLevel,
+    };
     #[cfg(feature = "monitoring")]
     pub use crate::monitoring::{
         ChannelUtilization, DeadlockWarning, Monitorable, MonitoringReport, MonitoringSystem,
@@ -306,11 +367,6 @@ pub mod internal {
         MessageId, MessageStore, MessageStoreStats, NoiseHandshake, NoiseKeyPair, NoiseSession,
         NoiseTransport, SessionParams, SessionState, StateTransition, StateTransitionError,
         TrackedMessage,
-    };
-    pub use crate::identity::{
-        EphemeralIdentity, CryptographicIdentity, SocialIdentity, IdentityCache,
-        IdentityCacheStats, HandshakeState, TrustLevel, SecureIdentityStateManager,
-        storage::{SecureStorage, StorageConfig, create_default_storage, create_test_storage},
     };
     #[cfg(feature = "task-logging")]
     pub use crate::task_logging::{
